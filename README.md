@@ -1,12 +1,11 @@
-soml <sup><sub>(smol toml)<sub></sup>
-[![Test Status]][actions]&thinsp;
-[![Crate Version]][crates]&thinsp;
-[![Rust Version]][crates]
-===
+# soml <sup><sub>(smol toml)<sub></sup> [![Test Status]][actions]&thinsp;[![Crate Version]][crates]&thinsp;[![Rust Version]][crates]
 
 [test status]: https://img.shields.io/github/actions/workflow/status/staticintlucas/soml/ci.yml?branch=main&label=tests&style=flat-square
 [crate version]: https://img.shields.io/crates/v/soml?style=flat-square
 [rust version]: https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstaticintlucas%2Fsoml%2Fmain%2FCargo.toml&query=%24.package%5B%22rust-version%22%5D&style=flat-square&label=rust
+
+[actions]: https://github.com/staticintlucas/soml/actions?query=branch%3Amain
+[crates]: https://crates.io/crates/soml
 
 A lightweight [Serde]-compatible [TOML][toml-lang] parser written in Rust
 
