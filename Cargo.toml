@@ -1,0 +1,56 @@
+[package]
+name = "soml"
+version = "0.1.0"
+authors = ["Lucas Jansen"]
+edition = "2021"
+rust-version = "1.80.0" # TODO MSRV
+description = "A lightweight Serde-compatible TOML parser"
+repository = "https://github.com/staticintlucas/soml"
+license = "MIT OR Apache-2.0"
+keywords = ["serde", "toml", "parsing", "deserializing"]
+categories = ["config", "parser-implementations", "parsing"]
+
+[lints.rust]
+future-incompatible = "warn"
+let-underscore = "warn"
+nonstandard-style = "warn"
+rust-2018-compatibility = "warn"
+rust-2018-idioms = "warn"
+rust-2021-compatibility = "warn"
+rust-2024-compatibility = "warn"
+edition-2024-expr-fragment-specifier = { level = "allow", priority = 1 }
+unused = "warn"
+
+missing-copy-implementations = "warn"
+missing-debug-implementations = "warn"
+# missing-docs = "warn" # TODO
+non-ascii-idents = "warn"
+single-use-lifetimes = "warn"
+trivial-casts = "warn"
+trivial-numeric-casts = "warn"
+unit-bindings = "warn"
+unstable-features = "warn"
+unused-crate-dependencies = "warn"
+unused-lifetimes = "warn"
+unused-qualifications = "warn"
+variant-size-differences = "warn"
+unsafe-code = { level = "forbid", priority = 1 }
+
+[lints.clippy]
+all = "warn"
+cargo = "warn"
+nursery = "warn"
+pedantic = "warn"
+
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+expect_used = "warn"
+panic = "warn"
+pattern_type_mismatch = "warn"
+redundant_type_annotations = "warn"
+try_err = "warn"
+unseparated_literal_suffix = "warn"
+unwrap_used = "warn"
+
+suboptimal-flops = { level = "allow", priority = 1 } # TODO rust-lang/rust-clippy#6867
+module-name-repetitions = { level = "allow", priority = 1 } # TODO rust-lang/rust-clippy#8524
