@@ -1,0 +1,8 @@
+#[test]
+fn {test_name}() {{
+    let toml = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/{toml_path}"));
+
+    let toml_value: Result<soml::Value, soml::de::Error> = soml::from_slice(toml.as_ref());
+
+    assert!(toml_value.is_err());
+}}

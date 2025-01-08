@@ -10,6 +10,22 @@ license = "MIT OR Apache-2.0"
 keywords = ["serde", "toml", "parsing", "deserializing"]
 categories = ["config", "parser-implementations", "parsing"]
 
+[features]
+default = ["std", "datetime"]
+std = []
+alloc = [] # TODO
+datetime = [] # TODO
+fast = []
+
+[dependencies]
+lexical = { version = "7.0", features = ["format", "power-of-two"] }
+serde = "1.0"
+
+[dev-dependencies]
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
 [lints.rust]
 future-incompatible = "warn"
 let-underscore = "warn"
@@ -30,7 +46,7 @@ trivial-casts = "warn"
 trivial-numeric-casts = "warn"
 unit-bindings = "warn"
 unstable-features = "warn"
-unused-crate-dependencies = "warn"
+# unused-crate-dependencies = "warn" # TODO rust-lang/rust#95513
 unused-lifetimes = "warn"
 unused-qualifications = "warn"
 variant-size-differences = "warn"
@@ -52,5 +68,4 @@ try_err = "warn"
 unseparated_literal_suffix = "warn"
 unwrap_used = "warn"
 
-suboptimal-flops = { level = "allow", priority = 1 } # TODO rust-lang/rust-clippy#6867
 module-name-repetitions = { level = "allow", priority = 1 } # TODO rust-lang/rust-clippy#8524

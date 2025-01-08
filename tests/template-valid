@@ -1,0 +1,10 @@
+#[test]
+fn {test_name}() {{
+    let toml = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/{toml_path}"));
+    let json = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/{json_path}"));
+
+    let toml_value: soml::Value = soml::from_slice(toml.as_ref()).unwrap();
+    let json_value: EncodedItem = serde_json::from_slice(json.as_ref()).unwrap();
+
+    assert_eq!(toml_value, json_value);
+}}

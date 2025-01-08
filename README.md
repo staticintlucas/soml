@@ -11,20 +11,37 @@ A lightweight [Serde]-compatible [TOML][toml-lang] parser written in Rust
 
 ## *but why?*
 
-The semi-official [toml][toml-rs] crate has lots of amazing features,
-but that makes it really heavy in terms of binary size and compile times.
-For one of my projects toml accounted for over 15% (~260 kB) of the binary size
-despite only being used to read one small config file.
+The semi-official [toml][toml-rs] crate has lots of amazing features, but that makes it really heavy in terms of binary size and compile times.
+For one of my other projects toml accounted for over 15% of the compiled binary size despite only being used to read one small config file.
 
-This project designed to sit at the opposite end of the spectrum,
-offering basic TOML support with a much smaller footprint.
+This project designed to sit at the opposite end of the spectrum, offering basic TOML support for [Serde] with a much smaller footprint.
 
-We also try to maintain API-compatibility with the deserialisation portion of the toml
-crate, so migrating to (or from) soml should be relatively easy.
+We also try to maintain API-compatibility with the toml crate, so migrating to (or from) soml should be relatively easy.
 
 [serde]: https://serde.rs/
 [toml-lang]: https://toml.io/
 [toml-rs]: https://github.com/toml-lang/toml
+
+## Features
+
+Feature    | Default            | Description
+:----------|:------------------:|:----------------------------------------------
+`std`      | :white_check_mark: | Enables `std` support
+`alloc`    |                    | Enables `alloc` support for `no_std` targets
+`datetime` | :white_check_mark: | Enables support for TOML date-time values
+`fast`     |                    | Disables certain checks required by the TOML spec to improve performance (see below)
+
+### The `fast` feature
+
+The `fast` feature disables certain checks required by the TOML spec to improve overall performance.
+This will produce the same result for any valid TOML document, but the parser will be slightly more permissive of not-technically-valid input.
+The `fast` feature should not be enabled if strict compliance with the TOML spec is required.
+
+The following checks are disabled:
+
+- Doesn't check comments for valid UTF-8
+- Doesn't check comments for disallowed control characters
+- Skips validating date-time values
 
 ## Licence
 

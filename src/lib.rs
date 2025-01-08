@@ -1,15 +1,9 @@
-#[must_use]
-pub const fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+#![allow(missing_docs, clippy::missing_errors_doc)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod value;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod de;
+// pub mod ser;
+
+pub use de::{from_slice, from_str, Deserializer};
+pub use value::Value;
