@@ -82,7 +82,7 @@ impl Value {
         matches!(*self, Self::String(_))
     }
 
-    /// Equivalent to [`is_string`], but for compatibility with [`toml`]
+    /// Equivalent to [`Self::is_string`], but for compatibility with [`toml`]
     ///
     /// [`toml`]: https://github.com/toml-rs/toml
     #[must_use]
@@ -111,7 +111,7 @@ impl Value {
         matches!(*self, Self::Boolean(_))
     }
 
-    /// Equivalent to [`is_boolean`], but for compatibility with [`toml`]
+    /// Equivalent to [`Self::is_boolean`], but for compatibility with [`toml`]
     ///
     /// [`toml`]: https://github.com/toml-rs/toml
     #[must_use]

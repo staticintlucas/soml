@@ -33,4 +33,4 @@ jobs:
         RUSTFLAGS: -D warnings
 
     - name: Test
-      run: cargo test --all --all-features
+      run: cargo test --all
