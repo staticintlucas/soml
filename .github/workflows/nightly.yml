@@ -1,4 +1,4 @@
-name: rust-next
+name: Nightly
 
 on:
   schedule:
@@ -19,6 +19,8 @@ jobs:
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
+      with:
+        submodules: true
 
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
