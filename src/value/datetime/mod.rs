@@ -9,7 +9,7 @@ pub use self::de::{
     DatetimeAccess, LocalDateFromBytes, LocalDatetimeFromBytes, LocalTimeFromBytes,
     OffsetDatetimeFromBytes,
 };
-use crate::de::Error;
+use crate::de::{Error, ErrorKind};
 
 mod de;
 
@@ -111,10 +111,10 @@ impl OffsetDatetime {
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let Some((date, rest)) = split_once(bytes, |b| b"Tt ".contains(b)) else {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         };
         let Some(off_pos) = rest.iter().position(|b| b"Zz+-".contains(b)) else {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         };
 
         let date = LocalDate::from_slice(date)?;
@@ -185,7 +185,7 @@ impl LocalDatetime {
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let Some((date, time)) = split_once(bytes, |b| *b == b'T' || *b == b' ') else {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         };
 
         let date = LocalDate::from_slice(date)?;
@@ -264,18 +264,18 @@ impl LocalDate {
 
         let (year, (month, day)) = split_once(bytes, |b| *b == b'-')
             .and_then(|(year, rest)| Some((year, split_once(rest, |b| *b == b'-')?)))
-            .ok_or_else(|| Error::invalid_datetime(0))?;
+            .ok_or(ErrorKind::InvalidDatetime)?;
 
         if year.len() != 4 || month.len() != 2 || day.len() != 2 {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
 
         let year = u16::from_lexical_with_options::<FORMAT>(year, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
         let month = u8::from_lexical_with_options::<FORMAT>(month, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
         let day = u8::from_lexical_with_options::<FORMAT>(day, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
 
         // #[cfg(not(feature = "fast"))]
         {
@@ -290,7 +290,7 @@ impl LocalDate {
                 _ => false,
             };
             if !is_valid {
-                return Err(Error::invalid_datetime(0));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
         }
 
@@ -368,15 +368,15 @@ impl LocalTime {
 
         let (hour, (minute, second)) = split_once(bytes, |b| *b == b':')
             .and_then(|(hour, rest)| Some((hour, split_once(rest, |b| *b == b':')?)))
-            .ok_or_else(|| Error::invalid_datetime(0))?;
+            .ok_or(ErrorKind::InvalidDatetime)?;
 
         if hour.len() != 2 || minute.len() != 2 {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
         let hour = u8::from_lexical_with_options::<FORMAT>(hour, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
         let minute = u8::from_lexical_with_options::<FORMAT>(minute, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
 
         let (second, fraction) =
             if let Some((second, fraction)) = split_once(second, |b| *b == b'.') {
@@ -388,17 +388,17 @@ impl LocalTime {
             };
 
         if second.len() != 2 {
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
         let second = u8::from_lexical_with_options::<FORMAT>(second, &OPTIONS)
-            .map_err(|_| Error::invalid_datetime(0))?;
+            .map_err(|_| ErrorKind::InvalidDatetime)?;
 
         let nanosecond = if let Some(fraction) = fraction {
             if fraction.is_empty() {
-                return Err(Error::invalid_datetime(0));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
             let nanosecond = u32::from_lexical_with_options::<FORMAT>(fraction, &OPTIONS)
-                .map_err(|_| Error::invalid_datetime(0))?;
+                .map_err(|_| ErrorKind::InvalidDatetime)?;
 
             // If we parsed <9 digits, we need to multiply by 10 for each digit we're short
             let extra_zeros = 9 - u32::try_from(fraction.len())
@@ -411,7 +411,7 @@ impl LocalTime {
         #[cfg(not(feature = "fast"))]
         if hour >= 24 || minute >= 60 || second >= 61 {
             // second == 60 is valid for a leap second
-            return Err(Error::invalid_datetime(0));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
 
         Ok(Self {
@@ -501,18 +501,18 @@ impl Offset {
             Ok(Self::Z)
         } else {
             let (hours, minutes) =
-                split_once(bytes, |b| *b == b':').ok_or_else(|| Error::invalid_datetime(0))?;
+                split_once(bytes, |b| *b == b':').ok_or(ErrorKind::InvalidDatetime)?;
             if hours.len() != 3 && minutes.len() != 2 {
-                return Err(Error::invalid_datetime(0));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
             let hours = i8::from_lexical_with_options::<HOURS_FORMAT>(hours, &OPTIONS)
-                .map_err(|_| Error::invalid_datetime(0))?;
+                .map_err(|_| ErrorKind::InvalidDatetime)?;
             let minutes = u8::from_lexical_with_options::<MINUTES_FORMAT>(minutes, &OPTIONS)
-                .map_err(|_| Error::invalid_datetime(0))?;
+                .map_err(|_| ErrorKind::InvalidDatetime)?;
 
             #[cfg(not(feature = "fast"))]
             if hours < -23 || hours > 23 || minutes > 59 {
-                return Err(Error::invalid_datetime(0));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
 
             Ok(Self::Custom { hours, minutes })

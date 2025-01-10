@@ -1,6 +1,6 @@
 //! Deserialization error types
 
-use std::{borrow::Borrow, fmt};
+use std::fmt;
 
 use serde::{de, ser};
 
@@ -9,14 +9,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
 pub struct Error(Box<ErrorImpl>);
-
-impl Error {
-    /// The position of the error in the file
-    #[must_use]
-    pub fn position(&self) -> usize {
-        self.0.position
-    }
-}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -28,14 +20,13 @@ impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("type", &self.0.kind)
-            .field("position", &self.0.position)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        None // TODO
     }
 }
 
@@ -44,7 +35,7 @@ impl de::Error for Error {
     where
         T: fmt::Display,
     {
-        Self::custom(msg)
+        ErrorKind::Custom(msg.to_string().into_boxed_str()).into()
     }
 }
 
@@ -53,7 +44,7 @@ impl ser::Error for Error {
     where
         T: fmt::Display,
     {
-        Self::custom(msg)
+        ErrorKind::Custom(msg.to_string().into_boxed_str()).into()
     }
 }
 
@@ -64,152 +55,19 @@ impl From<ErrorImpl> for Error {
     }
 }
 
-impl Error {
-    pub(crate) fn invalid_encoding(_err: std::str::Utf8Error, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidEncoding,
-            position,
-        }
-        .into()
-    }
-    pub(crate) fn eof(position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Eof,
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn illegal_char(char: char, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::IllegalChar(char),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn unterminated_string(position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::UnterminatedString,
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn invalid_escape(seq: impl Into<Box<str>>, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidEscape(seq.into()),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn invalid_number(err: impl Into<Box<str>>, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidNumber(err.into()),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn invalid_datetime(position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidDatetime,
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn expected(token: impl Into<Box<str>>, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Expected(token.into()),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn duplicate_key(
-        key: &[impl Borrow<str>],
-        table: &[impl Borrow<str>],
-        position: usize,
-    ) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::DuplicateKey(
-                key.join(".").into(),
-                Some(table.join(".").into_boxed_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| "root table".into()),
-            ),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn invalid_table_header(key: &[impl Borrow<str>], position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidTableHeader(key.join(".").into()),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn invalid_key_path(
-        key: &[impl Borrow<str>],
-        table: &[impl Borrow<str>],
-        position: usize,
-    ) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::InvalidKeyPath(
-                key.join(".").into(),
-                Some(table.join(".").into_boxed_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| "root table".into()),
-            ),
-            position,
-        }
-        .into()
-    }
-
-    pub(crate) fn unexpected_char(ch: char, position: usize) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::UnexpectedChar(ch),
-            position,
-        }
-        .into()
-    }
-
-    // pub(crate) fn from_io(err: std::io::Error, position: usize) -> Self {
-    //     ErrorImpl {
-    //         kind: ErrorKind::Io(err),
-    //         position,
-    //     }
-    //     .into()
-    // }
-
-    pub(crate) fn custom(msg: impl fmt::Display) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Custom(msg.to_string().into_boxed_str()),
-            position: 0,
-        }
-        .into()
-    }
-}
-
 #[derive(Debug)]
 struct ErrorImpl {
     pub kind: ErrorKind,
-    pub position: usize,
 }
 
 impl fmt::Display for ErrorImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO get line/col from position, or ignore for error where position makes no sense
-        write!(f, "{} (at position {})", self.kind, self.position)
+        fmt::Display::fmt(&self.kind, f)
     }
 }
 
 #[derive(Debug)]
-enum ErrorKind {
+pub enum ErrorKind {
     /// File is not UTF-8 encoded
     InvalidEncoding,
     /// End of file
@@ -243,10 +101,16 @@ enum ErrorKind {
     Custom(Box<str>),
 }
 
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Self {
+        ErrorImpl { kind }.into()
+    }
+}
+
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::InvalidEncoding => f.write_str("TOML file is not valid UTF-8"),
+            Self::InvalidEncoding => f.write_str("file is not valid UTF-8"),
             Self::Eof => f.write_str("unexpected end of file"),
             Self::IllegalChar(char) => write!(f, "illegal character: {char:?}"),
             Self::UnterminatedString => f.write_str("unterminated string"),

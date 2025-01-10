@@ -9,6 +9,7 @@ use serde::de::value::StrDeserializer;
 use serde::de::{Error as _, IntoDeserializer as _};
 use serde::{de, forward_to_deserialize_any, Deserialize};
 
+pub(crate) use error::ErrorKind;
 pub use error::{Error, Result};
 
 use parser::Parser;
@@ -661,9 +662,8 @@ fn parse_integer<T: Integer>(bytes: &[u8]) -> Result<T> {
         .build();
     const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS).map_err(
-        |err| Error::invalid_number(err.to_string(), 0), // TODO position
-    )
+    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
+        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
 fn parse_binary<T: Integer>(bytes: &[u8]) -> Result<T> {
@@ -674,9 +674,8 @@ fn parse_binary<T: Integer>(bytes: &[u8]) -> Result<T> {
         .build();
     const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS).map_err(
-        |err| Error::invalid_number(err.to_string(), 0), // TODO position
-    )
+    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
+        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
 fn parse_octal<T: Integer>(bytes: &[u8]) -> Result<T> {
@@ -687,9 +686,8 @@ fn parse_octal<T: Integer>(bytes: &[u8]) -> Result<T> {
         .build();
     const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS).map_err(
-        |err| Error::invalid_number(err.to_string(), 0), // TODO position
-    )
+    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
+        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
 fn parse_hexadecimal<T: Integer>(bytes: &[u8]) -> Result<T> {
@@ -700,9 +698,8 @@ fn parse_hexadecimal<T: Integer>(bytes: &[u8]) -> Result<T> {
         .build();
     const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS).map_err(
-        |err| Error::invalid_number(err.to_string(), 0), // TODO position
-    )
+    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
+        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
 fn parse_float<T: Float>(bytes: &[u8]) -> Result<T> {
@@ -716,9 +713,8 @@ fn parse_float<T: Float>(bytes: &[u8]) -> Result<T> {
         .build();
     const OPTIONS: ParseFloatOptions = ParseFloatOptions::new();
 
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS).map_err(
-        |err| Error::invalid_number(err.to_string(), 0), // TODO position
-    )
+    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
+        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
 const fn parse_special<T: Float>(special: SpecialFloat) -> T {

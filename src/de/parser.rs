@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashMap};
 use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
 
-use super::error::{Error, Result};
+use super::error::{ErrorKind, Result};
 use super::{Reader, StrReader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,20 +169,18 @@ where
 
             // Parse array header
             if self.reader.eat_str(b"[[")? {
-                let position = self.reader.position();
                 let key = self.parse_array_header()?;
                 table = root
                     .get_array_header(&key)
-                    .ok_or_else(|| Error::invalid_table_header(&key, position))?;
+                    .ok_or_else(|| ErrorKind::InvalidTableHeader(key.join(".").into()))?;
                 table_path = key;
             }
             // Parse table header
             else if self.reader.eat_char(b'[')? {
-                let position = self.reader.position();
                 let key = self.parse_table_header()?;
                 table = root
                     .get_table_header(&key)
-                    .ok_or_else(|| Error::invalid_table_header(&key, position))?;
+                    .ok_or_else(|| ErrorKind::InvalidTableHeader(key.join(".").into()))?;
                 table_path = key;
             }
             // Parse key/value pair
@@ -198,25 +196,30 @@ where
 
                 // Navigate to the subtable
                 let subtable = table.get_dotted_key(path).ok_or_else(|| {
-                    Error::invalid_key_path(&full_key, &table_path, self.reader.position())
+                    ErrorKind::InvalidKeyPath(
+                        full_key.join(".").into(),
+                        (!table_path.is_empty())
+                            .then(|| table_path.join(".").into())
+                            .unwrap_or_else(|| "root table".into()),
+                    )
                 })?;
 
                 // Check if the key is already present
                 if subtable.contains_key(key) {
-                    return Err(Error::duplicate_key(
-                        &full_key,
-                        &table_path,
-                        self.reader.position(),
-                    ));
+                    return Err(ErrorKind::DuplicateKey(
+                        full_key.join(".").into(),
+                        (!table_path.is_empty())
+                            .then(|| table_path.join(".").into())
+                            .unwrap_or_else(|| "root table".into()),
+                    )
+                    .into());
                 }
                 subtable.insert(key.clone(), value);
             }
             // Anything else is unexpected
-            else if let Some(ch) = self.reader.next()? {
-                return Err(Error::unexpected_char(
-                    char::from(ch),
-                    self.reader.position() - 1,
-                ));
+            else if let Some(ch) = self.reader.peek()? {
+                self.reader.discard()?;
+                return Err(ErrorKind::UnexpectedChar(char::from(ch)).into());
             }
 
             // Expect newline/comment after a key/value pair or table/array header
@@ -224,17 +227,13 @@ where
             match self.reader.peek()? {
                 Some(b'\n') => self.reader.discard()?,
                 Some(b'\r') if self.reader.peek_at(1)?.is_some_and(|ch| ch == b'\n') => {
-                    self.reader.discard()?; // '\r'
-                    self.reader.discard()?; // '\n'
+                    self.reader.discard_array::<2>()?; // b"\r\n"
                 }
                 Some(b'#') => {
                     self.skip_comment()?;
                 }
                 Some(ch) => {
-                    return Err(Error::unexpected_char(
-                        char::from(ch),
-                        self.reader.position(),
-                    ))
+                    return Err(ErrorKind::UnexpectedChar(char::from(ch)).into());
                 }
                 None => break,
             }
@@ -251,7 +250,7 @@ where
         self.reader
             .eat_str(b"]]")?
             .then_some(key)
-            .ok_or_else(|| Error::expected("]] after dotted key", self.reader.position()))
+            .ok_or_else(|| ErrorKind::Expected("]] after dotted key".into()).into())
     }
 
     fn parse_table_header(&mut self) -> Result<Vec<Cow<'de, str>>> {
@@ -262,7 +261,7 @@ where
         self.reader
             .eat_char(b']')?
             .then_some(key)
-            .ok_or_else(|| Error::expected("] after dotted key", self.reader.position()))
+            .ok_or_else(|| ErrorKind::Expected("] after dotted key".into()).into())
     }
 
     fn parse_key_value_pair(&mut self) -> Result<(Vec<Cow<'de, str>>, RawValue<'de>)> {
@@ -270,7 +269,7 @@ where
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
         if !self.reader.eat_char(b'=')? {
-            return Err(Error::expected("= after key", self.reader.position()));
+            return Err(ErrorKind::Expected("= after key".into()).into());
         }
         self.skip_whitespace()?;
 
@@ -308,7 +307,7 @@ where
 
         (!key.is_empty())
             .then_some(key)
-            .ok_or_else(|| Error::expected("key", self.reader.position()))
+            .ok_or_else(|| ErrorKind::Expected("key".into()).into())
     }
 
     fn parse_value(&mut self) -> Result<RawValue<'de>> {
@@ -337,10 +336,7 @@ where
                     {
                         self.parse_datetime()
                     } else {
-                        Err(Error::invalid_number(
-                            "leading zero",
-                            self.reader.position(),
-                        ))
+                        Err(ErrorKind::InvalidNumber("leading zero".into()).into())
                     }
                 }
                 // Parse just the 0
@@ -369,10 +365,7 @@ where
                     // Special float
                     Some(b'i' | b'n') => self.parse_number_special().map(RawValue::SpecialFloat),
                     // Invalid
-                    _ => Err(Error::invalid_number(
-                        "missing digits",
-                        self.reader.position(),
-                    )),
+                    _ => Err(ErrorKind::InvalidNumber("missing digits".into()).into()),
                 }
             }
             // Special float (inf or nan)
@@ -387,11 +380,8 @@ where
                 self.reader.discard()?; // We consume the opening delimiter
                 self.parse_inline_table().map(RawValue::InlineTable)
             }
-            Some(char) => Err(Error::unexpected_char(
-                char::from(char),
-                self.reader.position(),
-            )),
-            None => Err(Error::eof(self.reader.position())),
+            Some(char) => Err(ErrorKind::UnexpectedChar(char::from(char)).into()),
+            None => Err(ErrorKind::Eof.into()),
         }
     }
 
@@ -409,7 +399,7 @@ where
                 self.parse_literal_str()
             }
         } else {
-            Err(Error::expected("string", self.reader.position()))
+            Err(ErrorKind::Expected("string".into()).into())
         }
     }
 
@@ -428,13 +418,10 @@ where
                     break Ok(str);
                 }
                 None | Some(b'\r' | b'\n') => {
-                    break Err(Error::unterminated_string(self.reader.position()));
+                    break Err(ErrorKind::UnterminatedString.into());
                 }
                 Some(char) => {
-                    break Err(Error::illegal_char(
-                        char::from(char),
-                        self.reader.position(),
-                    ));
+                    break Err(ErrorKind::IllegalChar(char::from(char)).into());
                 }
             }
 
@@ -464,13 +451,12 @@ where
                     // If there's a space after the '\' we assume a trailing '\' with trailing
                     // whitespace, but we need to verify that's the case by checking for a newline
                     else if let Some(char) = self.reader.next_if(TomlChar::is_whitespace)? {
-                        let position = self.reader.position() - 1;
                         self.reader.next_while(TomlChar::is_whitespace)?;
                         if !(self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?) {
-                            return Err(Error::invalid_escape(
-                                format!("{:?}", char::from(char)),
-                                position,
-                            ));
+                            return Err(ErrorKind::InvalidEscape(
+                                format!("{:?}", char::from(char)).into(),
+                            )
+                            .into());
                         }
                         self.reader.next_while(TomlChar::is_whitespace_or_newline)?;
                     } else {
@@ -495,18 +481,13 @@ where
                     str.to_mut().push('"');
                 }
                 None => {
-                    break Err(Error::unterminated_string(self.reader.position()));
+                    break Err(ErrorKind::UnterminatedString.into());
                 }
                 Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                     continue;
                 }
-                Some(char) => {
-                    break Err(Error::illegal_char(
-                        char::from(char),
-                        self.reader.position(),
-                    ))
-                }
+                Some(char) => break Err(ErrorKind::IllegalChar(char::from(char)).into()),
             }
 
             str.to_mut().push_str(
@@ -522,11 +503,8 @@ where
 
         match self.reader.next()? {
             Some(b'\'') => Ok(str),
-            None | Some(b'\r' | b'\n') => Err(Error::unterminated_string(self.reader.position())),
-            Some(char) => Err(Error::illegal_char(
-                char::from(char),
-                self.reader.position(),
-            )),
+            None | Some(b'\r' | b'\n') => Err(ErrorKind::UnterminatedString.into()),
+            Some(char) => Err(ErrorKind::IllegalChar(char::from(char)).into()),
         }
     }
 
@@ -557,18 +535,13 @@ where
                     str.to_mut().push('\'');
                 }
                 None => {
-                    break Err(Error::unterminated_string(self.reader.position()));
+                    break Err(ErrorKind::UnterminatedString.into());
                 }
                 Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                     continue;
                 }
-                Some(char) => {
-                    break Err(Error::illegal_char(
-                        char::from(char),
-                        self.reader.position(),
-                    ))
-                }
+                Some(char) => break Err(ErrorKind::IllegalChar(char::from(char)).into()),
             }
 
             str.to_mut().push_str(
@@ -585,10 +558,8 @@ where
             .no_positive_mantissa_sign(true)
             .build();
 
-        let position = self.reader.position();
-
         let Some(char) = self.reader.next()? else {
-            return Err(Error::unterminated_string(position));
+            return Err(ErrorKind::UnterminatedString.into());
         };
 
         match char {
@@ -603,38 +574,35 @@ where
                 let bytes = self
                     .reader
                     .next_array::<4>()?
-                    .ok_or_else(|| Error::unterminated_string(position))?;
+                    .ok_or(ErrorKind::UnterminatedString)?;
                 let options = ParseIntegerOptions::default();
                 u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
                     .ok()
                     .and_then(char::from_u32)
                     .ok_or_else(|| {
-                        Error::invalid_escape(
-                            format!("u{}", String::from_utf8_lossy(bytes.as_ref())),
-                            position,
+                        ErrorKind::InvalidEscape(
+                            format!("u{}", String::from_utf8_lossy(bytes.as_ref())).into(),
                         )
+                        .into()
                     })
             }
             b'U' => {
                 let bytes = self
                     .reader
                     .next_array::<8>()?
-                    .ok_or_else(|| Error::unterminated_string(position))?;
+                    .ok_or(ErrorKind::UnterminatedString)?;
                 let options = ParseIntegerOptions::default();
                 u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
                     .ok()
                     .and_then(char::from_u32)
                     .ok_or_else(|| {
-                        Error::invalid_escape(
-                            format!("U{}", String::from_utf8_lossy(bytes.as_ref())),
-                            position,
+                        ErrorKind::InvalidEscape(
+                            format!("U{}", String::from_utf8_lossy(bytes.as_ref())).into(),
                         )
+                        .into()
                     })
             }
-            _ => Err(Error::invalid_escape(
-                format!("{:?}", char::from(char)),
-                position,
-            )),
+            _ => Err(ErrorKind::InvalidEscape(format!("{:?}", char::from(char)).into()).into()),
         }
     }
 
@@ -645,16 +613,12 @@ where
         let result = match word.as_ref() {
             b"true" => Ok(true),
             b"false" => Ok(false),
-            _ => Err(Error::expected(
-                "true/false",
-                self.reader.position() - word.len(),
-            )),
+            _ => Err(ErrorKind::Expected("true/false".into()).into()),
         };
         result
     }
 
     fn parse_datetime(&mut self) -> Result<RawValue<'de>> {
-        let position = self.reader.position();
         self.reader.start_seq(); // Start sequence for datetime
 
         // Use the number of digits to determine whether we have a date or time
@@ -662,7 +626,7 @@ where
 
         // 4 digits = year for date/datetime
         if first_num.len() == 4 {
-            self.check_date(position)?;
+            self.check_date()?;
 
             // Check if we have a time or just a date
             let have_time = match self.reader.peek()? {
@@ -673,56 +637,56 @@ where
             if !have_time {
                 // Check we're at the end of the value (i.e. no trailing invalid chars)
                 if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
-                    return Err(Error::invalid_datetime(position));
+                    return Err(ErrorKind::InvalidDatetime.into());
                 }
 
                 return self.reader.end_seq().map(RawValue::LocalDate);
             };
             self.reader.discard()?; // Skip the 'T'/space
 
-            self.check_time(position)?;
+            self.check_time()?;
 
             // Check for the offset
             let have_offset = matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'));
             if !have_offset {
                 // Check we're at the end of the value (i.e. no trailing invalid chars)
                 if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
-                    return Err(Error::invalid_datetime(position));
+                    return Err(ErrorKind::InvalidDatetime.into());
                 }
 
                 return self.reader.end_seq().map(RawValue::LocalDatetime);
             };
 
-            self.check_offset(position)?;
+            self.check_offset()?;
 
             // Check we're at the end of the value (i.e. no trailing invalid chars)
             if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
-                return Err(Error::invalid_datetime(position));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
 
             self.reader.end_seq().map(RawValue::OffsetDatetime)
         }
         // 2 digits = hour for time
         else if first_num.len() == 2 {
-            self.check_time(position)?;
+            self.check_time()?;
 
             // Check for bogus offset (offset time is not a thing in TOML)
             // Check we're at the end of the value (i.e. no trailing invalid chars)
             if matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'))
                 || self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word)
             {
-                return Err(Error::invalid_datetime(position));
+                return Err(ErrorKind::InvalidDatetime.into());
             }
 
             self.reader.end_seq().map(RawValue::LocalTime)
         }
         // Any other number of digits is invalid
         else {
-            Err(Error::expected("datetime", self.reader.position()))
+            Err(ErrorKind::Expected("datetime".into()).into())
         }
     }
 
-    fn check_date(&mut self, position: usize) -> Result<()> {
+    fn check_date(&mut self) -> Result<()> {
         if self
             .reader
             .next_array::<4>()?
@@ -740,11 +704,11 @@ where
         {
             Ok(())
         } else {
-            Err(Error::invalid_datetime(position))
+            Err(ErrorKind::InvalidDatetime.into())
         }
     }
 
-    fn check_time(&mut self, position: usize) -> Result<()> {
+    fn check_time(&mut self) -> Result<()> {
         if !(self
             .reader
             .next_array::<2>()?
@@ -755,7 +719,7 @@ where
                 .next_array::<2>()?
                 .is_some_and(|a| a.iter().all(u8::is_ascii_digit)))
         {
-            return Err(Error::invalid_datetime(position));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
 
         if !self.reader.eat_char(b':')? {
@@ -766,20 +730,20 @@ where
             .next_array::<2>()?
             .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
         {
-            return Err(Error::invalid_datetime(position));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
 
         if !self.reader.eat_char(b'.')? {
             return Ok(()); // Fractional seconds are also optional, so just return hh:mm:ss
         }
         if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
-            return Err(Error::invalid_datetime(position));
+            return Err(ErrorKind::InvalidDatetime.into());
         }
 
         Ok(())
     }
 
-    fn check_offset(&mut self, position: usize) -> Result<()> {
+    fn check_offset(&mut self) -> Result<()> {
         if self.reader.eat_char(b'Z')?
             || self.reader.eat_char(b'z')?
             || ((self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?)
@@ -795,12 +759,11 @@ where
         {
             Ok(())
         } else {
-            Err(Error::invalid_datetime(position))
+            Err(ErrorKind::InvalidDatetime.into())
         }
     }
 
     fn parse_number_radix(&mut self) -> Result<RawValue<'de>> {
-        let position = self.reader.position();
         if self.reader.eat_str(b"0x")? {
             Ok(RawValue::HexInt(
                 self.reader
@@ -811,7 +774,7 @@ where
                             .all(|byte| byte.is_ascii_hexdigit() || *byte == b'_')
                             .then_some(bytes)
                             .ok_or_else(|| {
-                                Error::invalid_number("invalid hexadecimal digit", position)
+                                ErrorKind::InvalidNumber("invalid hexadecimal digit".into()).into()
                             })
                     })?,
             ))
@@ -824,7 +787,9 @@ where
                             .iter()
                             .all(|&b| matches!(b, b'0'..=b'7' | b'_'))
                             .then_some(bytes)
-                            .ok_or_else(|| Error::invalid_number("invalid octal digit", position))
+                            .ok_or_else(|| {
+                                ErrorKind::InvalidNumber("invalid octal digit".into()).into()
+                            })
                     })?,
             ))
         } else if self.reader.eat_str(b"0b")? {
@@ -836,16 +801,17 @@ where
                             .iter()
                             .all(|&b| matches!(b, b'0' | b'1' | b'_'))
                             .then_some(bytes)
-                            .ok_or_else(|| Error::invalid_number("invalid binary digit", position))
+                            .ok_or_else(|| {
+                                ErrorKind::InvalidNumber("invalid binary digit".into()).into()
+                            })
                     })?,
             ))
         } else {
-            Err(Error::expected("number with radix", position))
+            Err(ErrorKind::Expected("number with radix".into()).into())
         }
     }
 
     fn parse_number_special(&mut self) -> Result<SpecialFloat> {
-        let position = self.reader.position();
         // In each case we match against the whole word, don't just parse the first n characters so
         // we don't successfully parse e.g. inf92864yhowkalgp98y
         match self.reader.peek()? {
@@ -854,7 +820,7 @@ where
                 match self.reader.next_while(TomlChar::is_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::Infinity),
                     b"nan" => Ok(SpecialFloat::Nan),
-                    _ => Err(Error::expected("inf/nan", position)),
+                    _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
                 }
             }
             Some(b'-') => {
@@ -862,19 +828,18 @@ where
                 match self.reader.next_while(TomlChar::is_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::NegInfinity),
                     b"nan" => Ok(SpecialFloat::NegNan),
-                    _ => Err(Error::expected("inf/nan", position)),
+                    _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
                 }
             }
             _ => match self.reader.next_while(TomlChar::is_word)?.as_ref() {
                 b"inf" => Ok(SpecialFloat::Infinity),
                 b"nan" => Ok(SpecialFloat::Nan),
-                _ => Err(Error::expected("inf/nan", position)),
+                _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
             },
         }
     }
 
     fn parse_number_decimal(&mut self) -> Result<RawValue<'de>> {
-        let position = self.reader.position();
         let mut float = false;
 
         self.reader.start_seq(); // Start sequence for number parsing
@@ -885,8 +850,8 @@ where
         // Note: leading 0s are not allowed, but that is checked in parse_value
         if self.reader.next_if(u8::is_ascii_digit)?.is_none() {
             return Err(match self.reader.peek()? {
-                Some(b'_') => Error::invalid_number("leading underscore", position),
-                _ => Error::invalid_number("missing digits", position),
+                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
+                _ => ErrorKind::InvalidNumber("missing digits".into()).into(),
             });
         }
 
@@ -898,8 +863,8 @@ where
                 // Need at least one digit after an '_'
                 match self.reader.peek()? {
                     Some(b'0'..=b'9') => Ok(()),
-                    Some(b'_') => Err(Error::invalid_number("double underscore", position)),
-                    _ => Err(Error::invalid_number("trailing underscore", position)),
+                    Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
+                    _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
                 }?;
             } else {
                 break;
@@ -913,8 +878,8 @@ where
             // We need at least one digit
             match self.reader.peek()? {
                 Some(b'0'..=b'9') => Ok(()),
-                Some(b'_') => Err(Error::invalid_number("leading underscore", position)),
-                _ => Err(Error::invalid_number("missing digits", position)),
+                Some(b'_') => Err(ErrorKind::InvalidNumber("leading underscore".into())),
+                _ => Err(ErrorKind::InvalidNumber("missing digits".into())),
             }?;
             self.reader.next_while(u8::is_ascii_digit)?;
 
@@ -926,8 +891,8 @@ where
                     // Need at least one digit after an '_'
                     match self.reader.peek()? {
                         Some(b'0'..=b'9') => Ok(()),
-                        Some(b'_') => Err(Error::invalid_number("double underscore", position)),
-                        _ => Err(Error::invalid_number("trailing underscore", position)),
+                        Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
+                        _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
                     }?;
                 } else {
                     break;
@@ -945,8 +910,8 @@ where
             // We need at least one digit
             match self.reader.peek()? {
                 Some(b'0'..=b'9') => Ok(()),
-                Some(b'_') => Err(Error::invalid_number("leading underscore", position)),
-                _ => Err(Error::invalid_number("missing digits", position)),
+                Some(b'_') => Err(ErrorKind::InvalidNumber("leading underscore".into())),
+                _ => Err(ErrorKind::InvalidNumber("missing digits".into())),
             }?;
             self.reader.next_while(u8::is_ascii_digit)?;
 
@@ -958,8 +923,8 @@ where
                     // Need at least one digit after an '_'
                     match self.reader.peek()? {
                         Some(b'0'..=b'9') => Ok(()),
-                        Some(b'_') => Err(Error::invalid_number("double underscore", position)),
-                        _ => Err(Error::invalid_number("trailing underscore", position)),
+                        Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
+                        _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
                     }?;
                 } else {
                     break;
@@ -993,10 +958,7 @@ where
             if self.reader.eat_char(b']')? {
                 break; // End of array
             } else if !self.reader.eat_char(b',')? {
-                return Err(Error::expected(
-                    ", or ] after value in array",
-                    self.reader.position(),
-                ));
+                return Err(ErrorKind::Expected(", or ] after value in array".into()).into());
             }
         }
 
@@ -1021,16 +983,16 @@ where
 
             // Navigate to the subtable
             let subtable = result.get_inline_subtable(path).ok_or_else(|| {
-                Error::invalid_key_path(&full_key, &["inline table"], self.reader.position())
+                ErrorKind::InvalidKeyPath(full_key.join(".").into(), "inline table".into())
             })?;
 
             // Check if the key is already present
             if subtable.contains_key(key) {
-                return Err(Error::duplicate_key(
-                    &full_key,
-                    &["inline table"],
-                    self.reader.position(),
-                ));
+                return Err(ErrorKind::DuplicateKey(
+                    full_key.join(".").into(),
+                    "inline table".into(),
+                )
+                .into());
             }
             subtable.insert(key.clone(), value);
 
@@ -1039,10 +1001,10 @@ where
             if self.reader.eat_char(b'}')? {
                 break; // End of array
             } else if !self.reader.eat_char(b',')? {
-                return Err(Error::expected(
-                    ", or } after key/value pair in inline table",
-                    self.reader.position(),
-                ));
+                return Err(ErrorKind::Expected(
+                    ", or } after key/value pair in inline table".into(),
+                )
+                .into());
             }
 
             self.skip_whitespace()?;
@@ -1062,14 +1024,13 @@ where
             if cfg!(feature = "fast") {
                 self.reader.next_while(|&ch| ch != b'\n')?;
             } else {
-                let position = self.reader.position();
                 // next_str_while will validate UTF-8
                 let comment = self.reader.next_str_while(|&ch| ch != b'\n')?;
                 // Trim trailing \r (since \r\n is valid)
                 let comment = comment.strip_suffix('\r').unwrap_or(&comment);
                 // Check for any invalid characters in the comment
-                if let Some((i, ch)) = comment.bytes().enumerate().find(|&(_, c)| !c.is_comment()) {
-                    return Err(Error::illegal_char(char::from(ch), position + i));
+                if let Some(ch) = comment.bytes().find(|c| !c.is_comment()) {
+                    return Err(ErrorKind::IllegalChar(char::from(ch)).into());
                 }
             }
 
@@ -1091,14 +1052,14 @@ where
 }
 
 trait TomlTable<'a>: 'a {
-    fn get_table_header<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self>;
-    fn get_array_header<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self>;
-    fn get_dotted_key<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self>;
-    fn get_inline_subtable<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self>;
+    fn get_table_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
+    fn get_array_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
+    fn get_dotted_key(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
+    fn get_inline_subtable(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
 }
 
 impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
-    fn get_table_header<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self> {
+    fn get_table_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
         let Some((key, path)) = path.split_last() else {
             return Some(self);
         };
@@ -1142,7 +1103,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         Some(subtable)
     }
 
-    fn get_array_header<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self> {
+    fn get_array_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
         let Some((key, path)) = path.split_last() else {
             return Some(self);
         };
@@ -1178,7 +1139,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         }
     }
 
-    fn get_dotted_key<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self> {
+    fn get_dotted_key(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
         let Some((key, path)) = path.split_last() else {
             return Some(self);
         };

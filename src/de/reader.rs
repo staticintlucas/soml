@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::str;
 
-use super::error::{Error, Result};
+use super::error::{ErrorKind, Result};
 
 mod private {
     pub trait Sealed {}
@@ -50,7 +50,7 @@ pub trait Reader<'a>: private::Sealed {
     #[doc(hidden)]
     fn peek_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>>;
 
-    /// Peeks the byte at position `pos` from the current position of the source. If the end of the
+    /// Peeks the byte at `pos` bytes from the current location in the source. If the end of the
     /// source is reached, returns `Ok(None)`.
     ///
     /// # Errors
@@ -124,14 +124,13 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     fn next_str_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, str>> {
-        let position = self.position();
         match self.next_while(func)? {
             Cow::Borrowed(bytes) => str::from_utf8(bytes)
                 .map(Cow::Borrowed)
-                .map_err(|err| Error::invalid_encoding(err, position + err.valid_up_to())),
-            Cow::Owned(vec) => String::from_utf8(vec).map(Cow::Owned).map_err(|err| {
-                Error::invalid_encoding(err.utf8_error(), position + err.utf8_error().valid_up_to())
-            }),
+                .map_err(|_| ErrorKind::InvalidEncoding.into()),
+            Cow::Owned(vec) => String::from_utf8(vec)
+                .map(Cow::Owned)
+                .map_err(|_| ErrorKind::InvalidEncoding.into()),
         }
     }
 
@@ -173,10 +172,6 @@ pub trait Reader<'a>: private::Sealed {
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     fn end_seq(&mut self) -> Result<Cow<'a, [u8]>>;
-
-    /// Returns the current position in the source.
-    #[doc(hidden)]
-    fn position(&self) -> usize;
 }
 
 /// Read from a string
@@ -253,9 +248,5 @@ impl<'a> Reader<'a> for StrReader<'a> {
             .take()
             .unwrap_or_else(|| unreachable!("Sequence wasn't started first"));
         Ok(Cow::Borrowed(&self.bytes[start..self.offset]))
-    }
-
-    fn position(&self) -> usize {
-        self.offset
     }
 }
