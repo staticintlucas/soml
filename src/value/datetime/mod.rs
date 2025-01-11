@@ -511,7 +511,7 @@ impl Offset {
                 .map_err(|_| ErrorKind::InvalidDatetime)?;
 
             #[cfg(not(feature = "fast"))]
-            if hours < -23 || hours > 23 || minutes > 59 {
+            if !(-23..=23).contains(&hours) || minutes > 59 {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 

@@ -187,7 +187,7 @@ where
             else if self
                 .reader
                 .peek()?
-                .is_some_and(|ch| TomlChar::is_word(&ch) || ch == b'"' || ch == b'\'')
+                .is_some_and(|ch| is_toml_word(&ch) || ch == b'"' || ch == b'\'')
             {
                 let (full_key, value) = self.parse_key_value_pair()?;
                 let (key, path) = full_key
@@ -219,7 +219,12 @@ where
             // Anything else is unexpected
             else if let Some(ch) = self.reader.peek()? {
                 self.reader.discard()?;
-                return Err(ErrorKind::UnexpectedChar(char::from(ch)).into());
+                return Err(if is_toml_legal(&ch) {
+                    ErrorKind::UnexpectedChar(char::from(ch))
+                } else {
+                    ErrorKind::IllegalChar(char::from(ch))
+                }
+                .into());
             }
 
             // Expect newline/comment after a key/value pair or table/array header
@@ -233,7 +238,12 @@ where
                     self.skip_comment()?;
                 }
                 Some(ch) => {
-                    return Err(ErrorKind::UnexpectedChar(char::from(ch)).into());
+                    return Err(if is_toml_legal(&ch) {
+                        ErrorKind::UnexpectedChar(char::from(ch))
+                    } else {
+                        ErrorKind::IllegalChar(char::from(ch))
+                    }
+                    .into());
                 }
                 None => break,
             }
@@ -303,7 +313,7 @@ where
     }
 
     fn parse_bare_key(&mut self) -> Result<Cow<'de, str>> {
-        let key = self.reader.next_str_while(TomlChar::is_word)?;
+        let key = self.reader.next_str_while(is_toml_word)?;
 
         (!key.is_empty())
             .then_some(key)
@@ -318,30 +328,26 @@ where
             Some(b't' | b'f') => self.parse_bool().map(RawValue::Boolean),
             // Leading 0 => either prefixed int, date/time, just 0, or invalid
             Some(b'0') => {
-                // Floats with leading 0 before decimal/exponent
-                if matches!(self.reader.peek_at(1)?, Some(b'.' | b'e' | b'E')) {
-                    self.parse_number_decimal()
-                }
-                // 0x, 0o, 0b, etc
-                else if matches!(self.reader.peek_at(1)?, Some(ch) if ch.is_ascii_alphabetic()) {
-                    self.parse_number_radix()
-                }
-                // Date/time or invalid number (leading 0 is not allowed)
-                else if matches!(self.reader.peek_at(1)?, Some(ch) if ch.is_ascii_digit()) {
-                    // We only know whether we're parsing a datetime or a number when we see a
-                    // '-' after 4 digits or a ':' after 2, so we need to look ahead here
-                    let n_digits = self.reader.peek_while(u8::is_ascii_digit)?.len();
-                    if (n_digits == 4 && self.reader.peek_at(4)?.is_some_and(|ch| ch == b'-'))
-                        || (n_digits == 2 && self.reader.peek_at(2)?.is_some_and(|ch| ch == b':'))
-                    {
-                        self.parse_datetime()
-                    } else {
-                        Err(ErrorKind::InvalidNumber("leading zero".into()).into())
+                match self.reader.peek_at(1)? {
+                    // Floats with leading 0 before decimal/exponent
+                    Some(b'.' | b'e' | b'E') => self.parse_number_decimal(),
+                    // 0x, 0o, 0b, etc
+                    Some(ch) if ch.is_ascii_alphabetic() => self.parse_number_radix(),
+                    // Date/time or invalid number (leading 0 is not allowed)
+                    Some(ch) if ch.is_ascii_digit() => {
+                        // We only know whether we're parsing a datetime or a number when we see a
+                        // '-' after 4 digits or a ':' after 2, so we need to look ahead here
+                        let n_digits = self.reader.peek_while(u8::is_ascii_digit)?.len();
+                        if (n_digits == 4 && matches!(self.reader.peek_at(4)?, Some(b'-')))
+                            || (n_digits == 2 && matches!(self.reader.peek_at(2)?, Some(b':')))
+                        {
+                            self.parse_datetime()
+                        } else {
+                            Err(ErrorKind::InvalidNumber("leading zero".into()).into())
+                        }
                     }
-                }
-                // Parse just the 0
-                else {
-                    self.parse_number_decimal()
+                    // Parse just the 0
+                    _ => self.parse_number_decimal(),
                 }
             }
             // Either date/time or number
@@ -380,8 +386,13 @@ where
                 self.reader.discard()?; // We consume the opening delimiter
                 self.parse_inline_table().map(RawValue::InlineTable)
             }
-            Some(char) => Err(ErrorKind::UnexpectedChar(char::from(char)).into()),
-            None => Err(ErrorKind::Eof.into()),
+            Some(ch) => Err(if is_toml_legal(&ch) {
+                ErrorKind::UnexpectedChar(char::from(ch))
+            } else {
+                ErrorKind::IllegalChar(char::from(ch))
+            }
+            .into()),
+            None => Err(ErrorKind::UnexpectedEof.into()),
         }
     }
 
@@ -404,9 +415,7 @@ where
     }
 
     fn parse_basic_str(&mut self) -> Result<Cow<'de, str>> {
-        let mut str = self
-            .reader
-            .next_str_while(TomlChar::is_basic_str_sans_escapes)?;
+        let mut str = self.reader.next_str_while(is_toml_basic_str_sans_escapes)?;
 
         loop {
             match self.reader.next()? {
@@ -425,11 +434,8 @@ where
                 }
             }
 
-            str.to_mut().push_str(
-                &self
-                    .reader
-                    .next_str_while(TomlChar::is_basic_str_sans_escapes)?,
-            );
+            str.to_mut()
+                .push_str(&self.reader.next_str_while(is_toml_basic_str_sans_escapes)?);
         }
     }
 
@@ -439,26 +445,26 @@ where
 
         let mut str = self
             .reader
-            .next_str_while(TomlChar::is_multiline_basic_str_sans_escapes)?;
+            .next_str_while(is_toml_multiline_basic_str_sans_escapes)?;
 
         loop {
             match self.reader.next()? {
                 Some(b'\\') => {
                     // Trailing '\' means eat all whitespace and newlines
                     if self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")? {
-                        self.reader.next_while(TomlChar::is_whitespace_or_newline)?;
+                        self.reader.next_while(is_toml_whitespace_or_newline)?;
                     }
-                    // If there's a space after the '\' we assume a trailing '\' with trailing
-                    // whitespace, but we need to verify that's the case by checking for a newline
-                    else if let Some(char) = self.reader.next_if(TomlChar::is_whitespace)? {
-                        self.reader.next_while(TomlChar::is_whitespace)?;
+                    // If there's space after the \ we assume a trailing \ with trailing whitespace,
+                    // but we need to verify there's only whitespace chars before the next newline
+                    else if let Some(char) = self.reader.next_if(is_toml_whitespace)? {
+                        self.reader.next_while(is_toml_whitespace)?;
                         if !(self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?) {
                             return Err(ErrorKind::InvalidEscape(
                                 format!("{:?}", char::from(char)).into(),
                             )
                             .into());
                         }
-                        self.reader.next_while(TomlChar::is_whitespace_or_newline)?;
+                        self.reader.next_while(is_toml_whitespace_or_newline)?;
                     } else {
                         // Parse a regular escape sequence and continue
                         str.to_mut().push(self.parse_escape_seq()?);
@@ -493,13 +499,13 @@ where
             str.to_mut().push_str(
                 &self
                     .reader
-                    .next_str_while(TomlChar::is_multiline_basic_str_sans_escapes)?,
+                    .next_str_while(is_toml_multiline_basic_str_sans_escapes)?,
             );
         }
     }
 
     fn parse_literal_str(&mut self) -> Result<Cow<'de, str>> {
-        let str = self.reader.next_str_while(TomlChar::is_literal_str)?;
+        let str = self.reader.next_str_while(is_toml_literal_str)?;
 
         match self.reader.next()? {
             Some(b'\'') => Ok(str),
@@ -512,9 +518,7 @@ where
         // Newlines after the first ''' are ignored
         let _ = self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?;
 
-        let mut str = self
-            .reader
-            .next_str_while(TomlChar::is_multiline_literal_str)?;
+        let mut str = self.reader.next_str_while(is_toml_multiline_literal_str)?;
 
         loop {
             match self.reader.next()? {
@@ -544,11 +548,8 @@ where
                 Some(char) => break Err(ErrorKind::IllegalChar(char::from(char)).into()),
             }
 
-            str.to_mut().push_str(
-                &self
-                    .reader
-                    .next_str_while(TomlChar::is_multiline_literal_str)?,
-            );
+            str.to_mut()
+                .push_str(&self.reader.next_str_while(is_toml_multiline_literal_str)?);
         }
     }
 
@@ -609,7 +610,7 @@ where
     fn parse_bool(&mut self) -> Result<bool> {
         // Match against the whole word, don't just parse the first n characters so we don't
         // successfully parse e.g. true92864yhowkalgp98y
-        let word = self.reader.next_while(TomlChar::is_word)?;
+        let word = self.reader.next_while(is_toml_word)?;
         let result = match word.as_ref() {
             b"true" => Ok(true),
             b"false" => Ok(false),
@@ -636,7 +637,7 @@ where
             };
             if !have_time {
                 // Check we're at the end of the value (i.e. no trailing invalid chars)
-                if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
+                if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
@@ -650,7 +651,7 @@ where
             let have_offset = matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'));
             if !have_offset {
                 // Check we're at the end of the value (i.e. no trailing invalid chars)
-                if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
+                if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
@@ -660,7 +661,7 @@ where
             self.check_offset()?;
 
             // Check we're at the end of the value (i.e. no trailing invalid chars)
-            if self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word) {
+            if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
@@ -673,7 +674,7 @@ where
             // Check for bogus offset (offset time is not a thing in TOML)
             // Check we're at the end of the value (i.e. no trailing invalid chars)
             if matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'))
-                || self.reader.peek()?.as_ref().is_some_and(TomlChar::is_word)
+                || self.reader.peek()?.as_ref().is_some_and(is_toml_word)
             {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
@@ -766,45 +767,39 @@ where
     fn parse_number_radix(&mut self) -> Result<RawValue<'de>> {
         if self.reader.eat_str(b"0x")? {
             Ok(RawValue::HexInt(
-                self.reader
-                    .next_while(TomlChar::is_word)
-                    .and_then(|bytes| {
-                        bytes
-                            .iter()
-                            .all(|byte| byte.is_ascii_hexdigit() || *byte == b'_')
-                            .then_some(bytes)
-                            .ok_or_else(|| {
-                                ErrorKind::InvalidNumber("invalid hexadecimal digit".into()).into()
-                            })
-                    })?,
+                self.reader.next_while(is_toml_word).and_then(|bytes| {
+                    bytes
+                        .iter()
+                        .all(|byte| byte.is_ascii_hexdigit() || *byte == b'_')
+                        .then_some(bytes)
+                        .ok_or_else(|| {
+                            ErrorKind::InvalidNumber("invalid hexadecimal digit".into()).into()
+                        })
+                })?,
             ))
         } else if self.reader.eat_str(b"0o")? {
             Ok(RawValue::OctalInt(
-                self.reader
-                    .next_while(TomlChar::is_word)
-                    .and_then(|bytes| {
-                        bytes
-                            .iter()
-                            .all(|&b| matches!(b, b'0'..=b'7' | b'_'))
-                            .then_some(bytes)
-                            .ok_or_else(|| {
-                                ErrorKind::InvalidNumber("invalid octal digit".into()).into()
-                            })
-                    })?,
+                self.reader.next_while(is_toml_word).and_then(|bytes| {
+                    bytes
+                        .iter()
+                        .all(|&b| matches!(b, b'0'..=b'7' | b'_'))
+                        .then_some(bytes)
+                        .ok_or_else(|| {
+                            ErrorKind::InvalidNumber("invalid octal digit".into()).into()
+                        })
+                })?,
             ))
         } else if self.reader.eat_str(b"0b")? {
             Ok(RawValue::BinaryInt(
-                self.reader
-                    .next_while(TomlChar::is_word)
-                    .and_then(|bytes| {
-                        bytes
-                            .iter()
-                            .all(|&b| matches!(b, b'0' | b'1' | b'_'))
-                            .then_some(bytes)
-                            .ok_or_else(|| {
-                                ErrorKind::InvalidNumber("invalid binary digit".into()).into()
-                            })
-                    })?,
+                self.reader.next_while(is_toml_word).and_then(|bytes| {
+                    bytes
+                        .iter()
+                        .all(|&b| matches!(b, b'0' | b'1' | b'_'))
+                        .then_some(bytes)
+                        .ok_or_else(|| {
+                            ErrorKind::InvalidNumber("invalid binary digit".into()).into()
+                        })
+                })?,
             ))
         } else {
             Err(ErrorKind::Expected("number with radix".into()).into())
@@ -817,7 +812,7 @@ where
         match self.reader.peek()? {
             Some(b'+') => {
                 self.reader.discard()?;
-                match self.reader.next_while(TomlChar::is_word)?.as_ref() {
+                match self.reader.next_while(is_toml_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::Infinity),
                     b"nan" => Ok(SpecialFloat::Nan),
                     _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
@@ -825,13 +820,13 @@ where
             }
             Some(b'-') => {
                 self.reader.discard()?;
-                match self.reader.next_while(TomlChar::is_word)?.as_ref() {
+                match self.reader.next_while(is_toml_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::NegInfinity),
                     b"nan" => Ok(SpecialFloat::NegNan),
                     _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
                 }
             }
-            _ => match self.reader.next_while(TomlChar::is_word)?.as_ref() {
+            _ => match self.reader.next_while(is_toml_word)?.as_ref() {
                 b"inf" => Ok(SpecialFloat::Infinity),
                 b"nan" => Ok(SpecialFloat::Nan),
                 _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
@@ -1014,7 +1009,7 @@ where
     }
 
     fn skip_whitespace(&mut self) -> Result<()> {
-        while self.reader.next_if(TomlChar::is_whitespace)?.is_some() {}
+        while self.reader.next_if(is_toml_whitespace)?.is_some() {}
         Ok(())
     }
 
@@ -1029,7 +1024,7 @@ where
                 // Trim trailing \r (since \r\n is valid)
                 let comment = comment.strip_suffix('\r').unwrap_or(&comment);
                 // Check for any invalid characters in the comment
-                if let Some(ch) = comment.bytes().find(|c| !c.is_comment()) {
+                if let Some(ch) = comment.bytes().find(|c| !is_toml_comment(c)) {
                     return Err(ErrorKind::IllegalChar(char::from(ch)).into());
                 }
             }
@@ -1202,982 +1197,56 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
     }
 }
 
-trait TomlChar {
-    fn is_whitespace(&self) -> bool;
-    fn is_whitespace_or_newline(&self) -> bool;
-    fn is_word(&self) -> bool;
-    fn is_comment(&self) -> bool;
-    fn is_basic_str_sans_escapes(&self) -> bool;
-    fn is_multiline_basic_str_sans_escapes(&self) -> bool;
-    fn is_literal_str(&self) -> bool;
-    fn is_multiline_literal_str(&self) -> bool;
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_whitespace(char: &u8) -> bool {
+    matches!(*char, b'\t' | b' ')
 }
 
-impl TomlChar for u8 {
-    fn is_whitespace(&self) -> bool {
-        matches!(*self, b'\t' | b' ')
-    }
-
-    fn is_whitespace_or_newline(&self) -> bool {
-        matches!(*self, b'\t' | b' ' | b'\r' | b'\n')
-    }
-
-    fn is_word(&self) -> bool {
-        matches!(*self, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
-    }
-
-    fn is_comment(&self) -> bool {
-        // Disallow ASCII control chars except tab (0x09)
-        matches!(*self, 0x09 | 0x20..=0x7e | 0x80..)
-    }
-
-    fn is_basic_str_sans_escapes(&self) -> bool {
-        // Disallow ASCII control chars except tab (0x09), the delimiter '"' (0x22), and escape
-        // char '\' (0x5c)
-        matches!(*self, 0x09 | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
-    }
-
-    fn is_multiline_basic_str_sans_escapes(&self) -> bool {
-        // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), the delimiter '"' (0x22),
-        // and escape char '\' (0x5c)
-        matches!(*self, 0x09 | 0x0a | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
-    }
-
-    fn is_literal_str(&self) -> bool {
-        // Disallow ASCII control chars except tab (0x09), and the delimiter '\'' (0x27)
-        matches!(*self, 0x09 | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
-    }
-
-    fn is_multiline_literal_str(&self) -> bool {
-        // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), and the delimiter '\''
-        // (0x27)
-        matches!(*self, 0x09 | 0x0a | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
-    }
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_whitespace_or_newline(char: &u8) -> bool {
+    matches!(*char, b'\t' | b' ' | b'\r' | b'\n')
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use maplit::hashmap;
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_word(char: &u8) -> bool {
+    matches!(*char, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
+}
 
-//     use super::*;
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_comment(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09)
+    matches!(*char, 0x09 | 0x20..=0x7e | 0x80..)
+}
 
-//     #[test]
-//     #[allow(clippy::too_many_lines)]
-//     fn test_datetime() {
-//         let value = Parser::from_str(
-//             r#"
-// space = 1987-07-05 17:45:00Z
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_basic_str_sans_escapes(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09), the delimiter '"' (0x22), and escape
+    // char '\' (0x5c)
+    matches!(*char, 0x09 | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
+}
 
-// # ABNF is case-insensitive, both "Z" and "z" must be supported.
-// lower = 1987-07-05t17:45:00z
-// "#,
-//         )
-//         .parse()
-//         .unwrap();
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_multiline_basic_str_sans_escapes(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), the delimiter '"' (0x22),
+    // and escape char '\' (0x5c)
+    matches!(*char, 0x09 | 0x0a | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
+}
 
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "space".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "lower".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//             })
-//         );
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_literal_str(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09), and the delimiter '\'' (0x27)
+    matches!(*char, 0x09 | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
+}
 
-//         let value = Parser::from_str(
-//             r"
-// first-offset = 0001-01-01 00:00:00Z
-// first-local  = 0001-01-01 00:00:00
-// first-date   = 0001-01-01
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_multiline_literal_str(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), and the delimiter '\''
+    // (0x27)
+    matches!(*char, 0x09 | 0x0a | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
+}
 
-// last-offset = 9999-12-31 23:59:59Z
-// last-local  = 9999-12-31 23:59:59
-// last-date   = 9999-12-31
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "first-offset".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1,
-//                         month: 1,
-//                         day: 1,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 0,
-//                         minute: 0,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "first-local".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1,
-//                         month: 1,
-//                         day: 1,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 0,
-//                         minute: 0,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "first-date".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1,
-//                         month: 1,
-//                         day: 1,
-//                     }),
-//                     time: None,
-//                     offset: None,
-//                 }),
-//                 "last-offset".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 9999,
-//                         month: 12,
-//                         day: 31,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 23,
-//                         minute: 59,
-//                         second: 59,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "last-local".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 9999,
-//                         month: 12,
-//                         day: 31,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 23,
-//                         minute: 59,
-//                         second: 59,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "last-date".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 9999,
-//                         month: 12,
-//                         day: 31,
-//                     }),
-//                     time: None,
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// 2000-datetime       = 2000-02-29 15:15:15Z
-// 2000-datetime-local = 2000-02-29 15:15:15
-// 2000-date           = 2000-02-29
-
-// 2024-datetime       = 2024-02-29 15:15:15Z
-// 2024-datetime-local = 2024-02-29 15:15:15
-// 2024-date           = 2024-02-29
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "2000-datetime".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2000,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 15,
-//                         minute: 15,
-//                         second: 15,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "2000-datetime-local".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2000,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 15,
-//                         minute: 15,
-//                         second: 15,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "2000-date".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2000,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: None,
-//                     offset: None,
-//                 }),
-//                 "2024-datetime".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2024,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 15,
-//                         minute: 15,
-//                         second: 15,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "2024-datetime-local".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2024,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 15,
-//                         minute: 15,
-//                         second: 15,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "2024-date".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 2024,
-//                         month: 2,
-//                         day: 29,
-//                     }),
-//                     time: None,
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str("bestdayever = 1987-07-05")
-//             .parse()
-//             .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "bestdayever".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: None,
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// besttimeever = 17:45:00
-// milliseconds = 10:32:00.555
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "besttimeever".into() => RawValue::Datetime(Datetime {
-//                     date: None,
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "milliseconds".into() => RawValue::Datetime(Datetime {
-//                     date: None,
-//                     time: Some(Time {
-//                         hour: 10,
-//                         minute: 32,
-//                         second: 0,
-//                         nanosecond: 555_000_000,
-//                     }),
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// local = 1987-07-05T17:45:00
-// milli = 1977-12-21T10:32:00.555
-// space = 1987-07-05 17:45:00
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "local".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "milli".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1977,
-//                         month: 12,
-//                         day: 21,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 10,
-//                         minute: 32,
-//                         second: 0,
-//                         nanosecond: 555_000_000,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "space".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// utc1  = 1987-07-05T17:45:56.123Z
-// utc2  = 1987-07-05T17:45:56.6Z
-// wita1 = 1987-07-05T17:45:56.123+08:00
-// wita2 = 1987-07-05T17:45:56.6+08:00
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "utc1".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 123_000_000,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "utc2".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 600_000_000,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "wita1".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 123_000_000,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: 8,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//                 "wita2".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 600_000_000,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: 8,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// # Seconds are optional in date-time and time.
-// without-seconds-1 = 13:37
-// without-seconds-2 = 1979-05-27 07:32Z
-// without-seconds-3 = 1979-05-27 07:32-07:00
-// without-seconds-4 = 1979-05-27T07:32
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "without-seconds-1".into() => RawValue::Datetime(Datetime {
-//                     date: None,
-//                     time: Some(Time {
-//                         hour: 13,
-//                         minute: 37,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//                 "without-seconds-2".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1979,
-//                         month: 5,
-//                         day: 27,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 7,
-//                         minute: 32,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "without-seconds-3".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1979,
-//                         month: 5,
-//                         day: 27,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 7,
-//                         minute: 32,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: -7,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//                 "without-seconds-4".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1979,
-//                         month: 5,
-//                         day: 27,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 7,
-//                         minute: 32,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: None,
-//                 }),
-//             })
-//         );
-
-//         let value = Parser::from_str(
-//             r"
-// utc  = 1987-07-05T17:45:56Z
-// pdt  = 1987-07-05T17:45:56-05:00
-// nzst = 1987-07-05T17:45:56+12:00
-// nzdt = 1987-07-05T17:45:56+13:00  # DST
-// ",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "utc".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "pdt".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: -5,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//                 "nzst".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: 12,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//                 "nzdt".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 56,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Custom {
-//                         hours: 13,
-//                         minutes: 0,
-//                     }),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_empty() {
-//         let value = Parser::from_str("").parse().unwrap();
-
-//         assert_eq!(value, RawValue::Table(hashmap! {}));
-//     }
-
-//     #[test]
-//     fn test_example() {
-//         let value = Parser::from_str(
-//             r"
-// best-day-ever = 1987-07-05T17:45:00Z
-
-// [numtheory]
-// boring = false
-// perfection = [6, 28, 496]",
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "best-day-ever".into() => RawValue::Datetime(Datetime {
-//                     date: Some(Date {
-//                         year: 1987,
-//                         month: 7,
-//                         day: 5,
-//                     }),
-//                     time: Some(Time {
-//                         hour: 17,
-//                         minute: 45,
-//                         second: 0,
-//                         nanosecond: 0,
-//                     }),
-//                     offset: Some(Offset::Z),
-//                 }),
-//                 "numtheory".into() => RawValue::Table(hashmap! {
-//                     "boring".into() => RawValue::Boolean(false),
-//                     "perfection".into() => RawValue::Array(vec![
-//                         RawValue::Integer(b"6".into()),
-//                         RawValue::Integer(b"28".into()),
-//                         RawValue::Integer(b"496".into()),
-//                     ]),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_implicit_and_explicit_after() {
-//         let value = Parser::from_str("[a.b.c]\nanswer = 42\n\n[a]\nbetter = 43\n")
-//             .parse()
-//             .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "a".into() => RawValue::Table(hashmap! {
-//                     "b".into() => RawValue::UndefinedTable(hashmap! {
-//                         "c".into() => RawValue::Table(hashmap! {
-//                             "answer".into() => RawValue::Integer(b"42".into()),
-//                         }),
-//                     }),
-//                     "better".into() => RawValue::Integer(b"43".into()),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_implicit_and_explicit_before() {
-//         let value = Parser::from_str("[a]\nbetter = 43\n\n[a.b.c]\nanswer = 42\n")
-//             .parse()
-//             .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "a".into() => RawValue::Table(hashmap! {
-//                     "better".into() => RawValue::Integer(b"43".into()),
-//                     "b".into() => RawValue::UndefinedTable(hashmap! {
-//                         "c".into() => RawValue::Table(hashmap! {
-//                             "answer".into() => RawValue::Integer(b"42".into()),
-//                         }),
-//                     }),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_implicit_groups() {
-//         let value = Parser::from_str("[a.b.c]\nanswer = 42\n").parse().unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "a".into() => RawValue::UndefinedTable(hashmap! {
-//                     "b".into() => RawValue::UndefinedTable(hashmap! {
-//                         "c".into() => RawValue::Table(hashmap! {
-//                             "answer".into() => RawValue::Integer(b"42".into()),
-//                         }),
-//                     }),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_newline_crlf() {
-//         let value = Parser::from_str("os = \"DOS\"\r\nnewline = \"crlf\"\r\n")
-//             .parse()
-//             .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "os".into() => RawValue::String("DOS".into()),
-//                 "newline".into() => RawValue::String("crlf".into()),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_newline_lf() {
-//         let value = Parser::from_str("os = \"unix\"\nnewline = \"lf\"\n")
-//             .parse()
-//             .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "os".into() => RawValue::String("unix".into()),
-//                 "newline".into() => RawValue::String("lf".into()),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_example_1_compact() {
-//         let value = Parser::from_str(
-//             r#"#Useless spaces eliminated.
-// title="TOML Example"
-// [owner]
-// name="Lance Uppercut"
-// dob=1979-05-27T07:32:00-08:00#First class dates
-// [database]
-// server="192.168.1.1"
-// ports=[8001,8001,8002]
-// connection_max=5000
-// enabled=true
-// [servers]
-// [servers.alpha]
-// ip="10.0.0.1"
-// dc="eqdc10"
-// [servers.beta]
-// ip="10.0.0.2"
-// dc="eqdc10"
-// [clients]
-// data=[["gamma","delta"],[1,2]]
-// hosts=[
-// "alpha",
-// "omega"
-// ]"#,
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "title".into() => RawValue::String("TOML Example".into()),
-//                 "owner".into() => RawValue::Table(hashmap! {
-//                     "name".into() => RawValue::String("Lance Uppercut".into()),
-//                     "dob".into() => RawValue::Datetime(Datetime {
-//                         date: Some(Date {
-//                             year: 1979,
-//                             month: 5,
-//                             day: 27,
-//                         }),
-//                         time: Some(Time {
-//                             hour: 7,
-//                             minute: 32,
-//                             second: 0,
-//                             nanosecond: 0,
-//                         }),
-//                         offset: Some(Offset::Custom {
-//                             hours: -8,
-//                             minutes: 0,
-//                         }),
-//                     }),
-//                 }),
-//                 "database".into() => RawValue::Table(hashmap! {
-//                     "server".into() => RawValue::String("192.168.1.1".into()),
-//                     "ports".into() => RawValue::Array(vec![
-//                         RawValue::Integer(b"8001".into()),
-//                         RawValue::Integer(b"8001".into()),
-//                         RawValue::Integer(b"8002".into()),
-//                     ]),
-//                     "connection_max".into() => RawValue::Integer(b"5000".into()),
-//                     "enabled".into() => RawValue::Boolean(true),
-//                 }),
-//                 "servers".into() => RawValue::Table(hashmap! {
-//                     "alpha".into() => RawValue::Table(hashmap! {
-//                         "ip".into() => RawValue::String("10.0.0.1".into()),
-//                         "dc".into() => RawValue::String("eqdc10".into()),
-//                     }),
-//                     "beta".into() => RawValue::Table(hashmap! {
-//                         "ip".into() => RawValue::String("10.0.0.2".into()),
-//                         "dc".into() => RawValue::String("eqdc10".into()),
-//                     }),
-//                 }),
-//                 "clients".into() => RawValue::Table(hashmap! {
-//                     "data".into() => RawValue::Array(vec![
-//                         RawValue::Array(vec![RawValue::String("gamma".into()), RawValue::String("delta".into())]),
-//                         RawValue::Array(vec![RawValue::Integer(b"1".into()), RawValue::Integer(b"2".into())]),
-//                     ]),
-//                     "hosts".into() => RawValue::Array(vec![RawValue::String("alpha".into()), RawValue::String("omega".into())]),
-//                 }),
-//             })
-//         );
-//     }
-
-//     #[test]
-//     fn test_example_1() {
-//         let value = Parser::from_str(
-//             r#"
-// # This is a TOML document. Boom.
-
-// title = "TOML Example"
-
-// [owner]
-// name = "Lance Uppercut"
-// dob = 1979-05-27T07:32:00-08:00 # First class dates? Why not?
-
-// [database]
-// server = "192.168.1.1"
-// ports = [ 8001, 8001, 8002 ]
-// connection_max = 5000
-// enabled = true
-
-// [servers]
-
-//   # You can indent as you please. Tabs or spaces. TOML don't care.
-//   [servers.alpha]
-//   ip = "10.0.0.1"
-//   dc = "eqdc10"
-
-//   [servers.beta]
-//   ip = "10.0.0.2"
-//   dc = "eqdc10"
-
-// [clients]
-// data = [ ["gamma", "delta"], [1, 2] ]
-
-// # Line breaks are OK when inside arrays
-// hosts = [
-//   "alpha",
-//   "omega"
-// ]
-//         "#,
-//         )
-//         .parse()
-//         .unwrap();
-
-//         assert_eq!(
-//             value,
-//             RawValue::Table(hashmap! {
-//                 "title".into() => RawValue::String("TOML Example".into()),
-//                 "owner".into() => RawValue::Table(hashmap! {
-//                     "name".into() => RawValue::String("Lance Uppercut".into()),
-//                     "dob".into() => RawValue::Datetime(Datetime {
-//                         date: Some(Date {
-//                             year: 1979,
-//                             month: 5,
-//                             day: 27,
-//                         }),
-//                         time: Some(Time {
-//                             hour: 7,
-//                             minute: 32,
-//                             second: 0,
-//                             nanosecond: 0,
-//                         }),
-//                         offset: Some(Offset::Custom {
-//                             hours: -8,
-//                             minutes: 0,
-//                         }),
-//                     }),
-//                 }),
-//                 "database".into() => RawValue::Table(hashmap! {
-//                     "server".into() => RawValue::String("192.168.1.1".into()),
-//                     "ports".into() => RawValue::Array(vec![
-//                         RawValue::Integer(b"8001".into()),
-//                         RawValue::Integer(b"8001".into()),
-//                         RawValue::Integer(b"8002".into()),
-//                     ]),
-//                     "connection_max".into() => RawValue::Integer(b"5000".into()),
-//                     "enabled".into() => RawValue::Boolean(true),
-//                 }),
-//                 "servers".into() => RawValue::Table(hashmap! {
-//                     "alpha".into() => RawValue::Table(hashmap! {
-//                         "ip".into() => RawValue::String("10.0.0.1".into()),
-//                         "dc".into() => RawValue::String("eqdc10".into()),
-//                     }),
-//                     "beta".into() => RawValue::Table(hashmap! {
-//                         "ip".into() => RawValue::String("10.0.0.2".into()),
-//                         "dc".into() => RawValue::String("eqdc10".into()),
-//                     }),
-//                 }),
-//                 "clients".into() => RawValue::Table(hashmap! {
-//                     "data".into() => RawValue::Array(vec![
-//                         RawValue::Array(vec![RawValue::String("gamma".into()), RawValue::String("delta".into())]),
-//                         RawValue::Array(vec![RawValue::Integer(b"1".into()), RawValue::Integer(b"2".into())]),
-//                     ]),
-//                     "hosts".into() => RawValue::Array(vec![RawValue::String("alpha".into()), RawValue::String("omega".into())]),
-//                 }),
-//             })
-//         );
-//     }
-
-//     //     #[test]
-//     //     fn test_test() {
-//     //         Parser::from_str(
-//     //             r#"[[a]]
-//     //     [[a.b]]
-//     //         [a.b.c]
-//     //             d = "val0"
-//     //     [[a.b]]
-//     //         [a.b.c]
-//     //             d = "val1"
-//     // "#,
-//     //         )
-//     //         .parse()
-//     //         .unwrap();
-//     //     }
-// }
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+const fn is_toml_legal(char: &u8) -> bool {
+    // Disallow ASCII control chars except tab (0x09), carriage return (0x0d) and newline (0x0a)
+    matches!(*char, 0x09 | 0x0a | 0x0d | 0x20..=0x7e | 0x80..)
+}

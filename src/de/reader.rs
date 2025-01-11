@@ -14,23 +14,14 @@ pub trait Reader<'a>: private::Sealed {
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn next(&mut self) -> Result<Option<u8>> {
-        Ok(self.next_array::<1>()?.map(|bytes| bytes[0]))
-    }
+    fn next(&mut self) -> Result<Option<u8>>;
 
     /// Gets `N` bytes from the source. If the end of the source is reached, returns `Ok(None)`.
     ///
     /// # Errors
     ///
     /// Propagates any IO errors that occurred while reading from the source.
-    fn next_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>> {
-        Ok(if let result @ Some(_) = self.peek_array::<N>()? {
-            self.discard_array::<N>()?;
-            result
-        } else {
-            None
-        })
-    }
+    fn next_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>>;
 
     /// Peeks the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
@@ -38,9 +29,7 @@ pub trait Reader<'a>: private::Sealed {
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek(&mut self) -> Result<Option<u8>> {
-        Ok(self.peek_array::<1>()?.map(|bytes| bytes[0]))
-    }
+    fn peek(&mut self) -> Result<Option<u8>>;
 
     /// Peeks the next `N` bytes from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
@@ -66,7 +55,7 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     fn discard(&mut self) -> Result<()> {
-        self.discard_array::<1>()
+        self.discard_n(1)
     }
 
     /// Discards `N` bytes from the source.
@@ -94,12 +83,10 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     fn next_if(&mut self, func: impl FnOnce(&u8) -> bool) -> Result<Option<u8>> {
-        Ok(if let result @ Some(_) = self.peek()?.filter(func) {
-            self.discard()?;
-            result
-        } else {
-            None
-        })
+        match self.peek()? {
+            Some(ch) if func(&ch) => self.discard().map(|()| Some(ch)),
+            _ => Ok(None),
+        }
     }
 
     /// Gets a slice of bytes from the stream where the closure returns `true`. Returns an empty
@@ -201,6 +188,14 @@ impl<'a> StrReader<'a> {
 impl private::Sealed for StrReader<'_> {}
 
 impl<'a> Reader<'a> for StrReader<'a> {
+    fn next(&mut self) -> Result<Option<u8>> {
+        Ok(self.peek()?.inspect(|_| self.offset += 1))
+    }
+
+    fn next_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>> {
+        Ok(self.peek_array::<N>()?.inspect(|_| self.offset += N))
+    }
+
     fn peek(&mut self) -> Result<Option<u8>> {
         Ok(self.bytes.get(self.offset).copied())
     }
