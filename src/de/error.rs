@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use serde::{de, ser};
+use serde::de;
 
 /// Type alias for [`std::result::Result`] using [`Error`] for its error type
 pub type Result<T> = std::result::Result<T, Error>;
@@ -37,14 +37,55 @@ impl de::Error for Error {
     {
         ErrorKind::Custom(msg.to_string().into_boxed_str()).into()
     }
-}
 
-impl ser::Error for Error {
-    fn custom<T>(msg: T) -> Self
-    where
-        T: fmt::Display,
-    {
-        ErrorKind::Custom(msg.to_string().into_boxed_str()).into()
+    fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
+        ErrorKind::InvalidType(
+            unexp.to_string().into_boxed_str(),
+            exp.to_string().into_boxed_str(),
+        )
+        .into()
+    }
+
+    fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
+        ErrorKind::InvalidValue(
+            unexp.to_string().into_boxed_str(),
+            exp.to_string().into_boxed_str(),
+        )
+        .into()
+    }
+
+    fn invalid_length(len: usize, exp: &dyn de::Expected) -> Self {
+        ErrorKind::InvalidLength(len, exp.to_string().into_boxed_str()).into()
+    }
+
+    fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
+        let expected = match *expected {
+            [] => "no variant".into(),
+            [variant] => variant.into(),
+            [first, last] => format!("{first} or {last}").into(),
+            [ref rest @ .., last] => format!("{rest} or, {last}", rest = rest.join(", ")).into(),
+        };
+
+        ErrorKind::UnknownVariant(variant.into(), expected).into()
+    }
+
+    fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
+        let expected = match *expected {
+            [] => "no variant".into(),
+            [variant] => variant.into(),
+            [first, last] => format!("{first} or {last}").into(),
+            [ref rest @ .., last] => format!("{rest} or, {last}", rest = rest.join(", ")).into(),
+        };
+
+        ErrorKind::UnknownField(field.into(), expected).into()
+    }
+
+    fn missing_field(field: &'static str) -> Self {
+        ErrorKind::MissingField(field).into()
+    }
+
+    fn duplicate_field(field: &'static str) -> Self {
+        ErrorKind::DuplicateField(field).into()
     }
 }
 
@@ -68,12 +109,13 @@ impl fmt::Display for ErrorImpl {
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    // Parser errors
     /// File is not UTF-8 encoded
     InvalidEncoding,
     /// End of file
-    Eof,
-    /// Illegal character (in a string)
-    IllegalChar(char),
+    UnexpectedEof,
+    /// Illegal control character
+    IllegalChar(u8),
     /// Unterminated string
     UnterminatedString,
     /// Invalid escape sequence
@@ -83,8 +125,7 @@ pub enum ErrorKind {
     /// Invalid datetime
     InvalidDatetime,
     /// Unexpected token
-    Expected(Box<str>),
-
+    ExpectedToken(Box<str>),
     /// Duplicate key
     DuplicateKey(Box<str>, Box<str>),
     /// Invalid table header
@@ -92,11 +133,25 @@ pub enum ErrorKind {
     /// Invalid key path
     InvalidKeyPath(Box<str>, Box<str>),
 
-    /// Unexpected character
-    UnexpectedChar(char),
+    // Serde errors
+    /// Invalid type (unexpected, expected)
+    InvalidType(Box<str>, Box<str>),
+    /// Invalid value (unexpected, expected)
+    InvalidValue(Box<str>, Box<str>),
+    /// Invalid length (length, expected)
+    InvalidLength(usize, Box<str>),
+    /// Unknown variant (variant, expected)
+    UnknownVariant(Box<str>, Box<str>),
+    /// Unknown field (field, expected)
+    UnknownField(Box<str>, Box<str>),
+    /// Missing field (field)
+    MissingField(&'static str),
+    /// Duplicate field (field)
+    DuplicateField(&'static str),
 
-    // /// IO Error
-    // Io(std::io::Error),
+    // Misc
+    /// IO Error
+    Io(std::io::Error),
     /// Custom error message
     Custom(Box<str>),
 }
@@ -109,21 +164,30 @@ impl From<ErrorKind> for Error {
 
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[allow(clippy::enum_glob_use)] // Just for match
+        use ErrorKind::*;
+
         match *self {
-            Self::InvalidEncoding => f.write_str("file is not valid UTF-8"),
-            Self::Eof => f.write_str("unexpected end of file"),
-            Self::IllegalChar(char) => write!(f, "illegal character: {char:?}"),
-            Self::UnterminatedString => f.write_str("unterminated string"),
-            Self::InvalidEscape(ref seq) => write!(f, "invalid escape sequence: {seq}"),
-            Self::InvalidNumber(ref error) => write!(f, "invalid integer: {error}"),
-            Self::InvalidDatetime => f.write_str("invalid datetime"),
-            Self::Expected(ref token) => write!(f, "expected a {token}"),
-            Self::DuplicateKey(ref key, ref table) => write!(f, "duplicate key: {key} in {table}"),
-            Self::InvalidTableHeader(ref key) => write!(f, "invalid table header: {key}"),
-            Self::InvalidKeyPath(ref key, ref table) => write!(f, "invalid key: {key} in {table}"),
-            Self::UnexpectedChar(ch) => write!(f, "unexpected character: {ch}"),
-            // Self::Io(ref io_error) => write!(f, "IO error: {io_error}"),
-            Self::Custom(ref msg) => f.write_str(msg),
+            InvalidEncoding => write!(f, "file contains invalid UTF-8 bytes"),
+            UnexpectedEof => write!(f, "unexpected end of file"),
+            IllegalChar(ch) => write!(f, "illegal character: {:?}", char::from(ch)),
+            UnterminatedString => write!(f, "unterminated string"),
+            InvalidEscape(ref seq) => write!(f, "invalid escape sequence: {seq}"),
+            InvalidNumber(ref error) => write!(f, "invalid integer: {error}"),
+            InvalidDatetime => write!(f, "invalid datetime"),
+            ExpectedToken(ref token) => write!(f, "expected {token}"),
+            DuplicateKey(ref key, ref table) => write!(f, "duplicate key: {key} in {table}"),
+            InvalidTableHeader(ref key) => write!(f, "invalid table header: {key}"),
+            InvalidKeyPath(ref key, ref table) => write!(f, "invalid key: {key} in {table}"),
+            InvalidType(ref unexp, ref exp) => write!(f, "invalid type: {unexp}, expected {exp}"),
+            InvalidValue(ref unexp, ref exp) => write!(f, "invalid value: {unexp}, expected {exp}"),
+            InvalidLength(len, ref exp) => write!(f, "invalid length: {len}, expected {exp}"),
+            UnknownVariant(ref var, ref exp) => write!(f, "unknown variant: {var}, expected {exp}"),
+            UnknownField(ref fld, ref exp) => write!(f, "unknown field: {fld}, expected {exp}"),
+            MissingField(fld) => write!(f, "missing field: {fld}"),
+            DuplicateField(fld) => write!(f, "duplicate field: {fld}"),
+            Io(ref io_error) => write!(f, "IO error: {io_error}"),
+            Custom(ref msg) => write!(f, "{msg}"),
         }
     }
 }

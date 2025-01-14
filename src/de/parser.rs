@@ -6,7 +6,7 @@ use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
 
 use super::error::{ErrorKind, Result};
-use super::{Reader, StrReader};
+use super::{Reader, SliceReader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpecialFloat {
@@ -122,19 +122,19 @@ pub(super) struct Parser<'de, R: Reader<'de>> {
     _phantom: PhantomData<&'de ()>,
 }
 
-impl<'de> Parser<'de, StrReader<'de>> {
+impl<'de> Parser<'de, SliceReader<'de>> {
     #[allow(clippy::should_implement_trait)]
     #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_str(str: &'de str) -> Self {
-        Self::from_reader(StrReader::from_str(str))
+        Self::from_reader(SliceReader::from_str(str))
     }
 
     #[allow(clippy::should_implement_trait)]
     #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
-        Self::from_reader(StrReader::from_slice(bytes))
+        Self::from_reader(SliceReader::from_slice(bytes))
     }
 }
 
@@ -220,9 +220,9 @@ where
             else if let Some(ch) = self.reader.peek()? {
                 self.reader.discard()?;
                 return Err(if is_toml_legal(&ch) {
-                    ErrorKind::UnexpectedChar(char::from(ch))
+                    ErrorKind::ExpectedToken("table header or key/value pair".into())
                 } else {
-                    ErrorKind::IllegalChar(char::from(ch))
+                    ErrorKind::IllegalChar(ch)
                 }
                 .into());
             }
@@ -239,9 +239,9 @@ where
                 }
                 Some(ch) => {
                     return Err(if is_toml_legal(&ch) {
-                        ErrorKind::UnexpectedChar(char::from(ch))
+                        ErrorKind::ExpectedToken("end of line".into())
                     } else {
-                        ErrorKind::IllegalChar(char::from(ch))
+                        ErrorKind::IllegalChar(ch)
                     }
                     .into());
                 }
@@ -260,7 +260,7 @@ where
         self.reader
             .eat_str(b"]]")?
             .then_some(key)
-            .ok_or_else(|| ErrorKind::Expected("]] after dotted key".into()).into())
+            .ok_or_else(|| ErrorKind::ExpectedToken("]] after dotted key".into()).into())
     }
 
     fn parse_table_header(&mut self) -> Result<Vec<Cow<'de, str>>> {
@@ -271,7 +271,7 @@ where
         self.reader
             .eat_char(b']')?
             .then_some(key)
-            .ok_or_else(|| ErrorKind::Expected("] after dotted key".into()).into())
+            .ok_or_else(|| ErrorKind::ExpectedToken("] after dotted key".into()).into())
     }
 
     fn parse_key_value_pair(&mut self) -> Result<(Vec<Cow<'de, str>>, RawValue<'de>)> {
@@ -279,7 +279,7 @@ where
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
         if !self.reader.eat_char(b'=')? {
-            return Err(ErrorKind::Expected("= after key".into()).into());
+            return Err(ErrorKind::ExpectedToken("= after key".into()).into());
         }
         self.skip_whitespace()?;
 
@@ -317,7 +317,7 @@ where
 
         (!key.is_empty())
             .then_some(key)
-            .ok_or_else(|| ErrorKind::Expected("key".into()).into())
+            .ok_or_else(|| ErrorKind::ExpectedToken("key".into()).into())
     }
 
     fn parse_value(&mut self) -> Result<RawValue<'de>> {
@@ -387,9 +387,9 @@ where
                 self.parse_inline_table().map(RawValue::InlineTable)
             }
             Some(ch) => Err(if is_toml_legal(&ch) {
-                ErrorKind::UnexpectedChar(char::from(ch))
+                ErrorKind::ExpectedToken("a value".into())
             } else {
-                ErrorKind::IllegalChar(char::from(ch))
+                ErrorKind::IllegalChar(ch)
             }
             .into()),
             None => Err(ErrorKind::UnexpectedEof.into()),
@@ -410,7 +410,7 @@ where
                 self.parse_literal_str()
             }
         } else {
-            Err(ErrorKind::Expected("string".into()).into())
+            Err(ErrorKind::ExpectedToken("string".into()).into())
         }
     }
 
@@ -430,7 +430,7 @@ where
                     break Err(ErrorKind::UnterminatedString.into());
                 }
                 Some(char) => {
-                    break Err(ErrorKind::IllegalChar(char::from(char)).into());
+                    break Err(ErrorKind::IllegalChar(char).into());
                 }
             }
 
@@ -493,7 +493,7 @@ where
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                     continue;
                 }
-                Some(char) => break Err(ErrorKind::IllegalChar(char::from(char)).into()),
+                Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
 
             str.to_mut().push_str(
@@ -510,7 +510,7 @@ where
         match self.reader.next()? {
             Some(b'\'') => Ok(str),
             None | Some(b'\r' | b'\n') => Err(ErrorKind::UnterminatedString.into()),
-            Some(char) => Err(ErrorKind::IllegalChar(char::from(char)).into()),
+            Some(char) => Err(ErrorKind::IllegalChar(char).into()),
         }
     }
 
@@ -545,7 +545,7 @@ where
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                     continue;
                 }
-                Some(char) => break Err(ErrorKind::IllegalChar(char::from(char)).into()),
+                Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
 
             str.to_mut()
@@ -581,10 +581,10 @@ where
                     .ok()
                     .and_then(char::from_u32)
                     .ok_or_else(|| {
-                        ErrorKind::InvalidEscape(
-                            format!("u{}", String::from_utf8_lossy(bytes.as_ref())).into(),
+                        str::from_utf8(bytes.as_ref()).map_or_else(
+                            |_| ErrorKind::InvalidEncoding.into(),
+                            |s| ErrorKind::InvalidEscape(format!("\\u{s}").into()).into(),
                         )
-                        .into()
                     })
             }
             b'U' => {
@@ -597,13 +597,39 @@ where
                     .ok()
                     .and_then(char::from_u32)
                     .ok_or_else(|| {
-                        ErrorKind::InvalidEscape(
-                            format!("U{}", String::from_utf8_lossy(bytes.as_ref())).into(),
+                        str::from_utf8(bytes.as_ref()).map_or_else(
+                            |_| ErrorKind::InvalidEncoding.into(),
+                            |s| ErrorKind::InvalidEscape(format!("\\u{s}").into()).into(),
                         )
-                        .into()
                     })
             }
-            _ => Err(ErrorKind::InvalidEscape(format!("{:?}", char::from(char)).into()).into()),
+            ch => {
+                // Since ch might not be a full UTF-8 code point, this will get the rest of the
+                // bytes and construct a char, or return None if there is invalid encoding.
+                fn get_utf8_char<'de, R: Reader<'de>>(c: u8, r: &mut R) -> Option<String> {
+                    match c {
+                        0x00..=0x7F => String::from_utf8(vec![b'\\', c]).ok(),
+                        0xC0..=0xDF => String::from_utf8(vec![b'\\', c, r.next().ok()??]).ok(),
+                        0xE0..=0xEF => {
+                            let mut result = Vec::with_capacity(4);
+                            result.extend_from_slice(&[b'\\', c]);
+                            result.extend(r.next_array::<2>().ok()??.as_ref());
+                            String::from_utf8(result).ok()
+                        }
+                        0xF0..=0xF7 => {
+                            let mut result = Vec::with_capacity(5);
+                            result.extend_from_slice(&[b'\\', c]);
+                            result.extend(r.next_array::<3>().ok()??.as_ref());
+                            String::from_utf8(result).ok()
+                        }
+                        _ => None,
+                    }
+                }
+                Err(get_utf8_char(ch, &mut self.reader).map_or_else(
+                    || ErrorKind::InvalidEncoding.into(),
+                    |utf8| ErrorKind::InvalidEscape(utf8.into()).into(),
+                ))
+            }
         }
     }
 
@@ -614,7 +640,7 @@ where
         let result = match word.as_ref() {
             b"true" => Ok(true),
             b"false" => Ok(false),
-            _ => Err(ErrorKind::Expected("true/false".into()).into()),
+            _ => Err(ErrorKind::ExpectedToken("true/false".into()).into()),
         };
         result
     }
@@ -683,7 +709,7 @@ where
         }
         // Any other number of digits is invalid
         else {
-            Err(ErrorKind::Expected("datetime".into()).into())
+            Err(ErrorKind::ExpectedToken("datetime".into()).into())
         }
     }
 
@@ -802,7 +828,7 @@ where
                 })?,
             ))
         } else {
-            Err(ErrorKind::Expected("number with radix".into()).into())
+            Err(ErrorKind::ExpectedToken("number with radix".into()).into())
         }
     }
 
@@ -815,7 +841,7 @@ where
                 match self.reader.next_while(is_toml_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::Infinity),
                     b"nan" => Ok(SpecialFloat::Nan),
-                    _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
+                    _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
                 }
             }
             Some(b'-') => {
@@ -823,13 +849,13 @@ where
                 match self.reader.next_while(is_toml_word)?.as_ref() {
                     b"inf" => Ok(SpecialFloat::NegInfinity),
                     b"nan" => Ok(SpecialFloat::NegNan),
-                    _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
+                    _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
                 }
             }
             _ => match self.reader.next_while(is_toml_word)?.as_ref() {
                 b"inf" => Ok(SpecialFloat::Infinity),
                 b"nan" => Ok(SpecialFloat::Nan),
-                _ => Err(ErrorKind::Expected("inf/nan".into()).into()),
+                _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
             },
         }
     }
@@ -953,7 +979,7 @@ where
             if self.reader.eat_char(b']')? {
                 break; // End of array
             } else if !self.reader.eat_char(b',')? {
-                return Err(ErrorKind::Expected(", or ] after value in array".into()).into());
+                return Err(ErrorKind::ExpectedToken(", or ] after value in array".into()).into());
             }
         }
 
@@ -995,14 +1021,16 @@ where
 
             if self.reader.eat_char(b'}')? {
                 break; // End of array
-            } else if !self.reader.eat_char(b',')? {
-                return Err(ErrorKind::Expected(
-                    ", or } after key/value pair in inline table".into(),
-                )
+            } else if self.reader.eat_char(b',')? {
+                self.skip_whitespace()?;
+            } else {
+                return Err(if self.reader.next()?.is_some() {
+                    ErrorKind::ExpectedToken(", or } after key/value pair in inline table".into())
+                } else {
+                    ErrorKind::UnexpectedEof
+                }
                 .into());
             }
-
-            self.skip_whitespace()?;
         }
 
         Ok(result)
@@ -1025,7 +1053,7 @@ where
                 let comment = comment.strip_suffix('\r').unwrap_or(&comment);
                 // Check for any invalid characters in the comment
                 if let Some(ch) = comment.bytes().find(|c| !is_toml_comment(c)) {
-                    return Err(ErrorKind::IllegalChar(char::from(ch)).into());
+                    return Err(ErrorKind::IllegalChar(ch).into());
                 }
             }
 

@@ -14,7 +14,7 @@ pub use error::{Error, Result};
 
 use parser::Parser;
 use parser::{RawValue, SpecialFloat};
-use reader::{Reader, StrReader};
+use reader::{Reader, SliceReader};
 
 use crate::value::datetime::DatetimeAccess;
 
@@ -30,7 +30,7 @@ where
     parser: Parser<'de, R>,
 }
 
-impl<'de> Deserializer<'de, StrReader<'de>> {
+impl<'de> Deserializer<'de, SliceReader<'de>> {
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     pub fn from_str(str: &'de str) -> Self {

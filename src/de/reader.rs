@@ -163,13 +163,13 @@ pub trait Reader<'a>: private::Sealed {
 
 /// Read from a string
 #[derive(Debug, Clone)]
-pub struct StrReader<'a> {
+pub struct SliceReader<'a> {
     bytes: &'a [u8],
     offset: usize,
     seq_start: Option<usize>,
 }
 
-impl<'a> StrReader<'a> {
+impl<'a> SliceReader<'a> {
     /// Create a JSON input source to read from a string.
     pub const fn from_str(str: &'a str) -> Self {
         Self::from_slice(str.as_bytes())
@@ -185,9 +185,9 @@ impl<'a> StrReader<'a> {
     }
 }
 
-impl private::Sealed for StrReader<'_> {}
+impl private::Sealed for SliceReader<'_> {}
 
-impl<'a> Reader<'a> for StrReader<'a> {
+impl<'a> Reader<'a> for SliceReader<'a> {
     fn next(&mut self) -> Result<Option<u8>> {
         Ok(self.peek()?.inspect(|_| self.offset += 1))
     }
