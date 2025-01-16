@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::io;
 use std::num::NonZero;
 
 use lexical::{
     FromLexicalWithOptions, NumberFormatBuilder, ParseFloatOptions, ParseIntegerOptions,
 };
 use serde::de::value::StrDeserializer;
-use serde::de::{Error as _, IntoDeserializer as _};
+use serde::de::{DeserializeOwned, Error as _, IntoDeserializer as _};
 use serde::{de, forward_to_deserialize_any, Deserialize};
 
 pub(crate) use error::ErrorKind;
@@ -14,7 +15,7 @@ pub use error::{Error, Result};
 
 use parser::Parser;
 use parser::{RawValue, SpecialFloat};
-use reader::{Reader, SliceReader};
+use reader::{IoReader, Reader, SliceReader};
 
 use crate::value::datetime::DatetimeAccess;
 
@@ -47,6 +48,18 @@ impl<'de> Deserializer<'de, SliceReader<'de>> {
     }
 }
 
+impl<R> Deserializer<'_, IoReader<R>>
+where
+    R: io::Read,
+{
+    #[must_use]
+    pub fn from_reader(read: R) -> Self {
+        Self {
+            parser: Parser::from_reader(read),
+        }
+    }
+}
+
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: Deserialize<'a>,
@@ -60,6 +73,15 @@ where
     T: Deserialize<'a>,
 {
     let mut deserializer = Deserializer::from_slice(bytes);
+    T::deserialize(&mut deserializer)
+}
+
+pub fn from_reader<R, T>(read: R) -> Result<T>
+where
+    R: io::Read,
+    T: DeserializeOwned,
+{
+    let mut deserializer = Deserializer::from_reader(read);
     T::deserialize(&mut deserializer)
 }
 

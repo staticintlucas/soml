@@ -1,6 +1,7 @@
 //! Deserialization error types
 
 use std::fmt;
+use std::io;
 
 use serde::de;
 
@@ -96,6 +97,15 @@ impl From<ErrorImpl> for Error {
     }
 }
 
+impl From<io::Error> for Error {
+    fn from(value: io::Error) -> Self {
+        ErrorImpl {
+            kind: ErrorKind::Io(value),
+        }
+        .into()
+    }
+}
+
 #[derive(Debug)]
 struct ErrorImpl {
     pub kind: ErrorKind,
@@ -151,7 +161,7 @@ pub enum ErrorKind {
 
     // Misc
     /// IO Error
-    Io(std::io::Error),
+    Io(io::Error),
     /// Custom error message
     Custom(Box<str>),
 }

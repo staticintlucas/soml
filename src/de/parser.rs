@@ -1,4 +1,5 @@
 use core::{fmt, str};
+use std::io;
 use std::marker::PhantomData;
 use std::{borrow::Cow, collections::HashMap};
 
@@ -6,6 +7,7 @@ use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
 
 use super::error::{ErrorKind, Result};
+use super::reader::IoReader;
 use super::{Reader, SliceReader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,26 +129,33 @@ impl<'de> Parser<'de, SliceReader<'de>> {
     #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_str(str: &'de str) -> Self {
-        Self::from_reader(SliceReader::from_str(str))
+        Self {
+            reader: SliceReader::from_str(str),
+            _phantom: PhantomData,
+        }
     }
 
     #[allow(clippy::should_implement_trait)]
     #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
-        Self::from_reader(SliceReader::from_slice(bytes))
+        Self {
+            reader: SliceReader::from_slice(bytes),
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl<'de, R> Parser<'de, R>
+impl<R> Parser<'_, IoReader<R>>
 where
-    R: Reader<'de>,
+    R: io::Read,
 {
+    #[allow(clippy::should_implement_trait)]
     #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
-    pub fn from_reader(reader: R) -> Self {
+    pub fn from_reader(read: R) -> Self {
         Self {
-            reader,
+            reader: IoReader::from_reader(read),
             _phantom: PhantomData,
         }
     }

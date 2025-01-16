@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
+use std::io;
 use std::str;
 
 use super::error::{ErrorKind, Result};
@@ -162,12 +164,12 @@ pub struct SliceReader<'a> {
 }
 
 impl<'a> SliceReader<'a> {
-    /// Create a JSON input source to read from a string.
+    /// Create a TOML reader from a string slice.
     pub const fn from_str(str: &'a str) -> Self {
         Self::from_slice(str.as_bytes())
     }
 
-    /// Create a JSON input source to read from a slice of bytes.
+    /// Create a TOML reader from a byte slice.
     pub const fn from_slice(bytes: &'a [u8]) -> Self {
         Self {
             bytes,
@@ -232,5 +234,182 @@ impl<'a> Reader<'a> for SliceReader<'a> {
             .take()
             .unwrap_or_else(|| unreachable!("Sequence wasn't started first"));
         Ok(Cow::Borrowed(&self.bytes[start..self.offset]))
+    }
+}
+
+/// Read from a string
+#[derive(Debug)]
+pub struct IoReader<R> {
+    iter: io::Bytes<R>,
+    peek: VecDeque<u8>,
+    seq: Option<Vec<u8>>,
+}
+
+impl<R> IoReader<R>
+where
+    R: io::Read,
+{
+    /// Create a JSON reader from a [`io::Read`].
+    pub fn from_reader(read: R) -> Self {
+        Self {
+            iter: read.bytes(),
+            peek: VecDeque::with_capacity(16),
+            seq: None,
+        }
+    }
+}
+
+impl<R> private::Sealed for IoReader<R> {}
+
+impl<'a, R> Reader<'a> for IoReader<R>
+where
+    R: io::Read,
+{
+    fn next(&mut self) -> Result<Option<u8>> {
+        let result = match self.peek.pop_front() {
+            Some(ch) => Some(ch),
+            None => self.iter.next().transpose()?,
+        };
+
+        if let Some((ch, seq)) = result.zip(self.seq.as_mut()) {
+            seq.push(ch);
+        }
+
+        Ok(result)
+    }
+
+    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+        let mut result = Vec::with_capacity(n);
+        result.extend(self.peek.drain(..n.min(self.peek.len())));
+
+        while result.len() < n {
+            match self.iter.next().transpose()? {
+                Some(ch) => result.push(ch),
+                None => return Ok(None), // return None if we can't get n bytes
+            }
+        }
+
+        if let Some(seq) = self.seq.as_mut() {
+            seq.extend_from_slice(result.as_ref());
+        }
+
+        Ok(Some(Cow::Owned(result)))
+    }
+
+    fn peek(&mut self) -> Result<Option<u8>> {
+        if let Some(ch) = self.peek.front() {
+            Ok(Some(*ch))
+        } else {
+            let Some(ch) = self.iter.next().transpose()? else {
+                return Ok(None);
+            };
+            self.peek.push_back(ch);
+            Ok(Some(ch))
+        }
+    }
+
+    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+        while self.peek.len() < n {
+            match self.iter.next().transpose()? {
+                Some(ch) => self.peek.push_back(ch),
+                None => return Ok(None),
+            }
+        }
+
+        let result = self.peek.range(..n).copied().collect();
+
+        Ok(Some(Cow::Owned(result)))
+    }
+
+    fn peek_at(&mut self, pos: usize) -> Result<Option<u8>> {
+        while self.peek.len() < pos + 1 {
+            match self.iter.next().transpose()? {
+                Some(ch) => self.peek.push_back(ch),
+                None => break,
+            }
+        }
+
+        Ok(self.peek.get(pos).copied())
+    }
+
+    fn discard_n(&mut self, n: usize) -> Result<()> {
+        if let Some(seq) = self.seq.as_mut() {
+            seq.reserve(n);
+
+            let peeked_n = n.min(self.peek.len());
+            seq.extend(self.peek.drain(..peeked_n));
+
+            for _ in peeked_n..n {
+                match self.iter.next().transpose()? {
+                    Some(ch) => seq.push(ch),
+                    None => break,
+                }
+            }
+        } else {
+            let peeked_n = n.min(self.peek.len());
+            self.peek.drain(..peeked_n);
+
+            for _ in peeked_n..n {
+                if self.iter.next().transpose()?.is_none() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, [u8]>> {
+        if let Some(i) = self.peek.iter().position(|ch| !func(ch)) {
+            Ok(self.peek.range(..i).copied().collect())
+        } else {
+            loop {
+                match self.iter.next().transpose()? {
+                    Some(ch) if func(&ch) => {
+                        self.peek.push_back(ch);
+                    }
+                    Some(ch) => {
+                        // Collect before pushing the non-matching char
+                        let result = self.peek.iter().copied().collect();
+                        // But make sure to push it after so we don't lose a char
+                        self.peek.push_back(ch);
+
+                        break Ok(result);
+                    }
+                    None => break Ok(self.peek.iter().copied().collect()),
+                }
+            }
+        }
+    }
+
+    fn eat_str(&mut self, str: &'_ [u8]) -> Result<bool> {
+        while self.peek.len() < str.len() {
+            match self.iter.next().transpose()? {
+                Some(ch) => self.peek.push_back(ch),
+                None => return Ok(false),
+            }
+        }
+
+        let result = str.iter().zip(self.peek.iter()).all(|(a, b)| a == b);
+
+        if result {
+            self.peek.drain(..str.len());
+
+            if let Some(seq) = self.seq.as_mut() {
+                seq.extend_from_slice(str);
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn start_seq(&mut self) {
+        self.seq = Some(Vec::with_capacity(16));
+    }
+
+    fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
+        Ok(Cow::Owned(self.seq.take().unwrap_or_else(|| {
+            unreachable!("Sequence wasn't started first")
+        })))
     }
 }
