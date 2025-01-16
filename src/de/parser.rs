@@ -232,7 +232,7 @@ where
             match self.reader.peek()? {
                 Some(b'\n') => self.reader.discard()?,
                 Some(b'\r') if self.reader.peek_at(1)?.is_some_and(|ch| ch == b'\n') => {
-                    self.reader.discard_array::<2>()?; // b"\r\n"
+                    self.reader.discard_n(2)?; // b"\r\n"
                 }
                 Some(b'#') => {
                     self.skip_comment()?;
@@ -574,7 +574,7 @@ where
             b'u' => {
                 let bytes = self
                     .reader
-                    .next_array::<4>()?
+                    .next_n(4)?
                     .ok_or(ErrorKind::UnterminatedString)?;
                 let options = ParseIntegerOptions::default();
                 u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
@@ -590,7 +590,7 @@ where
             b'U' => {
                 let bytes = self
                     .reader
-                    .next_array::<8>()?
+                    .next_n(8)?
                     .ok_or(ErrorKind::UnterminatedString)?;
                 let options = ParseIntegerOptions::default();
                 u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
@@ -613,13 +613,13 @@ where
                         0xE0..=0xEF => {
                             let mut result = Vec::with_capacity(4);
                             result.extend_from_slice(&[b'\\', c]);
-                            result.extend(r.next_array::<2>().ok()??.as_ref());
+                            result.extend(r.next_n(2).ok()??.as_ref());
                             String::from_utf8(result).ok()
                         }
                         0xF0..=0xF7 => {
                             let mut result = Vec::with_capacity(5);
                             result.extend_from_slice(&[b'\\', c]);
-                            result.extend(r.next_array::<3>().ok()??.as_ref());
+                            result.extend(r.next_n(3).ok()??.as_ref());
                             String::from_utf8(result).ok()
                         }
                         _ => None,
@@ -716,17 +716,17 @@ where
     fn check_date(&mut self) -> Result<()> {
         if self
             .reader
-            .next_array::<4>()?
+            .next_n(4)?
             .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
             && self.reader.eat_char(b'-')?
             && self
                 .reader
-                .next_array::<2>()?
+                .next_n(2)?
                 .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
             && self.reader.eat_char(b'-')?
             && self
                 .reader
-                .next_array::<2>()?
+                .next_n(2)?
                 .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
         {
             Ok(())
@@ -738,12 +738,12 @@ where
     fn check_time(&mut self) -> Result<()> {
         if !(self
             .reader
-            .next_array::<2>()?
+            .next_n(2)?
             .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
             && self.reader.eat_char(b':')?
             && self
                 .reader
-                .next_array::<2>()?
+                .next_n(2)?
                 .is_some_and(|a| a.iter().all(u8::is_ascii_digit)))
         {
             return Err(ErrorKind::InvalidDatetime.into());
@@ -754,7 +754,7 @@ where
         }
         if !self
             .reader
-            .next_array::<2>()?
+            .next_n(2)?
             .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
         {
             return Err(ErrorKind::InvalidDatetime.into());
@@ -776,12 +776,12 @@ where
             || ((self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?)
                 && self
                     .reader
-                    .next_array::<2>()?
+                    .next_n(2)?
                     .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
                 && self.reader.eat_char(b':')?
                 && self
                     .reader
-                    .next_array::<2>()?
+                    .next_n(2)?
                     .is_some_and(|a| a.iter().all(u8::is_ascii_digit)))
         {
             Ok(())

@@ -16,12 +16,13 @@ pub trait Reader<'a>: private::Sealed {
     #[doc(hidden)]
     fn next(&mut self) -> Result<Option<u8>>;
 
-    /// Gets `N` bytes from the source. If the end of the source is reached, returns `Ok(None)`.
+    /// Gets `n` bytes from the source. Returns `Ok(None)` if the end of the source is reached
+    /// before `n` bytes are read.
     ///
     /// # Errors
     ///
     /// Propagates any IO errors that occurred while reading from the source.
-    fn next_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>>;
+    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
 
     /// Peeks the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
@@ -31,13 +32,14 @@ pub trait Reader<'a>: private::Sealed {
     #[doc(hidden)]
     fn peek(&mut self) -> Result<Option<u8>>;
 
-    /// Peeks the next `N` bytes from the source. Returns `Ok(None)` if the end of the source is reached.
+    /// Peeks the next `n` bytes from the source. Returns `Ok(None)` if the end of the source is
+    /// reached before `n`  bytes are read.
     ///
     /// # Errors
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>>;
+    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
 
     /// Peeks the byte at `pos` bytes from the current location in the source. If the end of the
     /// source is reached, returns `Ok(None)`.
@@ -56,16 +58,6 @@ pub trait Reader<'a>: private::Sealed {
     #[doc(hidden)]
     fn discard(&mut self) -> Result<()> {
         self.discard_n(1)
-    }
-
-    /// Discards `N` bytes from the source.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
-    #[doc(hidden)]
-    fn discard_array<const N: usize>(&mut self) -> Result<()> {
-        self.discard_n(N)
     }
 
     /// Discards `n` bytes from the source.
@@ -192,22 +184,19 @@ impl<'a> Reader<'a> for SliceReader<'a> {
         Ok(self.peek()?.inspect(|_| self.offset += 1))
     }
 
-    fn next_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>> {
-        Ok(self.peek_array::<N>()?.inspect(|_| self.offset += N))
+    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+        Ok(self.peek_n(n)?.inspect(|_| self.offset += n))
     }
 
     fn peek(&mut self) -> Result<Option<u8>> {
         Ok(self.bytes.get(self.offset).copied())
     }
 
-    fn peek_array<const N: usize>(&mut self) -> Result<Option<Cow<'a, [u8; N]>>> {
-        Ok(self.bytes.get(self.offset..self.offset + N).map(|bytes| {
-            Cow::Borrowed(
-                bytes
-                    .try_into()
-                    .unwrap_or_else(|_| unreachable!("length is always N")),
-            )
-        }))
+    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+        Ok(self
+            .bytes
+            .get(self.offset..self.offset + n)
+            .map(Cow::Borrowed))
     }
 
     fn peek_at(&mut self, pos: usize) -> Result<Option<u8>> {
