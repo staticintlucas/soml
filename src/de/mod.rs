@@ -388,6 +388,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     {
         match self.value {
             ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
+            ParsedValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -416,7 +417,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            ParsedValue::Table(table) => visitor.visit_map(MapAccess::new(table)),
+            ParsedValue::Table(table)
+            | ParsedValue::UndefinedTable(table)
+            | ParsedValue::DottedKeyTable(table)
+            | ParsedValue::InlineTable(table) => visitor.visit_map(MapAccess::new(table)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
