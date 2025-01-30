@@ -56,7 +56,7 @@ impl From<Type> for de::Unexpected<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum RawValue<'de> {
+pub(super) enum Value<'de> {
     // String; any escape sequences are already parsed
     String(Cow<'de, str>),
     // Decimal integer
@@ -82,21 +82,21 @@ pub(super) enum RawValue<'de> {
     // Local Time
     LocalTime(Cow<'de, [u8]>),
     // Just a regular inline array
-    Array(Vec<RawValue<'de>>),
+    Array(Vec<Self>),
     // Table defined by a table header. This is immutable aside from being able to add subtables
-    Table(HashMap<Cow<'de, str>, RawValue<'de>>),
+    Table(HashMap<Cow<'de, str>, Self>),
     // Super table created when parsing a subtable header. This can still be explicitly defined
     // later turning it into a `Table`
-    UndefinedTable(HashMap<Cow<'de, str>, RawValue<'de>>),
+    UndefinedTable(HashMap<Cow<'de, str>, Self>),
     // A table defined by dotted keys. This can be freely added to by other dotted keys
-    DottedKeyTable(HashMap<Cow<'de, str>, RawValue<'de>>),
+    DottedKeyTable(HashMap<Cow<'de, str>, Self>),
     // Inline table
-    InlineTable(HashMap<Cow<'de, str>, RawValue<'de>>),
+    InlineTable(HashMap<Cow<'de, str>, Self>),
     // Array of tables
-    ArrayOfTables(Vec<HashMap<Cow<'de, str>, RawValue<'de>>>),
+    ArrayOfTables(Vec<HashMap<Cow<'de, str>, Self>>),
 }
 
-impl RawValue<'_> {
+impl Value<'_> {
     pub const fn typ(&self) -> Type {
         match *self {
             Self::String(_) => Type::String,
@@ -165,7 +165,7 @@ impl<'de, R> Parser<'de, R>
 where
     R: Reader<'de>,
 {
-    pub fn parse(&mut self) -> Result<RawValue<'de>> {
+    pub fn parse(&mut self) -> Result<Value<'de>> {
         let mut root = HashMap::new();
 
         // The currently opened table
@@ -258,7 +258,7 @@ where
             }
         }
 
-        Ok(RawValue::Table(root))
+        Ok(Value::Table(root))
     }
 
     fn parse_array_header(&mut self) -> Result<Vec<Cow<'de, str>>> {
@@ -283,7 +283,7 @@ where
             .ok_or_else(|| ErrorKind::ExpectedToken("] after dotted key".into()).into())
     }
 
-    fn parse_key_value_pair(&mut self) -> Result<(Vec<Cow<'de, str>>, RawValue<'de>)> {
+    fn parse_key_value_pair(&mut self) -> Result<(Vec<Cow<'de, str>>, Value<'de>)> {
         let path = self.parse_dotted_key()?;
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
@@ -329,12 +329,12 @@ where
             .ok_or_else(|| ErrorKind::ExpectedToken("key".into()).into())
     }
 
-    fn parse_value(&mut self) -> Result<RawValue<'de>> {
+    fn parse_value(&mut self) -> Result<Value<'de>> {
         match self.reader.peek()? {
             // String
-            Some(b'"' | b'\'') => self.parse_string().map(RawValue::String),
+            Some(b'"' | b'\'') => self.parse_string().map(Value::String),
             // Boolean
-            Some(b't' | b'f') => self.parse_bool().map(RawValue::Boolean),
+            Some(b't' | b'f') => self.parse_bool().map(Value::Boolean),
             // Leading 0 => either prefixed int, date/time, just 0, or invalid
             Some(b'0') => {
                 match self.reader.peek_at(1)? {
@@ -378,22 +378,22 @@ where
                     // Number
                     Some(ch) if ch.is_ascii_digit() => self.parse_number_decimal(),
                     // Special float
-                    Some(b'i' | b'n') => self.parse_number_special().map(RawValue::SpecialFloat),
+                    Some(b'i' | b'n') => self.parse_number_special().map(Value::SpecialFloat),
                     // Invalid
                     _ => Err(ErrorKind::InvalidNumber("missing digits".into()).into()),
                 }
             }
             // Special float (inf or nan)
-            Some(b'i' | b'n') => self.parse_number_special().map(RawValue::SpecialFloat),
+            Some(b'i' | b'n') => self.parse_number_special().map(Value::SpecialFloat),
             // Array
             Some(b'[') => {
                 self.reader.discard()?; // We consume the opening delimiter
-                self.parse_array().map(RawValue::Array)
+                self.parse_array().map(Value::Array)
             }
             // Table
             Some(b'{') => {
                 self.reader.discard()?; // We consume the opening delimiter
-                self.parse_inline_table().map(RawValue::InlineTable)
+                self.parse_inline_table().map(Value::InlineTable)
             }
             Some(ch) => Err(if is_toml_legal(&ch) {
                 ErrorKind::ExpectedToken("a value".into())
@@ -654,7 +654,7 @@ where
         result
     }
 
-    fn parse_datetime(&mut self) -> Result<RawValue<'de>> {
+    fn parse_datetime(&mut self) -> Result<Value<'de>> {
         self.reader.start_seq(); // Start sequence for datetime
 
         // Use the number of digits to determine whether we have a date or time
@@ -676,7 +676,7 @@ where
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
-                return self.reader.end_seq().map(RawValue::LocalDate);
+                return self.reader.end_seq().map(Value::LocalDate);
             };
             self.reader.discard()?; // Skip the 'T'/space
 
@@ -690,7 +690,7 @@ where
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
-                return self.reader.end_seq().map(RawValue::LocalDatetime);
+                return self.reader.end_seq().map(Value::LocalDatetime);
             };
 
             self.check_offset()?;
@@ -700,7 +700,7 @@ where
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            self.reader.end_seq().map(RawValue::OffsetDatetime)
+            self.reader.end_seq().map(Value::OffsetDatetime)
         }
         // 2 digits = hour for time
         else if first_num.len() == 2 {
@@ -714,7 +714,7 @@ where
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            self.reader.end_seq().map(RawValue::LocalTime)
+            self.reader.end_seq().map(Value::LocalTime)
         }
         // Any other number of digits is invalid
         else {
@@ -799,9 +799,9 @@ where
         }
     }
 
-    fn parse_number_radix(&mut self) -> Result<RawValue<'de>> {
+    fn parse_number_radix(&mut self) -> Result<Value<'de>> {
         if self.reader.eat_str(b"0x")? {
-            Ok(RawValue::HexInt(
+            Ok(Value::HexInt(
                 self.reader.next_while(is_toml_word).and_then(|bytes| {
                     bytes
                         .iter()
@@ -813,7 +813,7 @@ where
                 })?,
             ))
         } else if self.reader.eat_str(b"0o")? {
-            Ok(RawValue::OctalInt(
+            Ok(Value::OctalInt(
                 self.reader.next_while(is_toml_word).and_then(|bytes| {
                     bytes
                         .iter()
@@ -825,7 +825,7 @@ where
                 })?,
             ))
         } else if self.reader.eat_str(b"0b")? {
-            Ok(RawValue::BinaryInt(
+            Ok(Value::BinaryInt(
                 self.reader.next_while(is_toml_word).and_then(|bytes| {
                     bytes
                         .iter()
@@ -869,7 +869,7 @@ where
         }
     }
 
-    fn parse_number_decimal(&mut self) -> Result<RawValue<'de>> {
+    fn parse_number_decimal(&mut self) -> Result<Value<'de>> {
         let mut float = false;
 
         self.reader.start_seq(); // Start sequence for number parsing
@@ -965,13 +965,13 @@ where
         let number = self.reader.end_seq()?; // End sequence for number parsing
 
         Ok(if float {
-            RawValue::Float(number)
+            Value::Float(number)
         } else {
-            RawValue::Integer(number)
+            Value::Integer(number)
         })
     }
 
-    fn parse_array(&mut self) -> Result<Vec<RawValue<'de>>> {
+    fn parse_array(&mut self) -> Result<Vec<Value<'de>>> {
         let mut result = vec![];
 
         loop {
@@ -995,7 +995,7 @@ where
         Ok(result)
     }
 
-    fn parse_inline_table(&mut self) -> Result<HashMap<Cow<'de, str>, RawValue<'de>>> {
+    fn parse_inline_table(&mut self) -> Result<HashMap<Cow<'de, str>, Value<'de>>> {
         let mut result = HashMap::new();
 
         self.skip_whitespace()?;
@@ -1090,7 +1090,7 @@ trait TomlTable<'a>: 'a {
     fn get_inline_subtable(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
 }
 
-impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
+impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
     fn get_table_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
         let Some((key, path)) = path.split_last() else {
             return Some(self);
@@ -1101,12 +1101,12 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         let parent = path.iter().try_fold(self, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| RawValue::UndefinedTable(Self::new()));
+                .or_insert_with(|| Value::UndefinedTable(Self::new()));
             match *entry {
-                RawValue::Table(ref mut subtable)
-                | RawValue::UndefinedTable(ref mut subtable)
-                | RawValue::DottedKeyTable(ref mut subtable) => Some(subtable),
-                RawValue::ArrayOfTables(ref mut array) => {
+                Value::Table(ref mut subtable)
+                | Value::UndefinedTable(ref mut subtable)
+                | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
+                Value::ArrayOfTables(ref mut array) => {
                     Some(array.last_mut().unwrap_or_else(|| {
                         unreachable!("we never insert an empty array of tables")
                     }))
@@ -1118,18 +1118,18 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         // Create the table in the parent, or error if a table already exists
         match parent.get(key) {
             None => {
-                parent.insert(key.clone(), RawValue::Table(Self::new()));
+                parent.insert(key.clone(), Value::Table(Self::new()));
             }
-            Some(&RawValue::UndefinedTable(_)) => {
+            Some(&Value::UndefinedTable(_)) => {
                 // Need to remove the entry to take ownership of the subtable
-                let Some(RawValue::UndefinedTable(subtable)) = parent.remove(key) else {
+                let Some(Value::UndefinedTable(subtable)) = parent.remove(key) else {
                     unreachable!("we just checked this key")
                 };
-                parent.insert(key.clone(), RawValue::Table(subtable));
+                parent.insert(key.clone(), Value::Table(subtable));
             }
             Some(_) => return None,
         };
-        let Some(&mut RawValue::Table(ref mut subtable)) = parent.get_mut(key) else {
+        let Some(&mut Value::Table(ref mut subtable)) = parent.get_mut(key) else {
             unreachable!("we just inserted a Table")
         };
         Some(subtable)
@@ -1145,12 +1145,12 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         let parent = path.iter().try_fold(self, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| RawValue::UndefinedTable(Self::new()));
+                .or_insert_with(|| Value::UndefinedTable(Self::new()));
             match *entry {
-                RawValue::Table(ref mut subtable)
-                | RawValue::UndefinedTable(ref mut subtable)
-                | RawValue::DottedKeyTable(ref mut subtable) => Some(subtable),
-                RawValue::ArrayOfTables(ref mut array) => {
+                Value::Table(ref mut subtable)
+                | Value::UndefinedTable(ref mut subtable)
+                | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
+                Value::ArrayOfTables(ref mut array) => {
                     Some(array.last_mut().unwrap_or_else(|| {
                         unreachable!("we never insert an empty array of tables")
                     }))
@@ -1160,9 +1160,9 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         })?;
 
         // Then find the array of tables in the parent, or create a new one if it doesn't exist
-        if let RawValue::ArrayOfTables(ref mut subarray) = *parent
+        if let Value::ArrayOfTables(ref mut subarray) = *parent
             .entry(key.clone())
-            .or_insert_with(|| RawValue::ArrayOfTables(Vec::new()))
+            .or_insert_with(|| Value::ArrayOfTables(Vec::new()))
         {
             subarray.push(Self::new());
             subarray.last_mut()
@@ -1180,19 +1180,19 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         let parent = path.iter().try_fold(self, |table, key| {
             match table.get(key) {
                 None => {
-                    table.insert(key.clone(), RawValue::DottedKeyTable(Self::new()));
+                    table.insert(key.clone(), Value::DottedKeyTable(Self::new()));
                 }
-                Some(&RawValue::UndefinedTable(_)) => {
+                Some(&Value::UndefinedTable(_)) => {
                     // Need to remove the entry to take ownership of the subtable
-                    let Some(RawValue::UndefinedTable(subtable)) = table.remove(key) else {
+                    let Some(Value::UndefinedTable(subtable)) = table.remove(key) else {
                         unreachable!("we just checked this key")
                     };
-                    table.insert(key.clone(), RawValue::DottedKeyTable(subtable));
+                    table.insert(key.clone(), Value::DottedKeyTable(subtable));
                 }
-                Some(&RawValue::DottedKeyTable(_)) => {} // Already exists
+                Some(&Value::DottedKeyTable(_)) => {} // Already exists
                 Some(_) => return None,
             };
-            let Some(&mut RawValue::DottedKeyTable(ref mut subtable)) = table.get_mut(key) else {
+            let Some(&mut Value::DottedKeyTable(ref mut subtable)) = table.get_mut(key) else {
                 unreachable!("we just inserted a DottedKeyTable")
             };
             Some(subtable)
@@ -1202,19 +1202,19 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         // tables, we make this a Table instead of a UndefinedTable
         match parent.get(key) {
             None => {
-                parent.insert(key.clone(), RawValue::DottedKeyTable(Self::new()));
+                parent.insert(key.clone(), Value::DottedKeyTable(Self::new()));
             }
-            Some(&RawValue::UndefinedTable(_)) => {
+            Some(&Value::UndefinedTable(_)) => {
                 // Need to remove the entry to take ownership of the subtable
-                let Some(RawValue::UndefinedTable(subtable)) = parent.remove(key) else {
+                let Some(Value::UndefinedTable(subtable)) = parent.remove(key) else {
                     unreachable!("we just checked this key")
                 };
-                parent.insert(key.clone(), RawValue::DottedKeyTable(subtable));
+                parent.insert(key.clone(), Value::DottedKeyTable(subtable));
             }
-            Some(&RawValue::DottedKeyTable(_)) => {} // Already exists
+            Some(&Value::DottedKeyTable(_)) => {} // Already exists
             Some(_) => return None,
         };
-        let Some(&mut RawValue::DottedKeyTable(ref mut subtable)) = parent.get_mut(key) else {
+        let Some(&mut Value::DottedKeyTable(ref mut subtable)) = parent.get_mut(key) else {
             unreachable!("we just inserted a table")
         };
         Some(subtable)
@@ -1225,9 +1225,9 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, RawValue<'a>> {
         path.iter().try_fold(self, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| RawValue::DottedKeyTable(Self::new()));
+                .or_insert_with(|| Value::DottedKeyTable(Self::new()));
             match *entry {
-                RawValue::DottedKeyTable(ref mut subtable) => Some(subtable),
+                Value::DottedKeyTable(ref mut subtable) => Some(subtable),
                 _ => None,
             }
         })

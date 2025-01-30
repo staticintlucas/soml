@@ -13,8 +13,7 @@ use serde::{de, forward_to_deserialize_any, Deserialize};
 pub(crate) use error::ErrorKind;
 pub use error::{Error, Result};
 
-use parser::Parser;
-use parser::{RawValue, SpecialFloat};
+use parser::{Parser, SpecialFloat, Value as ParsedValue};
 use reader::{IoReader, Reader, SliceReader};
 
 use crate::value::datetime::DatetimeAccess;
@@ -107,11 +106,11 @@ where
 
 #[derive(Debug)]
 struct ValueDeserializer<'de> {
-    value: RawValue<'de>,
+    value: ParsedValue<'de>,
 }
 
 impl<'de> ValueDeserializer<'de> {
-    const fn new(value: RawValue<'de>) -> Self {
+    const fn new(value: ParsedValue<'de>) -> Self {
         Self { value }
     }
 }
@@ -124,28 +123,28 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::String(str) => str.into_deserializer().deserialize_any(visitor),
-            RawValue::Integer(bytes) => visitor.visit_i64(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i64(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i64(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i64(parse_hexadecimal(&bytes)?),
-            RawValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
-            RawValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
-            RawValue::Boolean(bool) => visitor.visit_bool(bool),
-            RawValue::OffsetDatetime(bytes) => {
+            ParsedValue::String(str) => str.into_deserializer().deserialize_any(visitor),
+            ParsedValue::Integer(bytes) => visitor.visit_i64(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i64(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i64(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i64(parse_hexadecimal(&bytes)?),
+            ParsedValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
+            ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
+            ParsedValue::Boolean(bool) => visitor.visit_bool(bool),
+            ParsedValue::OffsetDatetime(bytes) => {
                 visitor.visit_map(DatetimeAccess::offset_datetime(bytes))
             }
-            RawValue::LocalDatetime(bytes) => {
+            ParsedValue::LocalDatetime(bytes) => {
                 visitor.visit_map(DatetimeAccess::local_datetime(bytes))
             }
-            RawValue::LocalDate(bytes) => visitor.visit_map(DatetimeAccess::local_date(bytes)),
-            RawValue::LocalTime(bytes) => visitor.visit_map(DatetimeAccess::local_time(bytes)),
-            RawValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
-            RawValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
-            RawValue::Table(table)
-            | RawValue::UndefinedTable(table)
-            | RawValue::InlineTable(table)
-            | RawValue::DottedKeyTable(table) => visitor.visit_map(MapAccess::new(table)),
+            ParsedValue::LocalDate(bytes) => visitor.visit_map(DatetimeAccess::local_date(bytes)),
+            ParsedValue::LocalTime(bytes) => visitor.visit_map(DatetimeAccess::local_time(bytes)),
+            ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
+            ParsedValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
+            ParsedValue::Table(table)
+            | ParsedValue::UndefinedTable(table)
+            | ParsedValue::InlineTable(table)
+            | ParsedValue::DottedKeyTable(table) => visitor.visit_map(MapAccess::new(table)),
         }
     }
 
@@ -154,7 +153,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Boolean(bool) => visitor.visit_bool(bool),
+            ParsedValue::Boolean(bool) => visitor.visit_bool(bool),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -164,10 +163,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_i8(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i8(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i8(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i8(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_i8(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i8(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i8(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i8(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -177,10 +176,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_i16(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i16(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i16(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i16(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_i16(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i16(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i16(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i16(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -190,10 +189,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_i32(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i32(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i32(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i32(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_i32(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i32(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i32(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i32(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -203,10 +202,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_i64(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i64(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i64(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i64(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_i64(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i64(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i64(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i64(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -216,10 +215,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_i128(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_i128(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_i128(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_i128(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_i128(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_i128(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_i128(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_i128(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -229,10 +228,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_u8(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_u8(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_u8(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_u8(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_u8(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_u8(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_u8(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_u8(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -242,10 +241,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_u16(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_u16(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_u16(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_u16(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_u16(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_u16(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_u16(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_u16(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -255,10 +254,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_u32(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_u32(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_u32(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_u32(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_u32(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_u32(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_u32(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_u32(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -268,10 +267,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_u64(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_u64(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_u64(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_u64(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_u64(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_u64(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_u64(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_u64(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -281,10 +280,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Integer(bytes) => visitor.visit_u128(parse_integer(&bytes)?),
-            RawValue::BinaryInt(bytes) => visitor.visit_u128(parse_binary(&bytes)?),
-            RawValue::OctalInt(bytes) => visitor.visit_u128(parse_octal(&bytes)?),
-            RawValue::HexInt(bytes) => visitor.visit_u128(parse_hexadecimal(&bytes)?),
+            ParsedValue::Integer(bytes) => visitor.visit_u128(parse_integer(&bytes)?),
+            ParsedValue::BinaryInt(bytes) => visitor.visit_u128(parse_binary(&bytes)?),
+            ParsedValue::OctalInt(bytes) => visitor.visit_u128(parse_octal(&bytes)?),
+            ParsedValue::HexInt(bytes) => visitor.visit_u128(parse_hexadecimal(&bytes)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -294,8 +293,8 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Float(bytes) => visitor.visit_f32(parse_float(&bytes)?),
-            RawValue::SpecialFloat(special) => visitor.visit_f32(parse_special(special)),
+            ParsedValue::Float(bytes) => visitor.visit_f32(parse_float(&bytes)?),
+            ParsedValue::SpecialFloat(special) => visitor.visit_f32(parse_special(special)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -305,8 +304,8 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
-            RawValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
+            ParsedValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
+            ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -323,8 +322,8 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_str(str),
-            RawValue::String(Cow::Owned(string)) => visitor.visit_string(string),
+            ParsedValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_str(str),
+            ParsedValue::String(Cow::Owned(string)) => visitor.visit_string(string),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -341,9 +340,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_bytes(str.as_bytes()),
-            RawValue::String(Cow::Owned(string)) => visitor.visit_byte_buf(string.into_bytes()),
-            RawValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
+            ParsedValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_bytes(str.as_bytes()),
+            ParsedValue::String(Cow::Owned(string)) => visitor.visit_byte_buf(string.into_bytes()),
+            ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -388,7 +387,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
+            ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -417,7 +416,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::Table(table) => visitor.visit_map(MapAccess::new(table)),
+            ParsedValue::Table(table) => visitor.visit_map(MapAccess::new(table)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -444,8 +443,8 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            RawValue::String(str) => visitor.visit_enum(str.into_deserializer()),
-            RawValue::Table(table) => visitor.visit_enum(EnumAccess::new(table)?),
+            ParsedValue::String(str) => visitor.visit_enum(str.into_deserializer()),
+            ParsedValue::Table(table) => visitor.visit_enum(EnumAccess::new(table)?),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -478,7 +477,7 @@ impl<T> SeqAccess<T> {
 }
 
 // For regular arrays
-impl<'de> de::SeqAccess<'de> for SeqAccess<RawValue<'de>> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
     type Error = Error;
 
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
@@ -497,7 +496,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<RawValue<'de>> {
 }
 
 // Used for array of tables
-impl<'de> de::SeqAccess<'de> for SeqAccess<HashMap<Cow<'de, str>, RawValue<'de>>> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<HashMap<Cow<'de, str>, ParsedValue<'de>>> {
     type Error = Error;
 
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
@@ -518,12 +517,12 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<HashMap<Cow<'de, str>, RawValue<'de>>
 }
 
 struct MapAccess<'de> {
-    kv_pairs: <HashMap<Cow<'de, str>, RawValue<'de>> as IntoIterator>::IntoIter,
-    next_value: Option<RawValue<'de>>,
+    kv_pairs: <HashMap<Cow<'de, str>, ParsedValue<'de>> as IntoIterator>::IntoIter,
+    next_value: Option<ParsedValue<'de>>,
 }
 
 impl<'de> MapAccess<'de> {
-    fn new(table: HashMap<Cow<'de, str>, RawValue<'de>>) -> Self {
+    fn new(table: HashMap<Cow<'de, str>, ParsedValue<'de>>) -> Self {
         Self {
             kv_pairs: table.into_iter(),
             next_value: None,
@@ -581,11 +580,11 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
 
 struct EnumAccess<'de> {
     variant: Cow<'de, str>,
-    value: RawValue<'de>,
+    value: ParsedValue<'de>,
 }
 
 impl<'de> EnumAccess<'de> {
-    fn new(table: HashMap<Cow<'de, str>, RawValue<'de>>) -> Result<Self> {
+    fn new(table: HashMap<Cow<'de, str>, ParsedValue<'de>>) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
             Error::invalid_value(
@@ -621,7 +620,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
 
     fn unit_variant(self) -> Result<()> {
         match self.value {
-            RawValue::Table(table) if table.is_empty() => Ok(()),
+            ParsedValue::Table(table) if table.is_empty() => Ok(()),
             _ => Err(Error::invalid_type(self.value.typ().into(), &"empty table")),
         }
     }
