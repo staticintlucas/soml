@@ -484,15 +484,12 @@ impl TryFrom<Datetime> for LocalTime {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Offset {
     Z,
-    Custom { hours: i8, minutes: u8 },
+    Custom { minutes: i16 },
 }
 
 impl Offset {
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        const HOURS_FORMAT: u128 = NumberFormatBuilder::new()
-            .required_mantissa_sign(true)
-            .build();
-        const MINUTES_FORMAT: u128 = NumberFormatBuilder::new()
+        const FORMAT: u128 = NumberFormatBuilder::new()
             .no_positive_mantissa_sign(true)
             .build();
         const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
@@ -500,22 +497,30 @@ impl Offset {
         if bytes == b"Z" || bytes == b"z" {
             Ok(Self::Z)
         } else {
+            let (sign, bytes) = bytes.split_first().ok_or(ErrorKind::InvalidDatetime)?;
+            let sign = match *sign {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return Err(ErrorKind::InvalidDatetime.into()),
+            };
+
             let (hours, minutes) =
                 split_once(bytes, |b| *b == b':').ok_or(ErrorKind::InvalidDatetime)?;
-            if hours.len() != 3 && minutes.len() != 2 {
+            if hours.len() != 2 && minutes.len() != 2 {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
-            let hours = i8::from_lexical_with_options::<HOURS_FORMAT>(hours, &OPTIONS)
+            let hours = i16::from_lexical_with_options::<FORMAT>(hours, &OPTIONS)
                 .map_err(|_| ErrorKind::InvalidDatetime)?;
-            let minutes = u8::from_lexical_with_options::<MINUTES_FORMAT>(minutes, &OPTIONS)
+            let minutes = i16::from_lexical_with_options::<FORMAT>(minutes, &OPTIONS)
                 .map_err(|_| ErrorKind::InvalidDatetime)?;
 
             #[cfg(not(feature = "fast"))]
-            if !(-23..=23).contains(&hours) || minutes > 59 {
+            if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            Ok(Self::Custom { hours, minutes })
+            let minutes = sign * (hours * 60 + minutes);
+            Ok(Self::Custom { minutes })
         }
     }
 }
@@ -524,7 +529,12 @@ impl fmt::Display for Offset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::Z => write!(f, "Z"),
-            Self::Custom { hours, minutes } => write!(f, "{hours:+03}:{minutes:02}"),
+            Self::Custom { minutes } => {
+                let sign = if minutes < 0 { "-" } else { "+" };
+                let minutes = minutes.abs();
+                let (hours, minutes) = (minutes / 60, minutes % 60);
+                write!(f, "{sign}{hours:02}:{minutes:02}")
+            }
         }
     }
 }

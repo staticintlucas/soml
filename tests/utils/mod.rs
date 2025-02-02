@@ -62,9 +62,8 @@ impl ChronoDatetime {
                 )
                 .and_local_timezone(match *offset {
                     soml::value::Offset::Z => chrono::Utc.fix(),
-                    soml::value::Offset::Custom { hours, minutes } => {
-                        FixedOffset::east_opt((i32::from(hours) * 60 + i32::from(minutes)) * 60)
-                            .unwrap()
+                    soml::value::Offset::Custom { minutes } => {
+                        FixedOffset::east_opt(i32::from(minutes) * 60).unwrap()
                     }
                 })
                 .unwrap(),
