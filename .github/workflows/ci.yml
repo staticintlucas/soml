@@ -26,7 +26,7 @@ jobs:
         toolchain: ${{ matrix.rust }}
 
     - name: Build
-      run: cargo build --all-targets --all-features
+      run: cargo build --all-targets
       env:
         RUSTFLAGS: -D warnings
 
@@ -68,7 +68,7 @@ jobs:
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly
         components: rustfmt, clippy
 
     - name: Check formatting

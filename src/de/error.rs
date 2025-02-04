@@ -1,7 +1,6 @@
 //! Deserialization error types
 
-use std::fmt;
-use std::io;
+use std::{fmt, io};
 
 use serde::de;
 

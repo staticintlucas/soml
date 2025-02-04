@@ -1,15 +1,10 @@
 use std::borrow::Cow;
-use std::fmt;
-use std::str;
+use std::{fmt, str};
 
 use serde::de;
 use serde::de::{Error as _, IntoDeserializer as _};
 
-use super::Datetime;
-use super::LocalDate;
-use super::LocalDatetime;
-use super::LocalTime;
-use super::OffsetDatetime;
+use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::de::Error;
 
 impl<'de> de::Deserialize<'de> for Datetime {

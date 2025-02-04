@@ -1,7 +1,8 @@
 use core::{fmt, str};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
-use std::{borrow::Cow, collections::HashMap};
 
 use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
@@ -677,7 +678,7 @@ where
                 }
 
                 return self.reader.end_seq().map(Value::LocalDate);
-            };
+            }
             self.reader.discard()?; // Skip the 'T'/space
 
             self.check_time()?;
@@ -691,7 +692,7 @@ where
                 }
 
                 return self.reader.end_seq().map(Value::LocalDatetime);
-            };
+            }
 
             self.check_offset()?;
 
@@ -1128,7 +1129,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
                 parent.insert(key.clone(), Value::Table(subtable));
             }
             Some(_) => return None,
-        };
+        }
         let Some(&mut Value::Table(ref mut subtable)) = parent.get_mut(key) else {
             unreachable!("we just inserted a Table")
         };
@@ -1191,7 +1192,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
                 }
                 Some(&Value::DottedKeyTable(_)) => {} // Already exists
                 Some(_) => return None,
-            };
+            }
             let Some(&mut Value::DottedKeyTable(ref mut subtable)) = table.get_mut(key) else {
                 unreachable!("we just inserted a DottedKeyTable")
             };
@@ -1213,7 +1214,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
             }
             Some(&Value::DottedKeyTable(_)) => {} // Already exists
             Some(_) => return None,
-        };
+        }
         let Some(&mut Value::DottedKeyTable(ref mut subtable)) = parent.get_mut(key) else {
             unreachable!("we just inserted a table")
         };

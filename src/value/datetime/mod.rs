@@ -1,9 +1,7 @@
-use std::fmt;
-use std::str;
+use std::{fmt, str};
 
 use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
-use serde::de::Error as _;
-use serde::de::Unexpected;
+use serde::de::{Error as _, Unexpected};
 
 pub use self::de::{
     DatetimeAccess, LocalDateFromBytes, LocalDatetimeFromBytes, LocalTimeFromBytes,

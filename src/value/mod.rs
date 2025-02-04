@@ -141,6 +141,7 @@ impl Value {
     }
 
     /// If `self` is a string, returns it as a `&str`.
+    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         match *self {

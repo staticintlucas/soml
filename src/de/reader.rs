@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::io;
-use std::str;
+use std::{io, str};
 
 use super::error::{ErrorKind, Result};
 

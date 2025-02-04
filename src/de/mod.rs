@@ -10,12 +10,10 @@ use serde::de::value::StrDeserializer;
 use serde::de::{DeserializeOwned, Error as _, IntoDeserializer as _};
 use serde::{de, forward_to_deserialize_any, Deserialize};
 
-pub(crate) use error::ErrorKind;
-pub use error::{Error, Result};
-
-use parser::{Parser, SpecialFloat, Value as ParsedValue};
-use reader::{IoReader, Reader, SliceReader};
-
+pub(crate) use self::error::ErrorKind;
+pub use self::error::{Error, Result};
+use self::parser::{Parser, SpecialFloat, Value as ParsedValue};
+use self::reader::{IoReader, Reader, SliceReader};
 use crate::value::datetime::DatetimeAccess;
 
 mod error;
