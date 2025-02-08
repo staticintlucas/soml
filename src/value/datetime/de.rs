@@ -162,14 +162,15 @@ impl<'de> de::MapAccess<'de> for DatetimeAccess<'de> {
         V: de::DeserializeSeed<'de>,
     {
         #[allow(clippy::panic)]
-        let Some(
+        let Some(inner) = self.0.take() else {
+            panic!("next_value_seed called without calling next_key_seed first")
+        };
+
+        let value = match inner {
             DatetimeAccessInner::OffsetDatetime(value)
             | DatetimeAccessInner::LocalDatetime(value)
             | DatetimeAccessInner::LocalDate(value)
-            | DatetimeAccessInner::LocalTime(value),
-        ) = self.0.take()
-        else {
-            panic!("next_value called after next_key returned None");
+            | DatetimeAccessInner::LocalTime(value) => value,
         };
 
         seed.deserialize(value.into_deserializer())

@@ -417,10 +417,6 @@ impl<'de> de::MapAccess<'de> for MapAccess {
         self.kv_pairs
             .next()
             .map(|(key, value)| {
-                assert!(
-                    self.next_value.is_none(),
-                    "next_key_seed called twice without calling next_value_seed"
-                );
                 self.next_value = Some(value);
                 seed.deserialize(key.into_deserializer())
             })
@@ -431,8 +427,9 @@ impl<'de> de::MapAccess<'de> for MapAccess {
     where
         V: de::DeserializeSeed<'de>,
     {
+        #[allow(clippy::panic)]
         let Some(value) = self.next_value.take() else {
-            unreachable!("next_value_seed shouldn't be called without calling next_key_seed first")
+            panic!("next_value_seed called without calling next_key_seed first")
         };
         seed.deserialize(value)
     }
@@ -641,10 +638,6 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
         self.kv_pairs
             .next()
             .map(|(key, value)| {
-                assert!(
-                    self.next_value.is_none(),
-                    "next_key_seed called twice without calling next_value_seed"
-                );
                 self.next_value = Some(value);
                 seed.deserialize(key.as_str().into_deserializer())
             })
@@ -655,8 +648,9 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
+        #[allow(clippy::panic)]
         let Some(value) = self.next_value.take() else {
-            unreachable!("next_value_seed shouldn't be called without calling next_key_seed first")
+            panic!("next_value_seed called without calling next_key_seed first")
         };
         seed.deserialize(value)
     }
