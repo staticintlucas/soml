@@ -10,6 +10,7 @@ pub use self::datetime::{
 
 pub(crate) mod datetime;
 mod de;
+mod ser;
 
 mod private {
     pub trait Sealed {}

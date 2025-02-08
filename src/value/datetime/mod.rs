@@ -10,6 +10,7 @@ pub use self::de::{
 use crate::de::{Error, ErrorKind};
 
 mod de;
+mod ser;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Datetime {
