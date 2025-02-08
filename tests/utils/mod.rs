@@ -1,17 +1,19 @@
-#![allow(clippy::panic, clippy::unwrap_used)]
+#![allow(clippy::panic, clippy::unwrap_used, clippy::fallible_impl_from)]
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset as _};
+use chrono::{
+    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, Timelike,
+};
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct EncodedValue {
     #[serde(rename = "type")]
     typ: String,
     value: String,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EncodedItem {
     Value(EncodedValue),
@@ -27,8 +29,8 @@ enum ChronoDatetime {
     LocalTime(NaiveTime),
 }
 
-impl ChronoDatetime {
-    fn from_encoded_value(value: &EncodedValue) -> Self {
+impl From<EncodedValue> for ChronoDatetime {
+    fn from(value: EncodedValue) -> Self {
         match value.typ.as_str() {
             "datetime" => Self::OffsetDatetime(DateTime::parse_from_rfc3339(&value.value).unwrap()),
             "datetime-local" => Self::LocalDatetime(
@@ -41,8 +43,10 @@ impl ChronoDatetime {
             _ => panic!("not a datetime type"),
         }
     }
+}
 
-    fn from_datatime(datetime: &soml::value::Datetime) -> Self {
+impl From<soml::value::Datetime> for ChronoDatetime {
+    fn from(datetime: soml::value::Datetime) -> Self {
         match (
             datetime.date.as_ref(),
             datetime.time.as_ref(),
@@ -97,6 +101,69 @@ impl ChronoDatetime {
     }
 }
 
+impl From<ChronoDatetime> for soml::value::Datetime {
+    fn from(value: ChronoDatetime) -> Self {
+        match value {
+            ChronoDatetime::OffsetDatetime(datetime) => Self {
+                date: Some(soml::value::Date {
+                    year: datetime.year().try_into().unwrap(),
+                    month: datetime.month().try_into().unwrap(),
+                    day: datetime.day().try_into().unwrap(),
+                }),
+                time: Some(soml::value::Time {
+                    hour: datetime.hour().try_into().unwrap(),
+                    minute: datetime.minute().try_into().unwrap(),
+                    second: datetime.second().try_into().unwrap(),
+                    nanosecond: datetime.nanosecond(),
+                }),
+                offset: {
+                    let minutes = (datetime.offset().local_minus_utc() / 60)
+                        .try_into()
+                        .unwrap();
+                    Some(if minutes == 0 {
+                        soml::value::Offset::Z
+                    } else {
+                        soml::value::Offset::Custom { minutes }
+                    })
+                },
+            },
+            ChronoDatetime::LocalDatetime(datetime) => Self {
+                date: Some(soml::value::Date {
+                    year: datetime.year().try_into().unwrap(),
+                    month: datetime.month().try_into().unwrap(),
+                    day: datetime.day().try_into().unwrap(),
+                }),
+                time: Some(soml::value::Time {
+                    hour: datetime.hour().try_into().unwrap(),
+                    minute: datetime.minute().try_into().unwrap(),
+                    second: datetime.second().try_into().unwrap(),
+                    nanosecond: datetime.nanosecond(),
+                }),
+                offset: None,
+            },
+            ChronoDatetime::LocalDate(datetime) => Self {
+                date: Some(soml::value::Date {
+                    year: datetime.year().try_into().unwrap(),
+                    month: datetime.month().try_into().unwrap(),
+                    day: datetime.day().try_into().unwrap(),
+                }),
+                time: None,
+                offset: None,
+            },
+            ChronoDatetime::LocalTime(datetime) => Self {
+                date: None,
+                time: Some(soml::value::Time {
+                    hour: datetime.hour().try_into().unwrap(),
+                    minute: datetime.minute().try_into().unwrap(),
+                    second: datetime.second().try_into().unwrap(),
+                    nanosecond: datetime.nanosecond(),
+                }),
+                offset: None,
+            },
+        }
+    }
+}
+
 impl PartialEq<soml::Value> for EncodedValue {
     fn eq(&self, value: &soml::Value) -> bool {
         match *value {
@@ -115,7 +182,7 @@ impl PartialEq<soml::Value> for EncodedValue {
                 self.typ == "bool" && self.value.parse::<bool>().is_ok_and(|v| v == bool)
             }
             soml::Value::Datetime(ref datetime) => {
-                ChronoDatetime::from_datatime(datetime) == ChronoDatetime::from_encoded_value(self)
+                ChronoDatetime::from(datetime.clone()) == ChronoDatetime::from(self.clone())
             }
             soml::Value::Array(_) | soml::Value::Table(_) => false,
         }
@@ -150,5 +217,32 @@ impl PartialEq<soml::Value> for EncodedItem {
 impl PartialEq<EncodedItem> for soml::Value {
     fn eq(&self, value: &EncodedItem) -> bool {
         value.eq(self)
+    }
+}
+
+impl From<EncodedValue> for soml::Value {
+    fn from(value: EncodedValue) -> Self {
+        match value.typ.as_str() {
+            "string" => Self::String(value.value),
+            "integer" => Self::Integer(value.value.parse().unwrap()),
+            "float" => Self::Float(value.value.parse().unwrap()),
+            "bool" => Self::Boolean(value.value.parse().unwrap()),
+            "datetime" | "datetime-local" | "date-local" | "time-local" => {
+                Self::Datetime(ChronoDatetime::from(value).into())
+            }
+            _ => panic!("not a valid value type"),
+        }
+    }
+}
+
+impl From<EncodedItem> for soml::Value {
+    fn from(value: EncodedItem) -> Self {
+        match value {
+            EncodedItem::Value(value) => value.into(),
+            EncodedItem::Table(table) => {
+                Self::Table(table.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
+            EncodedItem::Array(array) => Self::Array(array.into_iter().map(Into::into).collect()),
+        }
     }
 }
