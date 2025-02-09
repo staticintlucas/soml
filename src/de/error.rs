@@ -1,5 +1,6 @@
 //! Deserialization error types
 
+use std::sync::Arc;
 use std::{fmt, io};
 
 use serde::de;
@@ -8,6 +9,7 @@ use serde::de;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
+#[derive(Clone)]
 pub struct Error(Box<ErrorImpl>);
 
 impl fmt::Display for Error {
@@ -99,13 +101,13 @@ impl From<ErrorImpl> for Error {
 impl From<io::Error> for Error {
     fn from(value: io::Error) -> Self {
         ErrorImpl {
-            kind: ErrorKind::Io(value),
+            kind: ErrorKind::Io(Arc::new(value)),
         }
         .into()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ErrorImpl {
     pub kind: ErrorKind,
 }
@@ -116,7 +118,7 @@ impl fmt::Display for ErrorImpl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     // Parser errors
     /// File is not UTF-8 encoded
@@ -160,7 +162,7 @@ pub enum ErrorKind {
 
     // Misc
     /// IO Error
-    Io(io::Error),
+    Io(Arc<io::Error>), // Need to use Arc since io::Error is not cloneable
     /// Custom error message
     Custom(Box<str>),
 }

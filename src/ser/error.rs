@@ -1,5 +1,6 @@
 //! Deserialization error types
 
+use std::sync::Arc;
 use std::{fmt, io};
 
 use serde::ser;
@@ -8,6 +9,7 @@ use serde::ser;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
+#[derive(Clone)]
 pub struct Error(Box<ErrorImpl>);
 
 impl fmt::Display for Error {
@@ -49,7 +51,7 @@ impl From<ErrorImpl> for Error {
 impl From<io::Error> for Error {
     fn from(value: io::Error) -> Self {
         ErrorImpl {
-            kind: ErrorKind::Io(value),
+            kind: ErrorKind::Io(Arc::new(value)),
         }
         .into()
     }
@@ -64,7 +66,7 @@ impl From<fmt::Error> for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ErrorImpl {
     pub kind: ErrorKind,
 }
@@ -75,7 +77,7 @@ impl fmt::Display for ErrorImpl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     // Serialization
     /// Unsupported Rust value
@@ -85,7 +87,7 @@ pub enum ErrorKind {
 
     // Misc
     /// IO Error
-    Io(io::Error),
+    Io(Arc<io::Error>), // Need to use Arc since io::Error is not cloneable
     /// Formatting error
     Fmt(fmt::Error),
     /// Custom error message
