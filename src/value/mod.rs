@@ -4,11 +4,12 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::{fmt, ops};
 
-use serde::Serialize;
+use serde::Serialize as _;
 
 pub use self::datetime::{
     Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
+use self::ser::ToValueSerializer;
 
 pub(crate) mod datetime;
 mod de;
@@ -30,7 +31,6 @@ pub(crate) enum Type {
 }
 
 impl Type {
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     pub fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",
@@ -62,13 +62,12 @@ pub enum Value {
 }
 
 impl Value {
-    // TODO
-    // pub fn try_from<T>(value: T) -> Result<Self, crate::ser::Error>
-    // where
-    //     T: ser::Serialize,
-    // {
-    //     value.serialize(Serializer)
-    // }
+    pub fn try_from<T>(value: T) -> Result<Self, crate::ser::Error>
+    where
+        T: serde::Serialize,
+    {
+        value.serialize(ToValueSerializer)
+    }
 
     pub fn get(&self, index: impl Index) -> Option<&Self> {
         index.get(self)
@@ -79,7 +78,6 @@ impl Value {
     }
 
     /// Returns `true` if `self` is a string.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_string(&self) -> bool {
         matches!(*self, Self::String(_))
@@ -94,21 +92,18 @@ impl Value {
     }
 
     /// Returns `true` if `self` is an integer.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_integer(&self) -> bool {
         matches!(*self, Self::Integer(_))
     }
 
     /// Returns `true` if `self` is a float.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_float(&self) -> bool {
         matches!(*self, Self::Float(_))
     }
 
     /// Returns `true` if `self` is a boolean.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_boolean(&self) -> bool {
         matches!(*self, Self::Boolean(_))
@@ -123,28 +118,24 @@ impl Value {
     }
 
     /// Returns `true` if `self` is a datetime.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_datetime(&self) -> bool {
         matches!(*self, Self::Datetime(_))
     }
 
     /// Returns `true` if `self` is an array.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_array(&self) -> bool {
         matches!(*self, Self::Array(_))
     }
 
     /// Returns `true` if `self` is a table.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn is_table(&self) -> bool {
         matches!(*self, Self::Table(_))
     }
 
     /// If `self` is a string, returns it as a `&str`.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         match *self {
@@ -154,7 +145,6 @@ impl Value {
     }
 
     /// If `self` is an integer, returns it as an `i64`.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_integer(&self) -> Option<i64> {
         match *self {
@@ -164,7 +154,6 @@ impl Value {
     }
 
     /// If `self` is a float, returns it as an `f64`.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_float(&self) -> Option<f64> {
         match *self {
@@ -174,7 +163,6 @@ impl Value {
     }
 
     /// If `self` is a boolean, returns it as a `bool`.
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_bool(&self) -> Option<bool> {
         match *self {
@@ -184,7 +172,6 @@ impl Value {
     }
 
     /// If `self` is a datetime, returns it as a [`Datetime`].
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_datetime(&self) -> Option<&Datetime> {
         match *self {
@@ -194,7 +181,6 @@ impl Value {
     }
 
     /// If `self` is an array, returns it as a [`Vec<Value>`].
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_array(&self) -> Option<&Vec<Self>> {
         match *self {
@@ -204,7 +190,6 @@ impl Value {
     }
 
     /// If `self` is an array, returns a mutable reference as a [`Vec<Value>`].
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
         match *self {
@@ -214,7 +199,6 @@ impl Value {
     }
 
     /// If `self` is a table, returns it as a [`HashMap<String, Self>`].
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_table(&self) -> Option<&HashMap<String, Self>> {
         match *self {
@@ -224,7 +208,6 @@ impl Value {
     }
 
     /// If `self` is a table, returns a mutable reference as a [`HashMap<String, Self>`].
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn as_table_mut(&mut self) -> Option<&mut HashMap<String, Self>> {
         match *self {
@@ -440,6 +423,14 @@ impl From<Cow<'_, str>> for Value {
     }
 }
 
+impl TryFrom<i128> for Value {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: i128) -> Result<Self, Self::Error> {
+        value.try_into().map(Self::Integer)
+    }
+}
+
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
         Self::Integer(value)
@@ -464,12 +455,21 @@ impl From<i8> for Value {
     }
 }
 
-// TODO
-// impl From<u64> for Value {
-//     fn from(value: u64) -> Self {
-//         Self::Integer(value)
-//     }
-// }
+impl TryFrom<u128> for Value {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: u128) -> Result<Self, Self::Error> {
+        value.try_into().map(Self::Integer)
+    }
+}
+
+impl TryFrom<u64> for Value {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        value.try_into().map(Self::Integer)
+    }
+}
 
 impl From<u32> for Value {
     fn from(value: u32) -> Self {

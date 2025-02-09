@@ -24,7 +24,12 @@ impl Datetime {
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::Datetime::Wrapper::Field>";
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        if let Some((date, rest)) = split_once(bytes, |b| *b == b'T' || *b == b't' || *b == b' ') {
+        if let Some(position) = bytes
+            .iter()
+            .position(|b| *b == b'T' || *b == b't' || *b == b' ')
+        {
+            let (date, rest) = (&bytes[..position], &bytes[position + 1..]);
+
             let date = Some(LocalDate::from_slice(date)?);
 
             let (time, offset) =
@@ -109,16 +114,21 @@ impl OffsetDatetime {
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::OffsetDatetime::Wrapper::Field>";
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        let Some((date, rest)) = split_once(bytes, |b| b"Tt ".contains(b)) else {
-            return Err(ErrorKind::InvalidDatetime.into());
-        };
-        let Some(off_pos) = rest.iter().position(|b| b"Zz+-".contains(b)) else {
-            return Err(ErrorKind::InvalidDatetime.into());
-        };
+        let position = bytes
+            .iter()
+            .position(|b| b"Tt ".contains(b))
+            .ok_or(ErrorKind::InvalidDatetime)?;
+        let (date, rest) = (&bytes[..position], &bytes[position + 1..]);
+
+        let position = rest
+            .iter()
+            .position(|b| b"Zz+-".contains(b))
+            .ok_or(ErrorKind::InvalidDatetime)?;
+        let (time, offset) = (&rest[..position], &rest[position..]);
 
         let date = LocalDate::from_slice(date)?;
-        let time = LocalTime::from_slice(&rest[..off_pos])?;
-        let offset = Offset::from_slice(&rest[off_pos..])?;
+        let time = LocalTime::from_slice(time)?;
+        let offset = Offset::from_slice(offset)?;
 
         Ok(Self { date, time, offset })
     }
@@ -183,9 +193,11 @@ impl LocalDatetime {
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDatetime::Wrapper::Field>";
 
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        let Some((date, time)) = split_once(bytes, |b| *b == b'T' || *b == b' ') else {
-            return Err(ErrorKind::InvalidDatetime.into());
-        };
+        let position = bytes
+            .iter()
+            .position(|b| *b == b'T' || *b == b' ')
+            .ok_or(ErrorKind::InvalidDatetime)?;
+        let (date, time) = (&bytes[..position], &bytes[position + 1..]);
 
         let date = LocalDate::from_slice(date)?;
         let time = LocalTime::from_slice(time)?;
@@ -261,9 +273,17 @@ impl LocalDate {
             .build();
         const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-        let (year, (month, day)) = split_once(bytes, |b| *b == b'-')
-            .and_then(|(year, rest)| Some((year, split_once(rest, |b| *b == b'-')?)))
+        let position = bytes
+            .iter()
+            .position(|b| *b == b'-')
             .ok_or(ErrorKind::InvalidDatetime)?;
+        let (year, rest) = (&bytes[..position], &bytes[position + 1..]);
+
+        let position = rest
+            .iter()
+            .position(|b| *b == b'-')
+            .ok_or(ErrorKind::InvalidDatetime)?;
+        let (month, day) = (&rest[..position], &rest[position + 1..]);
 
         if year.len() != 4 || month.len() != 2 || day.len() != 2 {
             return Err(ErrorKind::InvalidDatetime.into());
@@ -365,9 +385,17 @@ impl LocalTime {
             .build();
         const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
 
-        let (hour, (minute, second)) = split_once(bytes, |b| *b == b':')
-            .and_then(|(hour, rest)| Some((hour, split_once(rest, |b| *b == b':')?)))
+        let position = bytes
+            .iter()
+            .position(|b| *b == b':')
             .ok_or(ErrorKind::InvalidDatetime)?;
+        let (hour, rest) = (&bytes[..position], &bytes[position + 1..]);
+
+        let position = rest
+            .iter()
+            .position(|b| *b == b':')
+            .ok_or(ErrorKind::InvalidDatetime)?;
+        let (minute, second) = (&rest[..position], &rest[position + 1..]);
 
         if hour.len() != 2 || minute.len() != 2 {
             return Err(ErrorKind::InvalidDatetime.into());
@@ -377,14 +405,12 @@ impl LocalTime {
         let minute = u8::from_lexical_with_options::<FORMAT>(minute, &OPTIONS)
             .map_err(|_| ErrorKind::InvalidDatetime)?;
 
-        let (second, fraction) =
-            if let Some((second, fraction)) = split_once(second, |b| *b == b'.') {
-                // The TOML spec requires at least milliseconds (6 digits) and truncate additional
-                // digits. We support up to nanoseconds (9 digits) here and truncate the rest.
-                (second, Some(fraction.get(..9).unwrap_or(fraction)))
-            } else {
-                (second, None)
-            };
+        let (second, fraction) = second
+            .iter()
+            .position(|b| *b == b'.')
+            .map_or((second, None), |position| {
+                (&second[..position], Some(&second[position + 1..]))
+            });
 
         if second.len() != 2 {
             return Err(ErrorKind::InvalidDatetime.into());
@@ -398,6 +424,10 @@ impl LocalTime {
             }
             let nanosecond = u32::from_lexical_with_options::<FORMAT>(fraction, &OPTIONS)
                 .map_err(|_| ErrorKind::InvalidDatetime)?;
+
+            // The TOML spec requires at least milliseconds (6 digits) and truncate additional
+            // digits. We support up to nanoseconds (9 digits) here and truncate the rest.
+            let fraction = fraction.get(..9).unwrap_or(fraction);
 
             // If we parsed <9 digits, we need to multiply by 10 for each digit we're short
             let extra_zeros = 9 - u32::try_from(fraction.len())
@@ -503,11 +533,16 @@ impl Offset {
                 _ => return Err(ErrorKind::InvalidDatetime.into()),
             };
 
-            let (hours, minutes) =
-                split_once(bytes, |b| *b == b':').ok_or(ErrorKind::InvalidDatetime)?;
+            let position = bytes
+                .iter()
+                .position(|b| *b == b':')
+                .ok_or(ErrorKind::InvalidDatetime)?;
+            let (hours, minutes) = (&bytes[..position], &bytes[position + 1..]);
+
             if hours.len() != 2 && minutes.len() != 2 {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
+
             let hours = i16::from_lexical_with_options::<FORMAT>(hours, &OPTIONS)
                 .map_err(|_| ErrorKind::InvalidDatetime)?;
             let minutes = i16::from_lexical_with_options::<FORMAT>(minutes, &OPTIONS)
@@ -544,13 +579,4 @@ impl str::FromStr for Offset {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
-}
-
-// TODO use <[T]>::split_once when it's stable
-fn split_once<F>(bytes: &[u8], predicate: F) -> Option<(&[u8], &[u8])>
-where
-    F: FnMut(&u8) -> bool,
-{
-    let position = bytes.iter().position(predicate)?;
-    Some((&bytes[..position], &bytes[position + 1..]))
 }

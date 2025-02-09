@@ -126,8 +126,6 @@ pub(super) struct Parser<'de, R: Reader<'de>> {
 }
 
 impl<'de> Parser<'de, SliceReader<'de>> {
-    #[allow(clippy::should_implement_trait)]
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_str(str: &'de str) -> Self {
         Self {
@@ -136,8 +134,6 @@ impl<'de> Parser<'de, SliceReader<'de>> {
         }
     }
 
-    #[allow(clippy::should_implement_trait)]
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
         Self {
@@ -151,8 +147,6 @@ impl<R> Parser<'_, IoReader<R>>
 where
     R: io::Read,
 {
-    #[allow(clippy::should_implement_trait)]
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     #[must_use]
     pub fn from_reader(read: R) -> Self {
         Self {

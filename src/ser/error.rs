@@ -28,7 +28,11 @@ impl fmt::Debug for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None // TODO
+        match self.0.kind {
+            ErrorKind::Io(ref io_error) => Some(&**io_error),
+            ErrorKind::Fmt(ref fmt_error) => Some(fmt_error),
+            _ => None,
+        }
     }
 }
 

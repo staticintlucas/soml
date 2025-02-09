@@ -298,7 +298,9 @@ impl<'de> de::Deserializer<'de> for Value {
             Self::Float(float) => visitor.visit_f64(float),
             Self::Boolean(bool) => visitor.visit_bool(bool),
             Self::Datetime(datetime) => {
-                // TODO can we avoid converting to string here?
+                // Unfortunately we have to convert to a string here before re-parsing it in the
+                // deserialize impl because serde doesn't have a way to pass the datetime struct
+                // through directly
                 match (
                     datetime.date.as_ref(),
                     datetime.time.as_ref(),
@@ -517,8 +519,6 @@ impl<'de> de::VariantAccess<'de> for EnumAccess {
     where
         V: de::Visitor<'de>,
     {
-        // TODO toml-rs uses maps with integer keys instead of arrays for tuple variants. Do we need
-        // to support this too?
         de::Deserializer::deserialize_seq(self.value, visitor)
     }
 
@@ -542,7 +542,33 @@ impl<'de> de::Deserializer<'de> for &'de Value {
             Value::Integer(int) => visitor.visit_i64(int),
             Value::Float(float) => visitor.visit_f64(float),
             Value::Boolean(bool) => visitor.visit_bool(bool),
-            Value::Datetime(ref _datetime) => todo!(), // TODO
+            Value::Datetime(ref datetime) => {
+                // Unfortunately we have to convert to a string here before re-parsing it in the
+                // deserialize impl because serde doesn't have a way to pass the datetime struct
+                // through directly
+                match (
+                    datetime.date.as_ref(),
+                    datetime.time.as_ref(),
+                    datetime.offset.as_ref(),
+                ) {
+                    (Some(_), Some(_), Some(_)) => visitor.visit_map(
+                        DatetimeAccess::offset_datetime(datetime.to_string().into_bytes()),
+                    ),
+                    (Some(_), Some(_), None) => visitor.visit_map(DatetimeAccess::local_datetime(
+                        datetime.to_string().into_bytes(),
+                    )),
+                    (Some(_), None, None) => visitor.visit_map(DatetimeAccess::local_date(
+                        datetime.to_string().into_bytes(),
+                    )),
+                    (None, Some(_), None) => visitor.visit_map(DatetimeAccess::local_time(
+                        datetime.to_string().into_bytes(),
+                    )),
+                    _ => Err(Error::invalid_value(
+                        de::Unexpected::Other(datetime.type_str()),
+                        &"a valid data-time",
+                    )),
+                }
+            }
             Value::Array(ref array) => visitor.visit_seq(SeqRefAccess::new(array)),
             Value::Table(ref table) => visitor.visit_map(MapRefAccess::new(table)),
         }
@@ -738,8 +764,6 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
     where
         V: de::Visitor<'de>,
     {
-        // TODO toml-rs uses maps with integer keys instead of arrays for tuple variants. Do we need
-        // to support this too?
         de::Deserializer::deserialize_seq(self.value, visitor)
     }
 

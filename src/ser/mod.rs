@@ -9,7 +9,7 @@ use self::_impl::{
     TableSerializer, ValueKind, WrappedArraySerializer, WrappedTableSerializer,
     __serialize_unimplemented,
 };
-use self::error::ErrorKind;
+pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
 use self::writer::{IoWriter, Writer};
 
@@ -26,16 +26,6 @@ where
     Ok(dst)
 }
 
-// TODO
-// pub fn to_string_pretty<T>(value: &T) -> Result<String>
-// where
-//     T: ser::Serialize,
-// {
-//     let mut dst = String::new();
-//     value.serialize(Serializer::pretty(&mut dst))?;
-//     Ok(dst)
-// }
-
 #[derive(Debug)]
 pub struct Serializer<W> {
     writer: W,
@@ -46,11 +36,6 @@ impl<'a> Serializer<&'a mut String> {
     pub fn new(buf: &'a mut String) -> Self {
         Self::from_fmt_writer(buf)
     }
-
-    // TODO
-    // pub fn pretty(buf: &'a mut String) -> Self {
-    //     Self::new(buf)
-    // }
 }
 
 impl<T> Serializer<IoWriter<T>>
@@ -68,7 +53,6 @@ impl<T> Serializer<T>
 where
     T: fmt::Write,
 {
-    #[allow(clippy::missing_const_for_fn)] // TODO decide on constness of public API
     pub fn from_fmt_writer(writer: T) -> Self {
         Self { writer }
     }
@@ -515,8 +499,10 @@ impl InlineSerializer {
                 '\\' => buf.write_str("\\\\")?,
                 // Other control characters
                 '\x00'..='\x1f' | '\x7f' => write!(buf, "\\u{:04x}", u32::from(ch))?,
-                // Other characters // TODO unreachable?
-                ch => buf.write_char(ch)?,
+                // Other characters (unreachable)
+                ch => {
+                    unreachable!("unexpected character: {ch}")
+                }
             }
             rest = &rest[ch.len_utf8()..];
         }
@@ -561,8 +547,10 @@ impl InlineSerializer {
                 '\\' => buf.write_str("\\\\")?,
                 // Other control characters
                 '\x00'..='\x1f' | '\x7f' => write!(buf, "\\u{:04x}", u32::from(ch))?,
-                // Other characters // TODO unreachable?
-                ch => buf.write_char(ch)?,
+                // Other characters (unreachable)
+                ch => {
+                    unreachable!("unexpected character: {ch}")
+                }
             }
             rest = &rest[ch.len_utf8()..];
         }

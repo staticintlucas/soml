@@ -639,8 +639,6 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
     where
         V: de::Visitor<'de>,
     {
-        // TODO toml-rs uses maps with integer keys instead of arrays for tuple variants. Do we need
-        // to support this too?
         de::Deserializer::deserialize_seq(ValueDeserializer::new(self.value), visitor)
     }
 

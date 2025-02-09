@@ -62,3 +62,5 @@ redundant_type_annotations = "warn"
 try_err = "warn"
 unseparated_literal_suffix = "warn"
 unwrap_used = "warn"
+
+missing_const_for_fn = { level = "allow", priority = 1 } # TODO decide on constness of public API
