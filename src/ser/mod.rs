@@ -260,7 +260,8 @@ where
 }
 
 #[derive(Debug)]
-struct InlineSerializer;
+#[allow(missing_copy_implementations)]
+pub struct InlineSerializer;
 
 impl ser::Serializer for InlineSerializer {
     type Ok = String;

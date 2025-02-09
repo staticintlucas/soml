@@ -4,6 +4,8 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::{fmt, ops};
 
+use serde::Serialize;
+
 pub use self::datetime::{
     Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
@@ -257,12 +259,15 @@ impl Value {
     }
 }
 
-// TODO
-// impl fmt::Display for Value {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         ser::to_string(self).fmt(f)
-//     }
-// }
+impl fmt::Display for Value {
+    #[allow(clippy::panic)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.serialize(crate::ser::InlineSerializer) {
+            Ok(s) => s.fmt(f),
+            Err(e) => panic!("{e}"),
+        }
+    }
+}
 
 pub trait Index: private::Sealed {
     #[doc(hidden)]
