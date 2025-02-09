@@ -5,50 +5,39 @@ on: [push, pull_request]
 jobs:
   test:
     name: Test
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
-
       matrix:
         rust: [stable] # TODO MSRV
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         submodules: true
-
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
-
     - name: Build
       run: cargo build --all-targets
       env:
         RUSTFLAGS: -D warnings
-
     - name: Test
       run: cargo test --all
 
   docs:
     name: Docs
-
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         submodules: true
-
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: stable
-
     - name: Build documentation
       run: cargo doc --all-features --no-deps --document-private-items
       env:
@@ -56,25 +45,48 @@ jobs:
 
   lints:
     name: Lints
-
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         submodules: true
-
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
         components: rustfmt, clippy
-
     - name: Check formatting
       run: cargo fmt --all -- --check
-
     - name: Run Clippy
       run: cargo clippy --all-targets --all-features
       env:
         RUSTFLAGS: -D warnings
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Setup toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: nightly
+        components: llvm-tools-preview
+    - name: Setup cargo-llvm-cov
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-llvm-cov
+    - name: Show coverage
+      run: cargo llvm-cov --lib
+    - name: Generate coverage report
+      run: cargo llvm-cov --lib --codecov --output-path lcov.info
+    # - name: Upload coverage to Codecov
+    #   uses: codecov/codecov-action@v3
+    #   with:
+    #     token: ${{ secrets.CODECOV_TOKEN }}
+    #     files: lcov.info
+    #     fail_ci_if_error: true
