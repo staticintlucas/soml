@@ -227,11 +227,11 @@ impl<'a> Reader<'a> for SliceReader<'a> {
         self.seq_start = Some(self.offset);
     }
 
+    #[allow(clippy::panic)]
     fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
-        let start = self
-            .seq_start
-            .take()
-            .unwrap_or_else(|| unreachable!("Sequence wasn't started first"));
+        let Some(start) = self.seq_start.take() else {
+            panic!("Reader::end_seq called without calling Reader::start_seq first")
+        };
         Ok(Cow::Borrowed(&self.bytes[start..self.offset]))
     }
 }
@@ -278,15 +278,14 @@ where
     }
 
     fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
-        let mut result = Vec::with_capacity(n);
-        result.extend(self.peek.drain(..n.min(self.peek.len())));
-
-        while result.len() < n {
+        while self.peek.len() < n {
             match self.iter.next().transpose()? {
-                Some(ch) => result.push(ch),
+                Some(ch) => self.peek.push_back(ch),
                 None => return Ok(None), // return None if we can't get n bytes
             }
         }
+
+        let result: Vec<_> = self.peek.drain(..n).collect();
 
         if let Some(seq) = self.seq.as_mut() {
             seq.extend_from_slice(result.as_ref());
@@ -334,24 +333,22 @@ where
     fn discard_n(&mut self, n: usize) -> Result<()> {
         if let Some(seq) = self.seq.as_mut() {
             seq.reserve(n);
+        }
 
-            let peeked_n = n.min(self.peek.len());
-            seq.extend(self.peek.drain(..peeked_n));
+        let peeked_n = n.min(self.peek.len());
+        let peeked = self.peek.drain(..peeked_n);
+        if let Some(seq) = self.seq.as_mut() {
+            seq.extend(peeked);
+        }
 
-            for _ in peeked_n..n {
-                match self.iter.next().transpose()? {
-                    Some(ch) => seq.push(ch),
-                    None => break,
+        for _ in peeked_n..n {
+            match self.iter.next().transpose()? {
+                Some(ch) => {
+                    if let Some(seq) = self.seq.as_mut() {
+                        seq.push(ch);
+                    }
                 }
-            }
-        } else {
-            let peeked_n = n.min(self.peek.len());
-            self.peek.drain(..peeked_n);
-
-            for _ in peeked_n..n {
-                if self.iter.next().transpose()?.is_none() {
-                    break;
-                }
+                None => break,
             }
         }
 
@@ -406,9 +403,764 @@ where
         self.seq = Some(Vec::with_capacity(16));
     }
 
+    #[allow(clippy::panic)]
     fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
-        Ok(Cow::Owned(self.seq.take().unwrap_or_else(|| {
-            unreachable!("Sequence wasn't started first")
-        })))
+        let Some(seq) = self.seq.take() else {
+            panic!("Reader::end_seq called without calling Reader::start_seq first")
+        };
+        Ok(Cow::Owned(seq))
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use std::io::Read as _;
+
+    use super::*;
+
+    #[test]
+    fn slice_reader_from_str() {
+        let s = r"
+            [a]
+            b = 1
+            c = 2
+            d = 3
+        ";
+        let r = SliceReader::from_str(s);
+
+        assert_eq!(r.bytes, s.as_bytes());
+        assert_eq!(r.offset, 0);
+        assert_eq!(r.seq_start, None);
+    }
+
+    #[test]
+    fn slice_reader_from_slice() {
+        let s = b"
+            [a]
+            b = 1
+            c = 2
+            d = 3
+        ";
+        let r = SliceReader::from_slice(s);
+
+        assert_eq!(r.bytes, s);
+        assert_eq!(r.offset, 0);
+        assert_eq!(r.seq_start, None);
+    }
+
+    #[test]
+    fn slice_reader_next() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.next().unwrap(), Some(b'f'));
+        assert_eq!(reader.offset, 1);
+
+        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_eq!(reader.offset, 2);
+
+        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_eq!(reader.offset, 3);
+
+        assert_eq!(reader.next().unwrap(), None);
+        assert_eq!(reader.offset, 3);
+
+        assert_eq!(reader.next().unwrap(), None);
+        assert_eq!(reader.offset, 3);
+    }
+
+    #[test]
+    fn slice_reader_next_n() {
+        let mut reader = SliceReader {
+            bytes: b"foo bar baz",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.next_n(2).unwrap(), Some(b"fo".into()));
+        assert_eq!(reader.offset, 2);
+
+        assert_eq!(reader.next_n(5).unwrap(), Some(b"o bar".into()));
+        assert_eq!(reader.offset, 7);
+
+        assert_eq!(reader.next_n(5).unwrap(), None);
+        assert_eq!(reader.offset, 7);
+
+        assert_eq!(reader.next_n(4).unwrap(), Some(b" baz".into()));
+        assert_eq!(reader.offset, 11);
+    }
+
+    #[test]
+    fn slice_reader_peek() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_eq!(reader.offset, 0);
+    }
+
+    #[test]
+    fn slice_reader_peek_n() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.peek_n(2).unwrap(), Some(b"fo".into()));
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek_n(4).unwrap(), None);
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
+        assert_eq!(reader.offset, 0);
+    }
+
+    #[test]
+    fn slice_reader_peek_at() {
+        let mut reader = SliceReader {
+            bytes: b"bar",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.peek_at(1).unwrap(), Some(b'a'));
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek_at(3).unwrap(), None);
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek_at(2).unwrap(), Some(b'r'));
+        assert_eq!(reader.offset, 0);
+    }
+
+    #[test]
+    fn slice_reader_discard() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.discard().unwrap();
+        assert_eq!(reader.offset, 1);
+
+        reader.discard().unwrap();
+        assert_eq!(reader.offset, 2);
+
+        reader.discard().unwrap();
+        assert_eq!(reader.offset, 3);
+
+        reader.discard().unwrap();
+        assert_eq!(reader.offset, 3);
+
+        reader.discard().unwrap();
+        assert_eq!(reader.offset, 3);
+    }
+
+    #[test]
+    fn slice_reader_discard_n() {
+        let mut reader = SliceReader {
+            bytes: b"foo bar baz",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.discard_n(2).unwrap();
+        assert_eq!(reader.offset, 2);
+
+        reader.discard_n(5).unwrap();
+        assert_eq!(reader.offset, 7);
+
+        reader.discard_n(12).unwrap();
+        assert_eq!(reader.offset, 11);
+    }
+
+    #[test]
+    fn slice_reader_next_if() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), Some(b'f'));
+        assert_eq!(reader.offset, 1);
+
+        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), None);
+        assert_eq!(reader.offset, 1);
+
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_eq!(reader.offset, 2);
+
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_eq!(reader.offset, 3);
+
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), None);
+        assert_eq!(reader.offset, 3);
+    }
+
+    #[test]
+    fn slice_reader_next_while() {
+        let mut reader = SliceReader {
+            bytes: b"bbbbaaaaaaararrrrrrr",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'b').unwrap(),
+            b"bbbb".as_slice()
+        );
+        assert_eq!(reader.offset, 4);
+
+        assert_eq!(reader.next_while(|&ch| ch == b'b').unwrap(), b"".as_slice());
+        assert_eq!(reader.offset, 4);
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'a').unwrap(),
+            b"aaaaaaa".as_slice()
+        );
+        assert_eq!(reader.offset, 11);
+
+        assert_eq!(reader.next_while(|&ch| ch == b'a').unwrap(), b"".as_slice());
+        assert_eq!(reader.offset, 11);
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'r').unwrap(),
+            b"r".as_slice()
+        );
+        assert_eq!(reader.offset, 12);
+
+        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_eq!(reader.offset, 12);
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'a').unwrap(),
+            b"a".as_slice()
+        );
+        assert_eq!(reader.offset, 13);
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'r').unwrap(),
+            b"rrrrrrr".as_slice()
+        );
+        assert_eq!(reader.offset, 20);
+
+        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_eq!(reader.offset, 20);
+    }
+
+    #[test]
+    fn slice_reader_next_str_while() {
+        let mut reader = SliceReader {
+            bytes: b"bbbbaaaaaaararrrrrrr",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "bbbb");
+        assert_eq!(reader.offset, 4);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "");
+        assert_eq!(reader.offset, 4);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "aaaaaaa");
+        assert_eq!(reader.offset, 11);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "");
+        assert_eq!(reader.offset, 11);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "r");
+        assert_eq!(reader.offset, 12);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_eq!(reader.offset, 12);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "a");
+        assert_eq!(reader.offset, 13);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "rrrrrrr");
+        assert_eq!(reader.offset, 20);
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_eq!(reader.offset, 20);
+
+        let mut reader = SliceReader {
+            bytes: b"\xff\xff\xff\xff",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.next_str_while(|&ch| ch == b'\xff').unwrap_err();
+    }
+
+    #[test]
+    fn slice_reader_peek_while() {
+        let mut reader = SliceReader {
+            bytes: b"foo bar baz",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(
+            reader.peek_while(|&ch| ch == b'f').unwrap(),
+            b"f".as_slice()
+        );
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(reader.peek_while(|&ch| ch == b'o').unwrap(), b"".as_slice());
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(
+            reader.peek_while(|&ch| !ch.is_ascii_whitespace()).unwrap(),
+            b"foo".as_slice()
+        );
+        assert_eq!(reader.offset, 0);
+
+        assert_eq!(
+            reader.peek_while(|&ch| ch.is_ascii()).unwrap(),
+            b"foo bar baz".as_slice()
+        );
+        assert_eq!(reader.offset, 0);
+    }
+
+    #[test]
+    fn slice_reader_eat_char() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert!(reader.eat_char(b'f').unwrap());
+        assert_eq!(reader.offset, 1);
+
+        assert!(!reader.eat_char(b'f').unwrap());
+        assert_eq!(reader.offset, 1);
+
+        assert!(reader.eat_char(b'o').unwrap());
+        assert_eq!(reader.offset, 2);
+
+        assert!(reader.eat_char(b'o').unwrap());
+        assert_eq!(reader.offset, 3);
+
+        assert!(!reader.eat_char(b'o').unwrap());
+        assert_eq!(reader.offset, 3);
+    }
+
+    #[test]
+    fn slice_reader_eat_str() {
+        let mut reader = SliceReader {
+            bytes: b"foobar",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert!(reader.eat_str(b"foo").unwrap());
+        assert_eq!(reader.offset, 3);
+
+        assert!(!reader.eat_str(b"foo").unwrap());
+        assert_eq!(reader.offset, 3);
+
+        assert!(reader.eat_str(b"bar").unwrap());
+        assert_eq!(reader.offset, 6);
+
+        assert!(!reader.eat_str(b"bar").unwrap());
+        assert_eq!(reader.offset, 6);
+
+        assert!(!reader.eat_str(b"baz").unwrap());
+        assert_eq!(reader.offset, 6);
+    }
+
+    #[test]
+    fn slice_reader_seq() {
+        let mut reader = SliceReader {
+            bytes: b"foo bar baz",
+            offset: 0,
+            seq_start: None,
+        };
+
+        let _f = reader.next().unwrap().unwrap();
+
+        reader.start_seq();
+
+        let _oo = reader.next_while(|ch| *ch == b'o').unwrap();
+        let _space = reader.next_if(u8::is_ascii_whitespace).unwrap().unwrap();
+        let _bar = reader.next_while(|ch| !ch.is_ascii_whitespace()).unwrap();
+        reader.discard().unwrap();
+        let _ba = reader.next_n(2).unwrap();
+
+        assert_eq!(reader.end_seq().unwrap(), b"oo bar ba".as_slice());
+    }
+
+    #[test]
+    #[should_panic = "Reader::end_seq called without calling Reader::start_seq first"]
+    fn slice_reader_end_seq_without_starting() {
+        let mut reader = SliceReader {
+            bytes: b"foo bar baz",
+            offset: 0,
+            seq_start: None,
+        };
+
+        let _result = reader.end_seq();
+    }
+
+    #[test]
+    fn io_reader_from_reader() {
+        let s = br"
+            [a]
+            b = 1
+            c = 2
+            d = 3
+        ";
+        let r = IoReader::from_reader(s.as_slice());
+
+        assert_eq!(r.peek.len(), 0);
+        assert_eq!(r.seq, None);
+    }
+
+    #[test]
+    fn io_reader_next() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.next().unwrap(), Some(b'f'));
+        assert_eq!(reader.next().unwrap(), Some(b'o'));
+
+        reader.peek().unwrap();
+        assert_eq!(reader.next().unwrap(), Some(b'o'));
+
+        assert_eq!(reader.next().unwrap(), None);
+        assert_eq!(reader.next().unwrap(), None);
+    }
+
+    #[test]
+    fn io_reader_next_n() {
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.next_n(2).unwrap(), Some(b"fo".into()));
+        assert_eq!(reader.next_n(5).unwrap(), Some(b"o bar".into()));
+        assert_eq!(reader.next_n(5).unwrap(), None);
+        assert_eq!(reader.next_n(4).unwrap(), Some(b" baz".into()));
+    }
+
+    #[test]
+    fn io_reader_peek() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_eq!(reader.peek.len(), 1);
+        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_eq!(reader.peek.len(), 1);
+    }
+
+    #[test]
+    fn io_reader_peek_n() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek_n(2).unwrap(), Some(b"fo".into()));
+        assert_eq!(reader.peek.len(), 2);
+        assert_eq!(reader.peek_n(4).unwrap(), None);
+        assert_eq!(reader.peek.len(), 3);
+        assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
+        assert_eq!(reader.peek.len(), 3);
+    }
+
+    #[test]
+    fn io_reader_peek_at() {
+        let mut reader = IoReader {
+            iter: b"bar".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek_at(1).unwrap(), Some(b'a'));
+        assert_eq!(reader.peek.len(), 2);
+        assert_eq!(reader.peek_at(3).unwrap(), None);
+        assert_eq!(reader.peek.len(), 3);
+        assert_eq!(reader.peek_at(2).unwrap(), Some(b'r'));
+        assert_eq!(reader.peek.len(), 3);
+    }
+
+    #[test]
+    fn io_reader_discard() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.discard().unwrap();
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek().unwrap(), Some(b'o'));
+        assert_eq!(reader.peek.len(), 1);
+        reader.discard().unwrap();
+        assert_eq!(reader.peek.len(), 0);
+        reader.discard().unwrap();
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek().unwrap(), None);
+        assert_eq!(reader.peek.len(), 0);
+        reader.discard().unwrap();
+        assert_eq!(reader.peek.len(), 0);
+        reader.discard().unwrap();
+    }
+
+    #[test]
+    fn io_reader_discard_n() {
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.discard_n(2).unwrap();
+        assert_eq!(reader.peek.len(), 0);
+        assert_eq!(reader.peek_n(7).unwrap(), Some(b"o bar b".into()));
+        assert_eq!(reader.peek.len(), 7);
+        reader.discard_n(5).unwrap();
+        assert_eq!(reader.peek.len(), 2);
+        reader.discard_n(12).unwrap();
+        assert_eq!(reader.peek.len(), 0);
+    }
+
+    #[test]
+    fn io_reader_next_if() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), Some(b'f'));
+        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), None);
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), None);
+    }
+
+    #[test]
+    fn io_reader_next_while() {
+        let mut reader = IoReader {
+            iter: b"bbbbaaaaaaararrrrrrr".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'b').unwrap(),
+            b"bbbb".as_slice()
+        );
+        assert_eq!(reader.next_while(|&ch| ch == b'b').unwrap(), b"".as_slice());
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'a').unwrap(),
+            b"aaaaaaa".as_slice()
+        );
+        assert_eq!(reader.next_while(|&ch| ch == b'a').unwrap(), b"".as_slice());
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'r').unwrap(),
+            b"r".as_slice()
+        );
+        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'a').unwrap(),
+            b"a".as_slice()
+        );
+        assert_eq!(
+            reader.next_while(|&ch| ch == b'r').unwrap(),
+            b"rrrrrrr".as_slice()
+        );
+        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+    }
+
+    #[test]
+    fn io_reader_next_str_while() {
+        let mut reader = IoReader {
+            iter: b"bbbbaaaaaaararrrrrrr".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "bbbb");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "aaaaaaa");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "r");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "a");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "rrrrrrr");
+        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+
+        let mut reader = IoReader {
+            iter: b"\xff\xff\xff\xff".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.next_str_while(|&ch| ch == b'\xff').unwrap_err();
+    }
+
+    #[test]
+    fn io_reader_peek_while() {
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(
+            reader.peek_while(|&ch| ch == b'f').unwrap(),
+            b"f".as_slice()
+        );
+        assert_eq!(reader.peek_while(|&ch| ch == b'o').unwrap(), b"".as_slice());
+        assert_eq!(
+            reader.peek_while(|&ch| !ch.is_ascii_whitespace()).unwrap(),
+            b"foo".as_slice()
+        );
+        assert_eq!(
+            reader.peek_while(|&ch| ch.is_ascii()).unwrap(),
+            b"foo bar baz".as_slice()
+        );
+    }
+
+    #[test]
+    fn io_reader_eat_char() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert!(reader.eat_char(b'f').unwrap());
+        assert!(!reader.eat_char(b'f').unwrap());
+        assert!(reader.eat_char(b'o').unwrap());
+        assert!(reader.eat_char(b'o').unwrap());
+        assert!(!reader.eat_char(b'o').unwrap());
+    }
+
+    #[test]
+    fn io_reader_eat_str() {
+        let mut reader = IoReader {
+            iter: b"foobar".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert!(reader.eat_str(b"foo").unwrap());
+        assert!(!reader.eat_str(b"foo").unwrap());
+        reader.peek_n(3).unwrap();
+        assert_eq!(reader.peek.len(), 3);
+        assert!(reader.eat_str(b"bar").unwrap());
+        assert!(!reader.eat_str(b"bar").unwrap());
+        assert!(!reader.eat_str(b"baz").unwrap());
+    }
+
+    #[test]
+    fn io_reader_seq() {
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        let _f = reader.next().unwrap().unwrap();
+
+        reader.start_seq();
+
+        let _oo = reader.next_while(|ch| *ch == b'o').unwrap();
+        let _space = reader.next_if(u8::is_ascii_whitespace).unwrap().unwrap();
+        let _bar = reader.next_while(|ch| !ch.is_ascii_whitespace()).unwrap();
+        reader.discard().unwrap();
+        let _ba = reader.next_n(2).unwrap();
+
+        assert_eq!(reader.end_seq().unwrap(), b"oo bar ba".as_slice());
+
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        let _f = reader.next().unwrap().unwrap();
+
+        reader.start_seq();
+
+        let _o = reader.next().unwrap();
+        reader.discard_n(3).unwrap();
+        let _ar = reader.eat_str(b"ar").unwrap();
+
+        assert_eq!(reader.end_seq().unwrap(), b"oo bar".as_slice());
+    }
+
+    #[test]
+    #[should_panic = "Reader::end_seq called without calling Reader::start_seq first"]
+    fn io_reader_end_seq_without_starting() {
+        let mut reader = IoReader {
+            iter: b"foo bar baz".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        let _result = reader.end_seq();
+    }
+
+    #[test]
+    fn io_reader_error() {
+        struct ErrReader;
+
+        impl io::Read for ErrReader {
+            fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::Other, "foo"))
+            }
+        }
+
+        let mut reader = IoReader {
+            iter: ErrReader.bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.next().unwrap_err();
+        reader.next_n(4).unwrap_err();
+        reader.peek().unwrap_err();
+        reader.peek_n(4).unwrap_err();
+        reader.peek_at(1).unwrap_err();
+        reader.discard().unwrap_err();
+        reader.discard_n(4).unwrap_err();
+        reader.next_if(|_| true).unwrap_err();
+        reader.next_while(|_| true).unwrap_err();
+        reader.next_str_while(|_| true).unwrap_err();
+        reader.peek_while(|_| true).unwrap_err();
+        reader.eat_char(b'a').unwrap_err();
+        reader.eat_str(b"foo").unwrap_err();
     }
 }
