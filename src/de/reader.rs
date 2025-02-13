@@ -1,6 +1,7 @@
+use core::str;
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::{io, str};
+use std::io;
 
 use super::error::{ErrorKind, Result};
 
@@ -25,6 +26,21 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
 
+    /// Gets the next char from the source. Returns `Ok(None)` if the end of the source is reached.
+    ///
+    /// # Errors
+    ///
+    /// Raises an encoding error if the bytes are not UTF-8 encoded.
+    /// Propagates any IO errors that occurred while reading from the source.
+    fn next_char(&mut self) -> Result<Option<char>> {
+        Ok(if let Some(char) = self.peek_char()? {
+            self.discard_n(char.len_utf8())?;
+            Some(char)
+        } else {
+            None
+        })
+    }
+
     /// Peeks the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
     /// # Errors
@@ -41,6 +57,26 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
+
+    /// Peeks the next char from the source. Returns `Ok(None)` if the end of the source is reached.
+    ///
+    /// # Errors
+    ///
+    /// Raises an encoding error if the bytes are not UTF-8 encoded.
+    /// Propagates any IO errors that occurred while reading from the source.
+    fn peek_char(&mut self) -> Result<Option<char>> {
+        let Some(first) = self.peek()? else {
+            return Ok(None);
+        };
+        Ok(str::from_utf8(
+            self.peek_n(utf8_len(first).ok_or(ErrorKind::InvalidEncoding)?)?
+                .ok_or(ErrorKind::InvalidEncoding)?
+                .as_ref(),
+        )
+        .map_err(|_| ErrorKind::InvalidEncoding)?
+        .chars()
+        .next())
+    }
 
     /// Peeks the byte at `pos` bytes from the current location in the source. If the end of the
     /// source is reached, returns `Ok(None)`.
@@ -412,6 +448,16 @@ where
     }
 }
 
+const fn utf8_len(byte: u8) -> Option<usize> {
+    match byte {
+        0x00..=0x7F => Some(1),
+        0xC0..=0xDF => Some(2),
+        0xE0..=0xEF => Some(3),
+        0xF0..=0xF7 => Some(4),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
@@ -495,6 +541,42 @@ mod tests {
     }
 
     #[test]
+    fn slice_reader_next_char() {
+        let mut reader = SliceReader {
+            bytes: b"f",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.next_char().unwrap(), Some('f'));
+        assert_eq!(reader.next_char().unwrap(), None);
+
+        let mut reader = SliceReader {
+            bytes: b"\xff",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.next_char().unwrap_err();
+
+        let mut reader = SliceReader {
+            bytes: b"\xcf\xff",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.next_char().unwrap_err();
+
+        let mut reader = SliceReader {
+            bytes: b"\xcf",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.next_char().unwrap_err();
+    }
+
+    #[test]
     fn slice_reader_peek() {
         let mut reader = SliceReader {
             bytes: b"foo",
@@ -525,6 +607,50 @@ mod tests {
 
         assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
         assert_eq!(reader.offset, 0);
+    }
+
+    #[test]
+    fn slice_reader_peek_char() {
+        let mut reader = SliceReader {
+            bytes: b"foo",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.peek_char().unwrap(), Some('f'));
+        assert_eq!(reader.offset, 0);
+
+        let mut reader = SliceReader {
+            bytes: b"",
+            offset: 0,
+            seq_start: None,
+        };
+
+        assert_eq!(reader.peek_char().unwrap(), None);
+
+        let mut reader = SliceReader {
+            bytes: b"\xff",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.peek_char().unwrap_err();
+
+        let mut reader = SliceReader {
+            bytes: b"\xcf\xff",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.peek_char().unwrap_err();
+
+        let mut reader = SliceReader {
+            bytes: b"\xcf",
+            offset: 0,
+            seq_start: None,
+        };
+
+        reader.peek_char().unwrap_err();
     }
 
     #[test]
@@ -864,6 +990,42 @@ mod tests {
     }
 
     #[test]
+    fn io_reader_next_char() {
+        let mut reader = IoReader {
+            iter: b"f".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.next_char().unwrap(), Some('f'));
+        assert_eq!(reader.next_char().unwrap(), None);
+
+        let mut reader = IoReader {
+            iter: b"\xff".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.next_char().unwrap_err();
+
+        let mut reader = IoReader {
+            iter: b"\xcf\xff".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.next_char().unwrap_err();
+
+        let mut reader = IoReader {
+            iter: b"\xcf".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.next_char().unwrap_err();
+    }
+
+    #[test]
     fn io_reader_peek() {
         let mut reader = IoReader {
             iter: b"foo".bytes(),
@@ -893,6 +1055,49 @@ mod tests {
         assert_eq!(reader.peek.len(), 3);
         assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
         assert_eq!(reader.peek.len(), 3);
+    }
+
+    #[test]
+    fn io_reader_peek_char() {
+        let mut reader = IoReader {
+            iter: b"foo".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.peek_char().unwrap(), Some('f'));
+
+        let mut reader = IoReader {
+            iter: b"".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        assert_eq!(reader.peek_char().unwrap(), None);
+
+        let mut reader = IoReader {
+            iter: b"\xff".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.peek_char().unwrap_err();
+
+        let mut reader = IoReader {
+            iter: b"\xcf\xff".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.peek_char().unwrap_err();
+
+        let mut reader = IoReader {
+            iter: b"\xcf".bytes(),
+            peek: VecDeque::new(),
+            seq: None,
+        };
+
+        reader.peek_char().unwrap_err();
     }
 
     #[test]
@@ -1162,5 +1367,15 @@ mod tests {
         reader.peek_while(|_| true).unwrap_err();
         reader.eat_char(b'a').unwrap_err();
         reader.eat_str(b"foo").unwrap_err();
+    }
+
+    #[test]
+    fn test_utf8_len() {
+        let mut buf = [0; 4];
+        for ch in '\0'..=char::MAX {
+            let str = ch.encode_utf8(&mut buf);
+
+            assert_eq!(utf8_len(str.as_bytes()[0]), Some(str.len()));
+        }
     }
 }

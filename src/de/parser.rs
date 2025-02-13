@@ -563,19 +563,20 @@ where
             .no_positive_mantissa_sign(true)
             .build();
 
-        let Some(char) = self.reader.next()? else {
+        let Some(char) = self.reader.peek()? else {
             return Err(ErrorKind::UnterminatedString.into());
         };
 
         match char {
-            b'b' => Ok('\x08'),
-            b't' => Ok('\t'),
-            b'n' => Ok('\n'),
-            b'f' => Ok('\x0c'),
-            b'r' => Ok('\r'),
-            b'"' => Ok('"'),
-            b'\\' => Ok('\\'),
+            b'b' => self.reader.discard().map(|()| '\x08'),
+            b't' => self.reader.discard().map(|()| '\t'),
+            b'n' => self.reader.discard().map(|()| '\n'),
+            b'f' => self.reader.discard().map(|()| '\x0c'),
+            b'r' => self.reader.discard().map(|()| '\r'),
+            b'"' => self.reader.discard().map(|()| '"'),
+            b'\\' => self.reader.discard().map(|()| '\\'),
             b'u' => {
+                self.reader.discard()?;
                 let bytes = self
                     .reader
                     .next_n(4)?
@@ -592,6 +593,7 @@ where
                     })
             }
             b'U' => {
+                self.reader.discard()?;
                 let bytes = self
                     .reader
                     .next_n(8)?
@@ -607,33 +609,14 @@ where
                         )
                     })
             }
-            ch => {
-                // Since ch might not be a full UTF-8 code point, this will get the rest of the
-                // bytes and construct a char, or return None if there is invalid encoding.
-                fn get_utf8_char<'de, R: Reader<'de>>(c: u8, r: &mut R) -> Option<String> {
-                    match c {
-                        0x00..=0x7F => String::from_utf8(vec![b'\\', c]).ok(),
-                        0xC0..=0xDF => String::from_utf8(vec![b'\\', c, r.next().ok()??]).ok(),
-                        0xE0..=0xEF => {
-                            let mut result = Vec::with_capacity(4);
-                            result.extend_from_slice(&[b'\\', c]);
-                            result.extend(r.next_n(2).ok()??.as_ref());
-                            String::from_utf8(result).ok()
-                        }
-                        0xF0..=0xF7 => {
-                            let mut result = Vec::with_capacity(5);
-                            result.extend_from_slice(&[b'\\', c]);
-                            result.extend(r.next_n(3).ok()??.as_ref());
-                            String::from_utf8(result).ok()
-                        }
-                        _ => None,
-                    }
-                }
-                Err(get_utf8_char(ch, &mut self.reader).map_or_else(
-                    || ErrorKind::InvalidEncoding.into(),
-                    |utf8| ErrorKind::InvalidEscape(utf8.into()).into(),
-                ))
-            }
+            _ => Err(ErrorKind::InvalidEscape(
+                self.reader
+                    .next_char()?
+                    .ok_or(ErrorKind::UnterminatedString)?
+                    .to_string()
+                    .into(),
+            )
+            .into()),
         }
     }
 
