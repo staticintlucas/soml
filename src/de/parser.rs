@@ -308,9 +308,19 @@ where
 
     fn parse_key(&mut self) -> Result<Cow<'de, str>> {
         if self.reader.eat_char(b'"')? {
-            self.parse_basic_str()
+            if self.reader.eat_str(br#""""#)? {
+                // multiline strings are invalid as keys
+                Err(ErrorKind::ExpectedToken("key".into()).into())
+            } else {
+                self.parse_basic_str()
+            }
         } else if self.reader.eat_char(b'\'')? {
-            self.parse_literal_str()
+            if self.reader.eat_str(b"''")? {
+                // multiline strings are invalid as keys
+                Err(ErrorKind::ExpectedToken("key".into()).into())
+            } else {
+                self.parse_literal_str()
+            }
         } else {
             self.parse_bare_key()
         }
@@ -495,7 +505,6 @@ where
                 }
                 Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
-                    continue;
                 }
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
@@ -547,7 +556,6 @@ where
                 }
                 Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
-                    continue;
                 }
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
@@ -611,7 +619,7 @@ where
             }
             _ => Err(ErrorKind::InvalidEscape(
                 self.reader
-                    .next_char()?
+                    .next_char()? // We want a char here, not just a byte
                     .ok_or(ErrorKind::UnterminatedString)?
                     .to_string()
                     .into(),
@@ -1150,12 +1158,8 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
     }
 
     fn get_dotted_key(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
-        let Some((key, path)) = path.split_last() else {
-            return Some(self);
-        };
-
-        // Navigate to the parent table, converting any UndefinedTables to DottedKeyTables
-        let parent = path.iter().try_fold(self, |table, key| {
+        // Navigate to the table, converting any UndefinedTables to DottedKeyTables
+        path.iter().try_fold(self, |table, key| {
             match table.get(key) {
                 None => {
                     table.insert(key.clone(), Value::DottedKeyTable(Self::new()));
@@ -1174,28 +1178,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
                 unreachable!("we just inserted a DottedKeyTable")
             };
             Some(subtable)
-        })?;
-
-        // Find the table in the parent, or create a new one if it doesn't exist. Unlike the parent
-        // tables, we make this a Table instead of a UndefinedTable
-        match parent.get(key) {
-            None => {
-                parent.insert(key.clone(), Value::DottedKeyTable(Self::new()));
-            }
-            Some(&Value::UndefinedTable(_)) => {
-                // Need to remove the entry to take ownership of the subtable
-                let Some(Value::UndefinedTable(subtable)) = parent.remove(key) else {
-                    unreachable!("we just checked this key")
-                };
-                parent.insert(key.clone(), Value::DottedKeyTable(subtable));
-            }
-            Some(&Value::DottedKeyTable(_)) => {} // Already exists
-            Some(_) => return None,
-        }
-        let Some(&mut Value::DottedKeyTable(ref mut subtable)) = parent.get_mut(key) else {
-            unreachable!("we just inserted a table")
-        };
-        Some(subtable)
+        })
     }
 
     fn get_inline_subtable<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self> {
@@ -1264,4 +1247,1526 @@ const fn is_toml_multiline_literal_str(char: &u8) -> bool {
 const fn is_toml_legal(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), carriage return (0x0d) and newline (0x0a)
     matches!(*char, 0x09 | 0x0a | 0x0d | 0x20..=0x7e | 0x80..)
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use assert_matches::assert_matches;
+    use indoc::indoc;
+    use maplit::hashmap;
+
+    use super::*;
+
+    #[test]
+    fn type_to_str() {
+        assert_eq!(Type::String.to_str(), "string");
+        assert_eq!(Type::Integer.to_str(), "integer");
+        assert_eq!(Type::Float.to_str(), "float");
+        assert_eq!(Type::Boolean.to_str(), "boolean");
+        assert_eq!(Type::Datetime.to_str(), "datetime");
+        assert_eq!(Type::Array.to_str(), "array");
+        assert_eq!(Type::Table.to_str(), "table");
+    }
+
+    #[test]
+    fn type_to_string() {
+        assert_eq!(Type::String.to_string(), "string");
+        assert_eq!(Type::Integer.to_string(), "integer");
+        assert_eq!(Type::Float.to_string(), "float");
+        assert_eq!(Type::Boolean.to_string(), "boolean");
+        assert_eq!(Type::Datetime.to_string(), "datetime");
+        assert_eq!(Type::Array.to_string(), "array");
+        assert_eq!(Type::Table.to_string(), "table");
+    }
+
+    #[test]
+    fn unexpected_from_type() {
+        assert_eq!(
+            de::Unexpected::from(Type::String),
+            de::Unexpected::Other("string")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Integer),
+            de::Unexpected::Other("integer")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Float),
+            de::Unexpected::Other("float")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Boolean),
+            de::Unexpected::Other("boolean")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Datetime),
+            de::Unexpected::Other("datetime")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Array),
+            de::Unexpected::Other("array")
+        );
+        assert_eq!(
+            de::Unexpected::from(Type::Table),
+            de::Unexpected::Other("table")
+        );
+    }
+
+    #[test]
+    fn value_type() {
+        assert_eq!(Value::String("foo".into()).typ(), Type::String);
+        assert_eq!(Value::Integer(b"123".into()).typ(), Type::Integer);
+        assert_eq!(Value::BinaryInt(b"123".into()).typ(), Type::Integer);
+        assert_eq!(Value::OctalInt(b"123".into()).typ(), Type::Integer);
+        assert_eq!(Value::HexInt(b"123".into()).typ(), Type::Integer);
+        assert_eq!(Value::Float(b"123".into()).typ(), Type::Float);
+        assert_eq!(
+            Value::SpecialFloat(SpecialFloat::Infinity).typ(),
+            Type::Float
+        );
+        assert_eq!(Value::Boolean(true).typ(), Type::Boolean);
+        assert_eq!(Value::OffsetDatetime(b"foo".into()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDatetime(b"foo".into()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDate(b"foo".into()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalTime(b"foo".into()).typ(), Type::Datetime);
+        assert_eq!(Value::Array(vec![]).typ(), Type::Array);
+        assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
+        assert_eq!(Value::Table(HashMap::new()).typ(), Type::Table);
+        assert_eq!(Value::InlineTable(HashMap::new()).typ(), Type::Table);
+        assert_eq!(Value::UndefinedTable(HashMap::new()).typ(), Type::Table);
+        assert_eq!(Value::DottedKeyTable(HashMap::new()).typ(), Type::Table);
+    }
+
+    #[test]
+    fn parser_from_str() {
+        let mut parser = Parser::from_str("foo = 123");
+        assert_eq!(
+            parser.reader.next_while(|_| true).unwrap(),
+            b"foo = 123".as_slice()
+        );
+    }
+
+    #[test]
+    fn parser_from_slice() {
+        let mut parser = Parser::from_slice(b"foo = 123");
+        assert_eq!(
+            parser.reader.next_while(|_| true).unwrap(),
+            b"foo = 123".as_slice()
+        );
+    }
+
+    #[test]
+    fn parser_from_reader() {
+        let mut parser = Parser::from_reader(b"foo = 123".as_slice());
+        assert_eq!(
+            parser.reader.next_while(|_| true).unwrap(),
+            b"foo = 123".as_slice()
+        );
+    }
+
+    #[test]
+    fn parser_parse() {
+        let mut parser = Parser::from_str("a = 1\nb = 2");
+        assert_eq!(
+            parser.parse().unwrap(),
+            Value::Table(hashmap! {
+                "a".into() => Value::Integer(b"1".into()),
+                "b".into() => Value::Integer(b"2".into()),
+            })
+        );
+
+        let mut parser = Parser::from_str("a = 1\r\nb = 2");
+        assert_eq!(
+            parser.parse().unwrap(),
+            Value::Table(hashmap! {
+                "a".into() => Value::Integer(b"1".into()),
+                "b".into() => Value::Integer(b"2".into()),
+            })
+        );
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            # This is a TOML document.
+
+            title = "TOML Example"
+
+            [owner]
+            name = "Tom Preston-Werner"
+            dob = 1979-05-27T07:32:00-08:00 # First class dates
+
+            [database]
+            server = "192.168.1.1"
+            ports = [ 8000, 8001, 8002 ]
+            connection_max = 5000
+            enabled = true
+
+            [servers]
+
+                # Indentation (tabs and/or spaces) is allowed but not required
+                [servers.alpha]
+                ip = "10.0.0.1"
+                dc = "eqdc10"
+
+                [servers.beta]
+                ip = "10.0.0.2"
+                dc = "eqdc10"
+
+            [clients]
+
+            # Line breaks are OK when inside arrays
+            hosts = [
+                "alpha",
+                "omega"
+            ]
+
+            [[clients.data]]
+                value = ["gamma", "delta"]
+
+            [[clients.data]]
+                value = [1, 2]
+        "#});
+
+        assert_eq!(
+            parser.parse().unwrap(),
+            Value::Table(hashmap! {
+                "title".into() => Value::String("TOML Example".into()),
+                "owner".into() => Value::Table(hashmap! {
+                    "name".into() => Value::String("Tom Preston-Werner".into()),
+                    "dob".into() => Value::OffsetDatetime(b"1979-05-27T07:32:00-08:00".into()),
+                }),
+                "database".into() => Value::Table(hashmap! {
+                    "server".into() => Value::String("192.168.1.1".into()),
+                    "ports".into() => Value::Array(vec![
+                        Value::Integer(b"8000".into()),
+                        Value::Integer(b"8001".into()),
+                        Value::Integer(b"8002".into()),
+                    ]),
+                    "connection_max".into() => Value::Integer(b"5000".into()),
+                    "enabled".into() => Value::Boolean(true),
+                }),
+                "servers".into() => Value::Table(hashmap! {
+                    "alpha".into() => Value::Table(hashmap! {
+                        "ip".into() => Value::String("10.0.0.1".into()),
+                        "dc".into() => Value::String("eqdc10".into()),
+                    }),
+                    "beta".into() => Value::Table(hashmap! {
+                        "ip".into() => Value::String("10.0.0.2".into()),
+                        "dc".into() => Value::String("eqdc10".into()),
+                    }),
+                }),
+                "clients".into() => Value::Table(hashmap! {
+                    "hosts".into() => Value::Array(vec![
+                        Value::String("alpha".into()),
+                        Value::String("omega".into()),
+                    ]),
+                    "data".into() => Value::ArrayOfTables(vec![
+                        hashmap! {
+                            "value".into() => Value::Array(vec![
+                                Value::String("gamma".into()),
+                                Value::String("delta".into()),
+                            ]),
+                        },
+                        hashmap! {
+                            "value".into() => Value::Array(vec![
+                                Value::Integer(b"1".into()),
+                                Value::Integer(b"2".into()),
+                            ]),
+                        }
+                    ]),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn parser_parse_invalid() {
+        let mut parser = Parser::from_str(indoc! {r"
+            a = 123
+            a = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+            a = 123
+
+            [a]
+            b = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+            a = 123
+
+            [[a]]
+            b = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+            a = 123
+            a.b = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+            [a.b]
+            c = 123
+
+            [a]
+            b.d = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+            [table]
+            a.b = 123
+            a.b = 456
+        "});
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str("a = 123 $");
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str("a = 123 \0");
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str("$");
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str("\0");
+        assert!(parser.parse().is_err());
+
+        let mut parser = Parser::from_str("a = 1\rb = 2");
+        assert!(parser.parse().is_err());
+    }
+
+    #[test]
+    fn parser_parse_array_header() {
+        let mut parser = Parser::from_str(r#" a .b. "..c"]]"#);
+        assert_eq!(parser.parse_array_header().unwrap(), vec!["a", "b", "..c"]);
+
+        let mut parser = Parser::from_str(r#""]]""#);
+        assert!(parser.parse_array_header().is_err());
+    }
+
+    #[test]
+    fn parser_parse_table_header() {
+        let mut parser = Parser::from_str(r#" a .b. "..c"]"#);
+        assert_eq!(parser.parse_table_header().unwrap(), vec!["a", "b", "..c"]);
+
+        let mut parser = Parser::from_str(r#""]""#);
+        assert!(parser.parse_table_header().is_err());
+    }
+
+    #[test]
+    fn parser_parse_key_value_pair() {
+        let mut parser = Parser::from_str(r"a = 123");
+        assert_eq!(
+            parser.parse_key_value_pair().unwrap(),
+            (vec!["a".into()], Value::Integer(b"123".into()))
+        );
+
+        let mut parser = Parser::from_str(r#""a = 123""#);
+        assert!(parser.parse_key_value_pair().is_err());
+    }
+
+    #[test]
+    fn parser_parse_dotted_key() {
+        let mut parser = Parser::from_str(r#"a .b. "..c""#);
+        assert_eq!(parser.parse_dotted_key().unwrap(), vec!["a", "b", "..c"]);
+
+        let mut parser = Parser::from_str(".");
+        assert!(parser.parse_dotted_key().is_err());
+
+        let mut parser = Parser::from_str("a..b");
+        assert!(parser.parse_dotted_key().is_err());
+    }
+
+    #[test]
+    fn parser_parse_key() {
+        let mut parser = Parser::from_str("abc");
+        assert_eq!(parser.parse_key().unwrap(), "abc");
+
+        let mut parser = Parser::from_str(r#""abc""#);
+        assert_eq!(parser.parse_key().unwrap(), "abc");
+
+        let mut parser = Parser::from_str("'abc'");
+        assert_eq!(parser.parse_key().unwrap(), "abc");
+
+        let mut parser = Parser::from_str(r#""""abc""""#);
+        assert!(parser.parse_key().is_err());
+
+        let mut parser = Parser::from_str("'''abc'''");
+        assert!(parser.parse_key().is_err());
+    }
+
+    #[test]
+    fn parser_parse_bare_key() {
+        let mut parser = Parser::from_str("abc");
+        assert_eq!(parser.parse_bare_key().unwrap(), "abc");
+
+        let mut parser = Parser::from_str("123");
+        assert_eq!(parser.parse_bare_key().unwrap(), "123");
+
+        let mut parser = Parser::from_str("-");
+        assert_eq!(parser.parse_bare_key().unwrap(), "-");
+
+        let mut parser = Parser::from_str("_");
+        assert_eq!(parser.parse_bare_key().unwrap(), "_");
+    }
+
+    #[test]
+    fn parser_parse_value() {
+        let mut parser = Parser::from_str(r#""hello""#);
+        assert_eq!(parser.parse_value().unwrap(), Value::String("hello".into()));
+
+        let mut parser = Parser::from_str("true");
+        assert_eq!(parser.parse_value().unwrap(), Value::Boolean(true));
+
+        let mut parser = Parser::from_str("0.2");
+        assert_eq!(parser.parse_value().unwrap(), Value::Float(b"0.2".into()));
+
+        let mut parser = Parser::from_str("0x123abc");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::HexInt(b"123abc".into())
+        );
+
+        let mut parser = Parser::from_str("0001-01-01");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::LocalDate(b"0001-01-01".into())
+        );
+
+        let mut parser = Parser::from_str("00:00:00");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::LocalTime(b"00:00:00".into())
+        );
+
+        let mut parser = Parser::from_str("0");
+        assert_eq!(parser.parse_value().unwrap(), Value::Integer(b"0".into()));
+
+        let mut parser = Parser::from_str("12");
+        assert_eq!(parser.parse_value().unwrap(), Value::Integer(b"12".into()));
+
+        let mut parser = Parser::from_str("1234");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::Integer(b"1234".into())
+        );
+
+        let mut parser = Parser::from_str("1234-56-78");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::LocalDate(b"1234-56-78".into())
+        );
+
+        let mut parser = Parser::from_str("12:34:56");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::LocalTime(b"12:34:56".into())
+        );
+
+        let mut parser = Parser::from_str("-123");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::Integer(b"-123".into())
+        );
+
+        let mut parser = Parser::from_str("+123");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::Integer(b"+123".into())
+        );
+
+        let mut parser = Parser::from_str("+inf");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::SpecialFloat(SpecialFloat::Infinity)
+        );
+
+        let mut parser = Parser::from_str("-nan");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::SpecialFloat(SpecialFloat::NegNan)
+        );
+
+        let mut parser = Parser::from_str("inf");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::SpecialFloat(SpecialFloat::Infinity)
+        );
+
+        let mut parser = Parser::from_str("nan");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::SpecialFloat(SpecialFloat::Nan)
+        );
+
+        let mut parser = Parser::from_str("[123, 456, 789]");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::Array(vec![
+                Value::Integer(b"123".into()),
+                Value::Integer(b"456".into()),
+                Value::Integer(b"789".into()),
+            ])
+        );
+
+        let mut parser = Parser::from_str("{ a = 123, b = 456, c = 789 }");
+        assert_eq!(
+            parser.parse_value().unwrap(),
+            Value::InlineTable(hashmap! {
+                "a".into() => Value::Integer(b"123".into()),
+                "b".into() => Value::Integer(b"456".into()),
+                "c".into() => Value::Integer(b"789".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn parser_parse_value_invalid() {
+        let mut parser = Parser::from_str("01");
+        assert!(parser.parse_value().is_err());
+
+        let mut parser = Parser::from_str("0123");
+        assert!(parser.parse_value().is_err());
+
+        let mut parser = Parser::from_str("+");
+        assert!(parser.parse_value().is_err());
+
+        let mut parser = Parser::from_str("blah");
+        assert!(parser.parse_value().is_err());
+
+        let mut parser = Parser::from_str("\0");
+        assert!(parser.parse_value().is_err());
+
+        let mut parser = Parser::from_str("");
+        assert!(parser.parse_value().is_err());
+    }
+
+    #[test]
+    fn parser_parse_string() {
+        let mut parser = Parser::from_str(indoc! {r#"
+            "hello"
+        "#});
+        assert_eq!(parser.parse_string().unwrap(), "hello");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            """
+            hello
+            """
+        "#});
+        assert_eq!(parser.parse_string().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            'hello'
+        "});
+        assert_eq!(parser.parse_string().unwrap(), "hello");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            '''
+            hello
+            '''
+        "});
+        assert_eq!(parser.parse_string().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            "hello'
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            """
+            hello
+            "
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            """
+            hello
+            '''
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            'hello"
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            '''
+            hello
+            "
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            '''
+            hello
+            """
+        "#});
+        assert!(parser.parse_string().is_err());
+
+        let mut parser = Parser::from_str("hello");
+        assert!(parser.parse_string().is_err());
+    }
+
+    #[test]
+    fn parser_parse_basic_str() {
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello\n"
+        "#});
+        assert_eq!(parser.parse_basic_str().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello\"
+        "#});
+        assert!(parser.parse_basic_str().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello\0"
+        "#});
+        assert!(parser.parse_basic_str().is_err());
+
+        let mut parser = Parser::from_str("hello\0\"");
+        assert!(parser.parse_basic_str().is_err());
+    }
+
+    #[test]
+    fn parser_parse_multiline_basic_str() {
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            """
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            """"
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            """""
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\"");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            """"""
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\""); // Still only 2 "s
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            ""
+            """
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\"\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello\t
+            """
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\t\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello \
+            world
+            """
+        "#});
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello world\n");
+
+        let mut parser = Parser::from_str(concat!(
+            indoc! {r#"
+            hello \             "#}, // Use concat to avoid trimming trailing space after the \
+            indoc! {r#"
+
+                world
+                """
+            "#}
+        ));
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello world\n");
+
+        let mut parser = Parser::from_str("hello\r\n\"\"\"");
+        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello
+            ""
+        "#});
+        assert!(parser.parse_multiline_basic_str().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r#"
+            hello\    \
+            """
+        "#});
+        assert!(parser.parse_multiline_basic_str().is_err());
+
+        let mut parser = Parser::from_str("hello\0\"");
+        assert!(parser.parse_multiline_basic_str().is_err());
+    }
+
+    #[test]
+    fn parser_parse_literal_str() {
+        let mut parser = Parser::from_str("hello\\n'");
+        assert_eq!(parser.parse_literal_str().unwrap(), "hello\\n");
+
+        let mut parser = Parser::from_str("hello\n'");
+        assert!(parser.parse_literal_str().is_err());
+
+        let mut parser = Parser::from_str("hello\0'");
+        assert!(parser.parse_literal_str().is_err());
+    }
+
+    #[test]
+    fn parser_parse_multiline_literal_str() {
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            '''
+        "});
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            ''''
+        "});
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n'");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            '''''
+        "});
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            ''''''
+        "});
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''"); // Still only 2 's
+
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            ''
+            '''
+        "});
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''\n");
+
+        let mut parser = Parser::from_str("hello\r\n'''");
+        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n");
+
+        let mut parser = Parser::from_str(indoc! {r"
+            hello
+            ''
+        "});
+        assert!(parser.parse_multiline_literal_str().is_err());
+
+        let mut parser = Parser::from_str("hello\0'");
+        assert!(parser.parse_multiline_literal_str().is_err());
+    }
+
+    #[test]
+    fn parser_parse_escape_seq() {
+        let mut parser = Parser::from_str("b");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\x08');
+
+        let mut parser = Parser::from_str("t");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\t');
+
+        let mut parser = Parser::from_str("n");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\n');
+
+        let mut parser = Parser::from_str("f");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\x0c');
+
+        let mut parser = Parser::from_str("r");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\r');
+
+        let mut parser = Parser::from_str("\"");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '"');
+
+        let mut parser = Parser::from_str("\\");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '\\');
+
+        let mut parser = Parser::from_str("u20ac");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '€');
+
+        let mut parser = Parser::from_str("u2");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_str("ulmao");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_slice(b"u\xff\xff\xff\xff");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_str("U0001f60e");
+        assert_eq!(parser.parse_escape_seq().unwrap(), '😎');
+
+        let mut parser = Parser::from_str("U2");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_str("UROFLCOPTER");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_slice(b"U\xff\xff\xff\xff\xff\xff\xff\xff");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_slice(b"");
+        assert!(parser.parse_escape_seq().is_err());
+
+        let mut parser = Parser::from_str("p");
+        assert!(parser.parse_escape_seq().is_err());
+    }
+
+    #[test]
+    #[allow(clippy::bool_assert_comparison)]
+    fn parser_parse_bool() {
+        let mut parser = Parser::from_str("true");
+        assert_eq!(parser.parse_bool().unwrap(), true);
+
+        let mut parser = Parser::from_str("false");
+        assert_eq!(parser.parse_bool().unwrap(), false);
+
+        let mut parser = Parser::from_str("TRUE");
+        assert!(parser.parse_bool().is_err());
+
+        let mut parser = Parser::from_str("f");
+        assert!(parser.parse_bool().is_err());
+
+        let mut parser = Parser::from_str("1");
+        assert!(parser.parse_bool().is_err());
+
+        let mut parser = Parser::from_str("trueueue");
+        assert!(parser.parse_bool().is_err());
+    }
+
+    #[test]
+    fn parser_parse_datetime() {
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000+02:30");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Z");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000Z");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01 12:00:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01 12:00:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01 12:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+
+        let mut parser = Parser::from_str("1980-01-01");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDate(_));
+
+        let mut parser = Parser::from_str("12:00:00.000000000");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
+
+        let mut parser = Parser::from_str("12:00:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
+
+        let mut parser = Parser::from_str("12:00");
+        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Zabc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01T12:00abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("12:00:00.000000000abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("12:00:00abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("12:00abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("abc");
+        assert!(parser.parse_datetime().is_err());
+    }
+
+    #[test]
+    fn parser_check_date() {
+        let mut parser = Parser::from_str("1980-01-01");
+        assert!(parser.check_date().is_ok());
+
+        let mut parser = Parser::from_str("1980-01-01abc"); // Shouldn't care about what comes after
+        assert!(parser.check_date().is_ok());
+
+        let mut parser = Parser::from_str("1980");
+        assert!(parser.check_date().is_err());
+
+        let mut parser = Parser::from_str("1980-01");
+        assert!(parser.check_date().is_err());
+
+        let mut parser = Parser::from_str("198-01-01");
+        assert!(parser.check_date().is_err());
+    }
+
+    #[test]
+    fn parser_check_time() {
+        let mut parser = Parser::from_str("12:00:00.000000000");
+        assert!(parser.check_time().is_ok());
+
+        let mut parser = Parser::from_str("12:00:00");
+        assert!(parser.check_time().is_ok());
+
+        let mut parser = Parser::from_str("12:00");
+        assert!(parser.check_time().is_ok());
+
+        let mut parser = Parser::from_str("12:00:00abc"); // Shouldn't care about what comes after
+        assert!(parser.check_time().is_ok());
+
+        let mut parser = Parser::from_str("12:00:00.abc");
+        assert!(parser.check_time().is_err());
+
+        let mut parser = Parser::from_str("12:00:abc");
+        assert!(parser.check_time().is_err());
+
+        let mut parser = Parser::from_str("198:01:01");
+        assert!(parser.check_time().is_err());
+    }
+
+    #[test]
+    fn parser_check_offset() {
+        let mut parser = Parser::from_str("Z");
+        assert!(parser.check_offset().is_ok());
+
+        let mut parser = Parser::from_str("z");
+        assert!(parser.check_offset().is_ok());
+
+        let mut parser = Parser::from_str("+02:30");
+        assert!(parser.check_offset().is_ok());
+
+        let mut parser = Parser::from_str("-02:30");
+        assert!(parser.check_offset().is_ok());
+
+        let mut parser = Parser::from_str("02:30");
+        assert!(parser.check_offset().is_err());
+
+        let mut parser = Parser::from_str("+002:30");
+        assert!(parser.check_offset().is_err());
+    }
+
+    #[test]
+    fn parser_parse_number_radix() {
+        let mut parser = Parser::from_str("0x123");
+        assert_eq!(
+            parser.parse_number_radix().unwrap(),
+            Value::HexInt(b"123".into())
+        );
+
+        let mut parser = Parser::from_str("0o123");
+        assert_eq!(
+            parser.parse_number_radix().unwrap(),
+            Value::OctalInt(b"123".into())
+        );
+
+        let mut parser = Parser::from_str("0b101");
+        assert_eq!(
+            parser.parse_number_radix().unwrap(),
+            Value::BinaryInt(b"101".into())
+        );
+
+        let mut parser = Parser::from_str("0X123");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0O123");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0B101");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0xabcdefg");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0o12345678");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0b012");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("0q123abc");
+        assert!(parser.parse_number_radix().is_err());
+
+        let mut parser = Parser::from_str("123");
+        assert!(parser.parse_number_radix().is_err());
+    }
+
+    #[test]
+    fn parser_parse_number_special() {
+        let mut parser = Parser::from_str("inf");
+        assert_eq!(
+            parser.parse_number_special().unwrap(),
+            SpecialFloat::Infinity
+        );
+
+        let mut parser = Parser::from_str("+inf");
+        assert_eq!(
+            parser.parse_number_special().unwrap(),
+            SpecialFloat::Infinity
+        );
+
+        let mut parser = Parser::from_str("-inf");
+        assert_eq!(
+            parser.parse_number_special().unwrap(),
+            SpecialFloat::NegInfinity
+        );
+
+        let mut parser = Parser::from_str("nan");
+        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::Nan);
+
+        let mut parser = Parser::from_str("+nan");
+        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::Nan);
+
+        let mut parser = Parser::from_str("-nan");
+        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::NegNan);
+
+        let mut parser = Parser::from_str("+1.0e+3");
+        assert!(parser.parse_number_special().is_err());
+
+        let mut parser = Parser::from_str("NaN");
+        assert!(parser.parse_number_special().is_err());
+
+        let mut parser = Parser::from_str("INF");
+        assert!(parser.parse_number_special().is_err());
+
+        let mut parser = Parser::from_str("abc");
+        assert!(parser.parse_number_special().is_err());
+
+        let mut parser = Parser::from_str("+abc");
+        assert!(parser.parse_number_special().is_err());
+
+        let mut parser = Parser::from_str("-abc");
+        assert!(parser.parse_number_special().is_err());
+    }
+
+    #[test]
+    fn parser_parse_number_decimal_int() {
+        let mut parser = Parser::from_str("123");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Integer(b"123".into())
+        );
+
+        let mut parser = Parser::from_str("+123");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Integer(b"+123".into())
+        );
+
+        let mut parser = Parser::from_str("-123");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Integer(b"-123".into())
+        );
+
+        let mut parser = Parser::from_str("123_456_789");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Integer(b"123_456_789".into())
+        );
+
+        let mut parser = Parser::from_str("_123_456");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123_456_");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123__456");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("e123");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("abc");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("+abc");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("-abc");
+        assert!(parser.parse_number_decimal().is_err());
+    }
+
+    #[test]
+    fn parser_parse_number_decimal_float() {
+        let mut parser = Parser::from_str("123.456");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"123.456".into())
+        );
+
+        let mut parser = Parser::from_str("+123.456");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"+123.456".into())
+        );
+
+        let mut parser = Parser::from_str("-123.456");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"-123.456".into())
+        );
+
+        let mut parser = Parser::from_str("123.456e+3");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"123.456e+3".into())
+        );
+
+        let mut parser = Parser::from_str("123.456e-3");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"123.456e-3".into())
+        );
+
+        let mut parser = Parser::from_str("123.456e3");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"123.456e3".into())
+        );
+
+        let mut parser = Parser::from_str("123_456.123_456");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"123_456.123_456".into())
+        );
+
+        let mut parser = Parser::from_str("1.23e456_789");
+        assert_eq!(
+            parser.parse_number_decimal().unwrap(),
+            Value::Float(b"1.23e456_789".into())
+        );
+
+        let mut parser = Parser::from_str("_123.456");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123_.456");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123._456");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123.456_");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123__456.789");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123.456__789");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("1.23e_456_789");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("1.23e456_789_");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("1.23e456__789");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str(".123");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("123.");
+        assert!(parser.parse_number_decimal().is_err());
+
+        let mut parser = Parser::from_str("1.23e");
+        assert!(parser.parse_number_decimal().is_err());
+    }
+
+    #[test]
+    fn parser_parse_array() {
+        let mut parser = Parser::from_str("]");
+        assert_eq!(parser.parse_array().unwrap(), vec![]);
+
+        let mut parser = Parser::from_str("  ]");
+        assert_eq!(parser.parse_array().unwrap(), vec![]);
+
+        let mut parser = Parser::from_str(indoc! {r"
+                # comment
+            ]
+        "});
+        assert_eq!(parser.parse_array().unwrap(), vec![]);
+
+        let mut parser = Parser::from_str("123]");
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![Value::Integer(b"123".into())]
+        );
+
+        let mut parser = Parser::from_str("123,]");
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![Value::Integer(b"123".into())]
+        );
+
+        let mut parser = Parser::from_str(indoc! {r"
+                123,
+            ]
+        "});
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![Value::Integer(b"123".into())]
+        );
+
+        let mut parser = Parser::from_str(r"123, 456, 789]");
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![
+                Value::Integer(b"123".into()),
+                Value::Integer(b"456".into()),
+                Value::Integer(b"789".into())
+            ]
+        );
+
+        let mut parser = Parser::from_str(r"123, 456, 789,]");
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![
+                Value::Integer(b"123".into()),
+                Value::Integer(b"456".into()),
+                Value::Integer(b"789".into())
+            ]
+        );
+
+        let mut parser = Parser::from_str(indoc! {r"
+                123,
+                456,
+                789,
+            ]
+        "});
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![
+                Value::Integer(b"123".into()),
+                Value::Integer(b"456".into()),
+                Value::Integer(b"789".into())
+            ]
+        );
+
+        let mut parser = Parser::from_str(indoc! {r"
+                123,
+                456, # comment
+                789 # comment
+            ]
+        "});
+        assert_eq!(
+            parser.parse_array().unwrap(),
+            vec![
+                Value::Integer(b"123".into()),
+                Value::Integer(b"456".into()),
+                Value::Integer(b"789".into())
+            ]
+        );
+
+        let mut parser = Parser::from_str("123 abc]");
+        assert!(parser.parse_array().is_err());
+    }
+
+    #[test]
+    fn parser_parse_inline_table() {
+        let mut parser = Parser::from_str("}");
+        assert_eq!(parser.parse_inline_table().unwrap(), HashMap::new());
+
+        let mut parser = Parser::from_str("  }");
+        assert_eq!(parser.parse_inline_table().unwrap(), HashMap::new());
+
+        let mut parser = Parser::from_str("abc = 123 }");
+        assert_eq!(
+            parser.parse_inline_table().unwrap(),
+            hashmap! { "abc".into() => Value::Integer(b"123".into()) }
+        );
+
+        let mut parser = Parser::from_str(r"abc = 123, def = 456, ghi = 789 }");
+        assert_eq!(
+            parser.parse_inline_table().unwrap(),
+            hashmap! {
+                "abc".into() => Value::Integer(b"123".into()),
+                "def".into() => Value::Integer(b"456".into()),
+                "ghi".into() => Value::Integer(b"789".into()),
+            }
+        );
+
+        let mut parser = Parser::from_str(r"abc = { def = 123, ghi = 456 } }");
+        assert_eq!(
+            parser.parse_inline_table().unwrap(),
+            hashmap! {
+                "abc".into() => Value::InlineTable(hashmap! {
+                    "def".into() => Value::Integer(b"123".into()),
+                    "ghi".into() => Value::Integer(b"456".into()),
+                }),
+            }
+        );
+
+        let mut parser = Parser::from_str(r"abc.def = 123, abc.ghi = 456 }");
+        assert_eq!(
+            parser.parse_inline_table().unwrap(),
+            hashmap! {
+                "abc".into() => Value::DottedKeyTable(hashmap! {
+                    "def".into() => Value::Integer(b"123".into()),
+                    "ghi".into() => Value::Integer(b"456".into()),
+                }),
+            }
+        );
+
+        let mut parser = Parser::from_str("abc 123 }");
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str("abc = 123, }");
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str("123 }");
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str(indoc! {r"
+                abc = 123
+            }
+        "});
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str("abc = 123, abc = 456 }");
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str("abc = { def = 123 }, abc.ghi = 456 }");
+        assert!(parser.parse_inline_table().is_err());
+
+        let mut parser = Parser::from_str("abc = 123, def = 456 ");
+        assert!(parser.parse_inline_table().is_err());
+    }
+
+    #[test]
+    fn parser_skip_whitespace() {
+        let mut parser = Parser::from_str("   ");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), None);
+
+        let mut parser = Parser::from_str("   \t");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), None);
+
+        let mut parser = Parser::from_str("   abc");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+
+        let mut parser = Parser::from_str("   \t   abc");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+
+        let mut parser = Parser::from_str("   \t   # comment");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'#'));
+
+        let mut parser = Parser::from_str("abc");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+
+        let mut parser = Parser::from_str("");
+        assert!(parser.skip_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), None);
+    }
+
+    #[test]
+    #[allow(clippy::bool_assert_comparison)]
+    fn parser_skip_comment() {
+        let mut parser = Parser::from_str("# comment");
+        assert_eq!(parser.skip_comment().unwrap(), true);
+        assert_eq!(parser.reader.peek().unwrap(), None);
+
+        let mut parser = Parser::from_str("# comment\n");
+        assert_eq!(parser.skip_comment().unwrap(), true);
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'\n'));
+
+        let mut parser = Parser::from_str("# comment\r\n");
+        assert_eq!(parser.skip_comment().unwrap(), true);
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'\n'));
+
+        let mut parser = Parser::from_str("abc");
+        assert_eq!(parser.skip_comment().unwrap(), false);
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+
+        if cfg!(not(feature = "fast")) {
+            let mut parser = Parser::from_slice(b"# comment\xff");
+            assert!(parser.skip_comment().is_err());
+
+            let mut parser = Parser::from_str("# comment\0");
+            assert!(parser.skip_comment().is_err());
+        }
+    }
+
+    #[test]
+    fn parser_skip_comments_and_whitespace() {
+        let mut parser = Parser::from_str(indoc! {r"
+
+            # comment
+
+            abc
+        "});
+        assert!(parser.skip_comments_and_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+
+        let mut parser = Parser::from_str("# comment\r\n\tabc");
+        assert!(parser.skip_comments_and_whitespace().is_ok());
+        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+    }
+
+    #[test]
+    fn table_get_table_header() {
+        let map = || {
+            hashmap! {
+                "a".into() => Value::UndefinedTable(hashmap! {}),
+                "b".into() => Value::Table(hashmap! {
+                    "c".into() => Value::UndefinedTable(hashmap! {}),
+                    "d".into() => Value::DottedKeyTable(hashmap! {}),
+                    "e".into() => Value::Table(hashmap! {}),
+                    "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
+                    "g".into() => Value::InlineTable(hashmap! {}),
+                    "h".into() => Value::Integer(b"123".into()),
+                }),
+            }
+        };
+        assert!(map().get_table_header(&[]).is_some());
+        assert!(map().get_table_header(&["a"].map(Into::into)).is_some());
+        assert!(map()
+            .get_table_header(&["a", "b"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_table_header(&["a", "b", "c"].map(Into::into))
+            .is_some());
+
+        assert!(map()
+            .get_table_header(&["b", "c", "d"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_table_header(&["b", "d", "e"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_table_header(&["b", "e", "f"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_table_header(&["b", "f", "g"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_table_header(&["b", "g", "h"].map(Into::into))
+            .is_none());
+        assert!(map().get_table_header(&["b"].map(Into::into)).is_none());
+    }
+
+    #[test]
+    fn table_get_array_header() {
+        let map = || {
+            hashmap! {
+                "a".into() => Value::ArrayOfTables(vec![hashmap! {}]),
+                "b".into() => Value::Table(hashmap! {
+                    "c".into() => Value::UndefinedTable(hashmap! {}),
+                    "d".into() => Value::DottedKeyTable(hashmap! {}),
+                    "e".into() => Value::Table(hashmap! {}),
+                    "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
+                    "g".into() => Value::InlineTable(hashmap! {}),
+                    "h".into() => Value::Integer(b"123".into()),
+                }),
+            }
+        };
+        assert!(map().get_array_header(&[]).is_some());
+        assert!(map().get_array_header(&["a"].map(Into::into)).is_some());
+        assert!(map()
+            .get_array_header(&["a", "b"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_array_header(&["a", "b", "c"].map(Into::into))
+            .is_some());
+
+        assert!(map()
+            .get_array_header(&["b", "c", "d"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_array_header(&["b", "d", "e"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_array_header(&["b", "e", "f"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_array_header(&["b", "f", "g"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_array_header(&["b", "g", "h"].map(Into::into))
+            .is_none());
+        assert!(map().get_array_header(&["b"].map(Into::into)).is_none());
+    }
+
+    #[test]
+    fn table_get_dotted_key() {
+        let map = || {
+            hashmap! {
+                "a".into() => Value::DottedKeyTable(hashmap! {}),
+                "b".into() => Value::UndefinedTable(hashmap! {}),
+                "c".into() => Value::Table(hashmap! {}),
+            }
+        };
+        assert!(map().get_dotted_key(&[]).is_some());
+        assert!(map().get_dotted_key(&["a"].map(Into::into)).is_some());
+        assert!(map().get_dotted_key(&["a", "b"].map(Into::into)).is_some());
+        assert!(map().get_dotted_key(&["b"].map(Into::into)).is_some());
+        assert!(map().get_dotted_key(&["b", "c"].map(Into::into)).is_some());
+        assert!(map().get_dotted_key(&["c"].map(Into::into)).is_none());
+    }
+
+    #[test]
+    fn table_get_inline_subtable() {
+        let map = || {
+            hashmap! {
+                "a".into() => Value::DottedKeyTable(hashmap! {}),
+                "b".into() => Value::InlineTable(hashmap! {}),
+                // Shouldn't actually exist in an inline table
+                "c".into() => Value::UndefinedTable(hashmap! {}),
+            }
+        };
+        assert!(map().get_inline_subtable(&[]).is_some());
+        assert!(map().get_inline_subtable(&["a"].map(Into::into)).is_some());
+        assert!(map()
+            .get_inline_subtable(&["a", "b"].map(Into::into))
+            .is_some());
+        assert!(map()
+            .get_inline_subtable(&["a", "b", "c"].map(Into::into))
+            .is_some());
+        assert!(map().get_inline_subtable(&["b"].map(Into::into)).is_none());
+        assert!(map()
+            .get_inline_subtable(&["b", "c"].map(Into::into))
+            .is_none());
+    }
 }
