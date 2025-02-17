@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io;
 use std::num::NonZero;
 
@@ -12,7 +11,7 @@ use serde::{de, forward_to_deserialize_any, Deserialize};
 
 pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
-use self::parser::{Parser, SpecialFloat, Value as ParsedValue};
+use self::parser::{Parser, SpecialFloat, Table as ParsedTable, Value as ParsedValue};
 use self::reader::{IoReader, Reader, SliceReader};
 use crate::value::datetime::DatetimeAccess;
 
@@ -498,7 +497,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
 }
 
 // Used for array of tables
-impl<'de> de::SeqAccess<'de> for SeqAccess<HashMap<Cow<'de, str>, ParsedValue<'de>>> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable<'de>> {
     type Error = Error;
 
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
@@ -519,12 +518,12 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<HashMap<Cow<'de, str>, ParsedValue<'d
 }
 
 struct MapAccess<'de> {
-    kv_pairs: <HashMap<Cow<'de, str>, ParsedValue<'de>> as IntoIterator>::IntoIter,
+    kv_pairs: <ParsedTable<'de> as IntoIterator>::IntoIter,
     next_value: Option<ParsedValue<'de>>,
 }
 
 impl<'de> MapAccess<'de> {
-    fn new(table: HashMap<Cow<'de, str>, ParsedValue<'de>>) -> Self {
+    fn new(table: ParsedTable<'de>) -> Self {
         Self {
             kv_pairs: table.into_iter(),
             next_value: None,
@@ -587,7 +586,7 @@ struct EnumAccess<'de> {
 }
 
 impl<'de> EnumAccess<'de> {
-    fn new(table: HashMap<Cow<'de, str>, ParsedValue<'de>>) -> Result<Self> {
+    fn new(table: ParsedTable<'de>) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
             Error::invalid_value(

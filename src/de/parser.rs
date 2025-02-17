@@ -1,6 +1,5 @@
 use core::{fmt, str};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
 
@@ -85,16 +84,16 @@ pub(super) enum Value<'de> {
     // Just a regular inline array
     Array(Vec<Self>),
     // Table defined by a table header. This is immutable aside from being able to add subtables
-    Table(HashMap<Cow<'de, str>, Self>),
+    Table(Table<'de>),
     // Super table created when parsing a subtable header. This can still be explicitly defined
     // later turning it into a `Table`
-    UndefinedTable(HashMap<Cow<'de, str>, Self>),
+    UndefinedTable(Table<'de>),
     // A table defined by dotted keys. This can be freely added to by other dotted keys
-    DottedKeyTable(HashMap<Cow<'de, str>, Self>),
+    DottedKeyTable(Table<'de>),
     // Inline table
-    InlineTable(HashMap<Cow<'de, str>, Self>),
+    InlineTable(Table<'de>),
     // Array of tables
-    ArrayOfTables(Vec<HashMap<Cow<'de, str>, Self>>),
+    ArrayOfTables(Vec<Table<'de>>),
 }
 
 impl Value<'_> {
@@ -118,6 +117,8 @@ impl Value<'_> {
         }
     }
 }
+
+pub(super) type Table<'de> = std::collections::HashMap<Cow<'de, str>, Value<'de>>;
 
 #[derive(Debug)]
 pub(super) struct Parser<'de, R: Reader<'de>> {
@@ -161,7 +162,7 @@ where
     R: Reader<'de>,
 {
     pub fn parse(&mut self) -> Result<Value<'de>> {
-        let mut root = HashMap::new();
+        let mut root = Table::new();
 
         // The currently opened table
         let mut table = &mut root;
@@ -174,16 +175,14 @@ where
             // Parse array header
             if self.reader.eat_str(b"[[")? {
                 let key = self.parse_array_header()?;
-                table = root
-                    .get_array_header(&key)
+                table = Self::get_array_header(&mut root, &key)
                     .ok_or_else(|| ErrorKind::InvalidTableHeader(key.join(".").into()))?;
                 table_path = key;
             }
             // Parse table header
             else if self.reader.eat_char(b'[')? {
                 let key = self.parse_table_header()?;
-                table = root
-                    .get_table_header(&key)
+                table = Self::get_table_header(&mut root, &key)
                     .ok_or_else(|| ErrorKind::InvalidTableHeader(key.join(".").into()))?;
                 table_path = key;
             }
@@ -199,7 +198,7 @@ where
                     .unwrap_or_else(|| unreachable!("path cannot be empty"));
 
                 // Navigate to the subtable
-                let subtable = table.get_dotted_key(path).ok_or_else(|| {
+                let subtable = Self::get_dotted_key(table, path).ok_or_else(|| {
                     ErrorKind::InvalidKeyPath(
                         full_key.join(".").into(),
                         (!table_path.is_empty())
@@ -981,8 +980,8 @@ where
         Ok(result)
     }
 
-    fn parse_inline_table(&mut self) -> Result<HashMap<Cow<'de, str>, Value<'de>>> {
-        let mut result = HashMap::new();
+    fn parse_inline_table(&mut self) -> Result<Table<'de>> {
+        let mut result = Table::new();
 
         self.skip_whitespace()?;
 
@@ -998,7 +997,7 @@ where
                 .unwrap_or_else(|| unreachable!("path cannot be empty"));
 
             // Navigate to the subtable
-            let subtable = result.get_inline_subtable(path).ok_or_else(|| {
+            let subtable = Self::get_inline_subtable(&mut result, path).ok_or_else(|| {
                 ErrorKind::InvalidKeyPath(full_key.join(".").into(), "inline table".into())
             })?;
 
@@ -1067,27 +1066,21 @@ where
         }
         Ok(())
     }
-}
 
-trait TomlTable<'a>: 'a {
-    fn get_table_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
-    fn get_array_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
-    fn get_dotted_key(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
-    fn get_inline_subtable(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self>;
-}
-
-impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
-    fn get_table_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
+    fn get_table_header<'a>(
+        parent: &'a mut Table<'de>,
+        path: &[Cow<'de, str>],
+    ) -> Option<&'a mut Table<'de>> {
         let Some((key, path)) = path.split_last() else {
-            return Some(self);
+            return Some(parent);
         };
 
         // Navigate to the parent table, either a subtable with the given name or the last element
         // in an array of tables
-        let parent = path.iter().try_fold(self, |table, key| {
+        let parent = path.iter().try_fold(parent, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| Value::UndefinedTable(Self::new()));
+                .or_insert_with(|| Value::UndefinedTable(Table::new()));
             match *entry {
                 Value::Table(ref mut subtable)
                 | Value::UndefinedTable(ref mut subtable)
@@ -1104,7 +1097,7 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
         // Create the table in the parent, or error if a table already exists
         match parent.get(key) {
             None => {
-                parent.insert(key.clone(), Value::Table(Self::new()));
+                parent.insert(key.clone(), Value::Table(Table::new()));
             }
             Some(&Value::UndefinedTable(_)) => {
                 // Need to remove the entry to take ownership of the subtable
@@ -1121,17 +1114,20 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
         Some(subtable)
     }
 
-    fn get_array_header(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
+    fn get_array_header<'a>(
+        parent: &'a mut Table<'de>,
+        path: &[Cow<'de, str>],
+    ) -> Option<&'a mut Table<'de>> {
         let Some((key, path)) = path.split_last() else {
-            return Some(self);
+            return Some(parent);
         };
 
         // Navigate to the parent table, either a subtable with the given name or the last element
         // in an array of tables
-        let parent = path.iter().try_fold(self, |table, key| {
+        let parent = path.iter().try_fold(parent, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| Value::UndefinedTable(Self::new()));
+                .or_insert_with(|| Value::UndefinedTable(Table::new()));
             match *entry {
                 Value::Table(ref mut subtable)
                 | Value::UndefinedTable(ref mut subtable)
@@ -1150,19 +1146,22 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
             .entry(key.clone())
             .or_insert_with(|| Value::ArrayOfTables(Vec::new()))
         {
-            subarray.push(Self::new());
+            subarray.push(Table::new());
             subarray.last_mut()
         } else {
             None
         }
     }
 
-    fn get_dotted_key(&mut self, path: &[Cow<'a, str>]) -> Option<&mut Self> {
+    fn get_dotted_key<'a>(
+        parent: &'a mut Table<'de>,
+        path: &[Cow<'de, str>],
+    ) -> Option<&'a mut Table<'de>> {
         // Navigate to the table, converting any UndefinedTables to DottedKeyTables
-        path.iter().try_fold(self, |table, key| {
+        path.iter().try_fold(parent, |table, key| {
             match table.get(key) {
                 None => {
-                    table.insert(key.clone(), Value::DottedKeyTable(Self::new()));
+                    table.insert(key.clone(), Value::DottedKeyTable(Table::new()));
                 }
                 Some(&Value::UndefinedTable(_)) => {
                     // Need to remove the entry to take ownership of the subtable
@@ -1181,12 +1180,15 @@ impl<'a> TomlTable<'a> for HashMap<Cow<'a, str>, Value<'a>> {
         })
     }
 
-    fn get_inline_subtable<'b>(&'b mut self, path: &[Cow<'a, str>]) -> Option<&'b mut Self> {
+    fn get_inline_subtable<'a>(
+        parent: &'a mut Table<'de>,
+        path: &[Cow<'de, str>],
+    ) -> Option<&'a mut Table<'de>> {
         // Navigate to the subtable with the given name for each element in the path
-        path.iter().try_fold(self, |table, key| {
+        path.iter().try_fold(parent, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| Value::DottedKeyTable(Self::new()));
+                .or_insert_with(|| Value::DottedKeyTable(Table::new()));
             match *entry {
                 Value::DottedKeyTable(ref mut subtable) => Some(subtable),
                 _ => None,
@@ -1331,10 +1333,10 @@ mod tests {
         assert_eq!(Value::LocalTime(b"foo".into()).typ(), Type::Datetime);
         assert_eq!(Value::Array(vec![]).typ(), Type::Array);
         assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
-        assert_eq!(Value::Table(HashMap::new()).typ(), Type::Table);
-        assert_eq!(Value::InlineTable(HashMap::new()).typ(), Type::Table);
-        assert_eq!(Value::UndefinedTable(HashMap::new()).typ(), Type::Table);
-        assert_eq!(Value::DottedKeyTable(HashMap::new()).typ(), Type::Table);
+        assert_eq!(Value::Table(Table::new()).typ(), Type::Table);
+        assert_eq!(Value::InlineTable(Table::new()).typ(), Type::Table);
+        assert_eq!(Value::UndefinedTable(Table::new()).typ(), Type::Table);
+        assert_eq!(Value::DottedKeyTable(Table::new()).typ(), Type::Table);
     }
 
     #[test]
@@ -2502,10 +2504,10 @@ mod tests {
     #[test]
     fn parser_parse_inline_table() {
         let mut parser = Parser::from_str("}");
-        assert_eq!(parser.parse_inline_table().unwrap(), HashMap::new());
+        assert_eq!(parser.parse_inline_table().unwrap(), Table::new());
 
         let mut parser = Parser::from_str("  }");
-        assert_eq!(parser.parse_inline_table().unwrap(), HashMap::new());
+        assert_eq!(parser.parse_inline_table().unwrap(), Table::new());
 
         let mut parser = Parser::from_str("abc = 123 }");
         assert_eq!(
@@ -2646,7 +2648,9 @@ mod tests {
     }
 
     #[test]
-    fn table_get_table_header() {
+    fn parser_get_table_header() {
+        type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+
         let map = || {
             hashmap! {
                 "a".into() => Value::UndefinedTable(hashmap! {}),
@@ -2660,35 +2664,23 @@ mod tests {
                 }),
             }
         };
-        assert!(map().get_table_header(&[]).is_some());
-        assert!(map().get_table_header(&["a"].map(Into::into)).is_some());
-        assert!(map()
-            .get_table_header(&["a", "b"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_table_header(&["a", "b", "c"].map(Into::into))
-            .is_some());
+        assert!(Parser::get_table_header(&mut map(), &[]).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["a"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["a", "b"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["a", "b", "c"].map(Into::into)).is_some());
 
-        assert!(map()
-            .get_table_header(&["b", "c", "d"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_table_header(&["b", "d", "e"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_table_header(&["b", "e", "f"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_table_header(&["b", "f", "g"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_table_header(&["b", "g", "h"].map(Into::into))
-            .is_none());
-        assert!(map().get_table_header(&["b"].map(Into::into)).is_none());
+        assert!(Parser::get_table_header(&mut map(), &["b", "c", "d"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["b", "d", "e"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["b", "e", "f"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["b", "f", "g"].map(Into::into)).is_some());
+        assert!(Parser::get_table_header(&mut map(), &["b", "g", "h"].map(Into::into)).is_none());
+        assert!(Parser::get_table_header(&mut map(), &["b"].map(Into::into)).is_none());
     }
 
     #[test]
     fn table_get_array_header() {
+        type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+
         let map = || {
             hashmap! {
                 "a".into() => Value::ArrayOfTables(vec![hashmap! {}]),
@@ -2702,35 +2694,23 @@ mod tests {
                 }),
             }
         };
-        assert!(map().get_array_header(&[]).is_some());
-        assert!(map().get_array_header(&["a"].map(Into::into)).is_some());
-        assert!(map()
-            .get_array_header(&["a", "b"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_array_header(&["a", "b", "c"].map(Into::into))
-            .is_some());
+        assert!(Parser::get_array_header(&mut map(), &[]).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["a"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["a", "b"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["a", "b", "c"].map(Into::into)).is_some());
 
-        assert!(map()
-            .get_array_header(&["b", "c", "d"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_array_header(&["b", "d", "e"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_array_header(&["b", "e", "f"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_array_header(&["b", "f", "g"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_array_header(&["b", "g", "h"].map(Into::into))
-            .is_none());
-        assert!(map().get_array_header(&["b"].map(Into::into)).is_none());
+        assert!(Parser::get_array_header(&mut map(), &["b", "c", "d"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["b", "d", "e"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["b", "e", "f"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["b", "f", "g"].map(Into::into)).is_some());
+        assert!(Parser::get_array_header(&mut map(), &["b", "g", "h"].map(Into::into)).is_none());
+        assert!(Parser::get_array_header(&mut map(), &["b"].map(Into::into)).is_none());
     }
 
     #[test]
     fn table_get_dotted_key() {
+        type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+
         let map = || {
             hashmap! {
                 "a".into() => Value::DottedKeyTable(hashmap! {}),
@@ -2738,16 +2718,18 @@ mod tests {
                 "c".into() => Value::Table(hashmap! {}),
             }
         };
-        assert!(map().get_dotted_key(&[]).is_some());
-        assert!(map().get_dotted_key(&["a"].map(Into::into)).is_some());
-        assert!(map().get_dotted_key(&["a", "b"].map(Into::into)).is_some());
-        assert!(map().get_dotted_key(&["b"].map(Into::into)).is_some());
-        assert!(map().get_dotted_key(&["b", "c"].map(Into::into)).is_some());
-        assert!(map().get_dotted_key(&["c"].map(Into::into)).is_none());
+        assert!(Parser::get_dotted_key(&mut map(), &[]).is_some());
+        assert!(Parser::get_dotted_key(&mut map(), &["a"].map(Into::into)).is_some());
+        assert!(Parser::get_dotted_key(&mut map(), &["a", "b"].map(Into::into)).is_some());
+        assert!(Parser::get_dotted_key(&mut map(), &["b"].map(Into::into)).is_some());
+        assert!(Parser::get_dotted_key(&mut map(), &["b", "c"].map(Into::into)).is_some());
+        assert!(Parser::get_dotted_key(&mut map(), &["c"].map(Into::into)).is_none());
     }
 
     #[test]
     fn table_get_inline_subtable() {
+        type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+
         let map = || {
             hashmap! {
                 "a".into() => Value::DottedKeyTable(hashmap! {}),
@@ -2756,17 +2738,13 @@ mod tests {
                 "c".into() => Value::UndefinedTable(hashmap! {}),
             }
         };
-        assert!(map().get_inline_subtable(&[]).is_some());
-        assert!(map().get_inline_subtable(&["a"].map(Into::into)).is_some());
-        assert!(map()
-            .get_inline_subtable(&["a", "b"].map(Into::into))
-            .is_some());
-        assert!(map()
-            .get_inline_subtable(&["a", "b", "c"].map(Into::into))
-            .is_some());
-        assert!(map().get_inline_subtable(&["b"].map(Into::into)).is_none());
-        assert!(map()
-            .get_inline_subtable(&["b", "c"].map(Into::into))
-            .is_none());
+        assert!(Parser::get_inline_subtable(&mut map(), &[]).is_some());
+        assert!(Parser::get_inline_subtable(&mut map(), &["a"].map(Into::into)).is_some());
+        assert!(Parser::get_inline_subtable(&mut map(), &["a", "b"].map(Into::into)).is_some());
+        assert!(
+            Parser::get_inline_subtable(&mut map(), &["a", "b", "c"].map(Into::into)).is_some()
+        );
+        assert!(Parser::get_inline_subtable(&mut map(), &["b"].map(Into::into)).is_none());
+        assert!(Parser::get_inline_subtable(&mut map(), &["b", "c"].map(Into::into)).is_none());
     }
 }
