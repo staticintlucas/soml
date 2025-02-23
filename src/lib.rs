@@ -1,5 +1,6 @@
+#![cfg_attr(coverage, expect(unstable_features))]
 #![cfg_attr(coverage, feature(coverage_attribute))]
-#![allow(missing_docs, clippy::missing_errors_doc)]
+#![allow(missing_docs, clippy::missing_errors_doc)] // TODO
 
 pub use self::de::{from_reader, from_slice, from_str, Deserializer};
 pub use self::ser::{to_string, Serializer};

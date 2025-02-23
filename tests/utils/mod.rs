@@ -105,12 +105,12 @@ impl From<ChronoDatetime> for soml::value::Datetime {
     fn from(value: ChronoDatetime) -> Self {
         match value {
             ChronoDatetime::OffsetDatetime(datetime) => Self {
-                date: Some(soml::value::Date {
+                date: Some(soml::value::LocalDate {
                     year: datetime.year().try_into().unwrap(),
                     month: datetime.month().try_into().unwrap(),
                     day: datetime.day().try_into().unwrap(),
                 }),
-                time: Some(soml::value::Time {
+                time: Some(soml::value::LocalTime {
                     hour: datetime.hour().try_into().unwrap(),
                     minute: datetime.minute().try_into().unwrap(),
                     second: datetime.second().try_into().unwrap(),
@@ -128,12 +128,12 @@ impl From<ChronoDatetime> for soml::value::Datetime {
                 },
             },
             ChronoDatetime::LocalDatetime(datetime) => Self {
-                date: Some(soml::value::Date {
+                date: Some(soml::value::LocalDate {
                     year: datetime.year().try_into().unwrap(),
                     month: datetime.month().try_into().unwrap(),
                     day: datetime.day().try_into().unwrap(),
                 }),
-                time: Some(soml::value::Time {
+                time: Some(soml::value::LocalTime {
                     hour: datetime.hour().try_into().unwrap(),
                     minute: datetime.minute().try_into().unwrap(),
                     second: datetime.second().try_into().unwrap(),
@@ -142,7 +142,7 @@ impl From<ChronoDatetime> for soml::value::Datetime {
                 offset: None,
             },
             ChronoDatetime::LocalDate(datetime) => Self {
-                date: Some(soml::value::Date {
+                date: Some(soml::value::LocalDate {
                     year: datetime.year().try_into().unwrap(),
                     month: datetime.month().try_into().unwrap(),
                     day: datetime.day().try_into().unwrap(),
@@ -152,7 +152,7 @@ impl From<ChronoDatetime> for soml::value::Datetime {
             },
             ChronoDatetime::LocalTime(datetime) => Self {
                 date: None,
-                time: Some(soml::value::Time {
+                time: Some(soml::value::LocalTime {
                     hour: datetime.hour().try_into().unwrap(),
                     minute: datetime.minute().try_into().unwrap(),
                     second: datetime.second().try_into().unwrap(),
