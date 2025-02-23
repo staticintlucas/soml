@@ -36,33 +36,6 @@ where
     }
 }
 
-// pub struct FmtWriter<T> {
-//     inner: T,
-// }
-
-// impl<T> FmtWriter<T> {
-//     pub fn new(writer: T) -> Self {
-//         Self {
-//             inner: writer,
-//         }
-//     }
-// }
-
-// impl<T> private::Sealed for FmtWriter<T> where T: fmt::Write {}
-
-// impl<T> Writer for FmtWriter<T>
-// where
-//     T: fmt::Write,
-// {
-//     fn write_str(&mut self, s: &str) -> Result<()> {
-//         self.inner.write_str(s).map_err(Into::into)
-//     }
-
-//     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<()> {
-//         self.inner.write_fmt(args).map_err(Into::into)
-//     }
-// }
-
 #[derive(Debug)]
 pub struct IoWriter<T: io::Write> {
     inner: io::BufWriter<T>,
@@ -91,5 +64,35 @@ where
 
     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<()> {
         self.inner.write_fmt(args).map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fmt_writer() {
+        let mut writer = String::new();
+
+        writer.write_str("hello").unwrap();
+        writer.write_char(' ').unwrap();
+        let name = "world";
+        writer.write_fmt(format_args!("{name}")).unwrap();
+
+        assert_eq!(writer, "hello world");
+    }
+
+    #[test]
+    fn io_writer() {
+        let mut writer = IoWriter::new(Vec::new());
+
+        writer.write_str("hello").unwrap();
+        writer.write_char(' ').unwrap();
+        let name = "world";
+        writer.write_fmt(format_args!("{name}")).unwrap();
+
+        assert_eq!(writer.inner.buffer(), b"hello world");
     }
 }
