@@ -594,19 +594,12 @@ impl ser::SerializeSeq for ArrayKindSerializer {
     }
 
     fn end(self) -> Result<Self::Ok> {
-        if self.arr.is_empty()
-            || self
+        if !self.arr.is_empty()
+            && self
                 .arr
                 .iter()
-                .any(|v| !matches!(*v, ValueKind::Table(TableKind::Table(_))))
+                .all(|v| matches!(*v, ValueKind::Table(TableKind::Table(_))))
         {
-            let mut array_serializer =
-                InlineArraySerializer::<RawStringSerializer>::start(Some(self.arr.len()))?;
-            self.arr.into_iter().try_for_each(|value| {
-                array_serializer.serialize_element(&value.into_inline_value()?)
-            })?;
-            array_serializer.end().map(ValueKind::InlineValue)
-        } else {
             Ok(ValueKind::Table(TableKind::Array(
                 self.arr
                     .into_iter()
@@ -616,6 +609,13 @@ impl ser::SerializeSeq for ArrayKindSerializer {
                     })
                     .collect(),
             )))
+        } else {
+            let mut array_serializer =
+                InlineArraySerializer::<RawStringSerializer>::start(Some(self.arr.len()))?;
+            self.arr.into_iter().try_for_each(|value| {
+                array_serializer.serialize_element(&value.into_inline_value()?)
+            })?;
+            array_serializer.end().map(ValueKind::InlineValue)
         }
     }
 }
@@ -811,6 +811,8 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
                 )
                 .into()),
             },
+
+            // Not a date, a regular table/struct
             (&mut Self::Table(ref mut ser), _) => ser.serialize_field(key, value),
 
             // If we don't have the right key for one of the date types
@@ -953,7 +955,6 @@ where
     }
 }
 
-/// Inline table containing a single array, not array of inline tables
 #[derive(Debug)]
 pub struct InlineWrappedArraySerializer<S> {
     buf: String,
@@ -1049,7 +1050,7 @@ where
     }
 
     fn end(mut self) -> Result<Self::Ok> {
-        self.buf.write_str("}")?;
+        self.buf.write_str(" }")?;
         Ok(self.buf)
     }
 }
@@ -1075,22 +1076,22 @@ where
 
 #[derive(Debug)]
 pub enum InlineTableOrDatetimeSerializer<S> {
-    Datetime(String),
-    OffsetDatetime(String),
-    LocalDatetime(String),
-    LocalDate(String),
-    LocalTime(String),
+    Datetime(Option<String>),
+    OffsetDatetime(Option<String>),
+    LocalDatetime(Option<String>),
+    LocalDate(Option<String>),
+    LocalTime(Option<String>),
     Table(InlineTableSerializer<S>),
 }
 
 impl<S> InlineTableOrDatetimeSerializer<S> {
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
-            Datetime::WRAPPER_TYPE => Self::Datetime(String::new()),
-            OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(String::new()),
-            LocalDatetime::WRAPPER_TYPE => Self::LocalDatetime(String::new()),
-            LocalDate::WRAPPER_TYPE => Self::LocalDate(String::new()),
-            LocalTime::WRAPPER_TYPE => Self::LocalTime(String::new()),
+            Datetime::WRAPPER_TYPE => Self::Datetime(None),
+            OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(None),
+            LocalDatetime::WRAPPER_TYPE => Self::LocalDatetime(None),
+            LocalDate::WRAPPER_TYPE => Self::LocalDate(None),
+            LocalTime::WRAPPER_TYPE => Self::LocalTime(None),
             _ => Self::Table(InlineTableSerializer::start(len)?),
         })
     }
@@ -1109,25 +1110,24 @@ where
     {
         // Datetime here is a struct containing the stringified date. So we use RawStringSerializer
         // to avoid serializing as a quoted TOML string
-        match *self {
-            Self::Datetime(ref mut buf) if key == Datetime::WRAPPER_FIELD => {
-                buf.write_str(&value.serialize(RawStringSerializer)?)
-            }
-            Self::OffsetDatetime(ref mut buf) if key == OffsetDatetime::WRAPPER_FIELD => {
-                buf.write_str(&value.serialize(RawStringSerializer)?)
-            }
-            Self::LocalDatetime(ref mut buf) if key == LocalDatetime::WRAPPER_FIELD => {
-                buf.write_str(&value.serialize(RawStringSerializer)?)
-            }
-            Self::LocalDate(ref mut buf) if key == LocalDate::WRAPPER_FIELD => {
-                buf.write_str(&value.serialize(RawStringSerializer)?)
-            }
-            Self::LocalTime(ref mut buf) if key == LocalTime::WRAPPER_FIELD => {
-                buf.write_str(&value.serialize(RawStringSerializer)?)
-            }
+        match (self, key) {
+            (&mut Self::Datetime(ref mut inner), Datetime::WRAPPER_FIELD)
+            | (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
+            | (&mut Self::LocalDatetime(ref mut inner), LocalDatetime::WRAPPER_FIELD)
+            | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
+            | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
+                None => {
+                    *inner = Some(value.serialize(RawStringSerializer)?);
+                    Ok(())
+                }
+                Some(_) => Err(ErrorKind::UnsupportedValue(
+                    "datetime wrapper with more than one member",
+                )
+                .into()),
+            },
 
             // Not a date, a regular table/struct
-            Self::Table(ref mut ser) => ser.serialize_field(key, value),
+            (&mut Self::Table(ref mut ser), _) => ser.serialize_field(key, value),
 
             // If we don't have the right key for one of the date types
             _ => Err(ErrorKind::UnsupportedValue(key).into()),
@@ -1136,17 +1136,18 @@ where
 
     fn end(self) -> Result<Self::Ok> {
         match self {
-            Self::Datetime(buf)
-            | Self::OffsetDatetime(buf)
-            | Self::LocalDatetime(buf)
-            | Self::LocalDate(buf)
-            | Self::LocalTime(buf) => Ok(buf),
+            Self::Datetime(inner)
+            | Self::OffsetDatetime(inner)
+            | Self::LocalDatetime(inner)
+            | Self::LocalDate(inner)
+            | Self::LocalTime(inner) => {
+                inner.ok_or_else(|| ErrorKind::UnsupportedValue("empty date-time wrapper").into())
+            }
             Self::Table(ser) => ser.end(),
         }
     }
 }
 
-/// Inline table containing another table
 #[derive(Debug)]
 pub struct InlineWrappedTableSerializer<S> {
     buf: String,
@@ -1215,10 +1216,10 @@ impl ser::Serializer for KeySerializer {
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         let is_bare_key = |b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-');
 
-        if value.is_empty() || value.bytes().any(|ch| !is_bare_key(ch)) {
-            InlineSerializer.serialize_basic_str(value)
-        } else {
+        if !value.is_empty() && value.bytes().all(is_bare_key) {
             Ok(value.to_owned())
+        } else {
+            InlineSerializer.serialize_basic_str(value)
         }
     }
 }
@@ -1253,5 +1254,720 @@ impl InlineValueSerializer for InlineSerializer {
 impl InlineValueSerializer for RawStringSerializer {
     fn new() -> Self {
         Self
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use assert_matches::assert_matches;
+    use indoc::indoc;
+    use maplit::hashmap;
+
+    use super::*;
+
+    #[test]
+    fn value_kind_into_inline_value() {
+        let value = ValueKind::InlineValue("foo".to_owned());
+        assert_eq!(value.into_inline_value().unwrap(), "foo");
+
+        let value = ValueKind::Table(TableKind::Table(vec![(
+            "foo".to_owned(),
+            ValueKind::InlineValue(r#""bar""#.to_owned()),
+        )]));
+        assert_eq!(value.into_inline_value().unwrap(), r#"{ foo = "bar" }"#);
+
+        let value = ValueKind::Table(TableKind::Array(vec![
+            vec![(
+                "foo".to_owned(),
+                ValueKind::InlineValue(r#""bar""#.to_owned()),
+            )],
+            vec![(
+                "foo".to_owned(),
+                ValueKind::InlineValue(r#""baz""#.to_owned()),
+            )],
+        ]));
+        assert_eq!(
+            value.into_inline_value().unwrap(),
+            r#"[{ foo = "bar" }, { foo = "baz" }]"#
+        );
+    }
+
+    #[test]
+    fn wrapped_array_serializer_serialize_tuple_variant() {
+        use serde::ser::SerializeTupleVariant as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut wrapped = WrappedArraySerializer::start(serializer, 1, "array").unwrap();
+        wrapped.serialize_field("foo").unwrap();
+        wrapped.end().unwrap();
+
+        assert_eq!(
+            buf,
+            indoc! {r#"
+            array = ["foo"]
+        "#}
+        );
+    }
+
+    #[test]
+    fn table_serializer_serialize_map() {
+        use serde::ser::SerializeMap as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut wrapped = TableSerializer::start(serializer, Some(2)).unwrap();
+        wrapped.serialize_entry("foo", "bar").unwrap();
+        wrapped.serialize_key("baz").unwrap();
+        wrapped.serialize_value("qux").unwrap();
+        wrapped.end().unwrap();
+
+        assert_eq!(
+            buf,
+            indoc! {r#"
+            baz = "qux"
+            foo = "bar"
+        "#}
+        );
+    }
+
+    #[test]
+    fn table_serializer_serialize_struct() {
+        use serde::ser::SerializeStruct as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut wrapped = TableSerializer::start(serializer, Some(1)).unwrap();
+        wrapped.serialize_field("foo", "bar").unwrap();
+        wrapped.end().unwrap();
+
+        assert_eq!(
+            buf,
+            indoc! {r#"
+            foo = "bar"
+        "#}
+        );
+    }
+
+    #[test]
+    fn wrapped_table_serializer_serialize_struct_variant() {
+        use serde::ser::SerializeStructVariant as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut wrapped = WrappedTableSerializer::start(serializer, 1, "table").unwrap();
+        wrapped.serialize_field("foo", "bar").unwrap();
+        wrapped.end().unwrap();
+
+        assert_eq!(
+            buf,
+            indoc! {r#"
+
+            [table]
+            foo = "bar"
+        "#}
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    fn value_kind_serializer() {
+        use serde::ser::Serializer as _;
+
+        assert_matches!(
+            ValueKindSerializer.serialize_bool(true),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_i8(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_i16(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_i32(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_i64(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_i128(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_u8(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_u16(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_u32(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_u64(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_u128(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_integer(1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_f32(1.0),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_f64(1.0),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_float(1.0),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_char('a'),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_str("foo"),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_bytes(b"foo"),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert!(
+            ValueKindSerializer.serialize_none().is_err(),
+            "TOML doesn't have a none/null type"
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_some(&1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert!(
+            ValueKindSerializer.serialize_unit().is_err(),
+            "TOML doesn't have a unit type"
+        );
+        assert!(
+            ValueKindSerializer.serialize_unit_struct("foo").is_err(),
+            "TOML doesn't have a unit type"
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_unit_variant("foo", 1, "bar"),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_newtype_struct("foo", &1),
+            Ok(ValueKind::InlineValue(_))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_newtype_variant("foo", 1, "bar", &1),
+            Ok(ValueKind::Table(TableKind::Table(_)))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_seq(Some(1)),
+            Ok(ArrayKindSerializer { .. })
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_tuple(1),
+            Ok(ArrayKindSerializer { .. })
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_tuple_struct("foo", 1),
+            Ok(ArrayKindSerializer { .. })
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_tuple_variant("foo", 1, "bar", 1),
+            Ok(WrappedArrayKindSerializer { .. })
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_map(Some(1)),
+            Ok(TableKindSerializer { .. })
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_struct("foo", 1),
+            Ok(TableOrDatetimeKindSerializer::Table(
+                TableKindSerializer { .. }
+            ))
+        );
+        assert_matches!(
+            ValueKindSerializer.serialize_struct_variant("foo", 1, "bar", 1),
+            Ok(WrappedTableKindSerializer { .. })
+        );
+    }
+
+    #[test]
+    fn array_kind_serializer_serialize_seq() {
+        use serde::ser::SerializeSeq as _;
+
+        let kind_ser = ArrayKindSerializer::start(Some(0)).unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_element(&"foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser
+            .serialize_element(&hashmap! { "foo" => "bar" })
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Array(_)));
+    }
+
+    #[test]
+    fn array_kind_serializer_serialize_tuple() {
+        use serde::ser::SerializeTuple as _;
+
+        let kind_ser = ArrayKindSerializer::start(Some(0)).unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_element(&"foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser
+            .serialize_element(&hashmap! { "foo" => "bar" })
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Array(_)));
+    }
+
+    #[test]
+    fn array_kind_serializer_serialize_tuple_struct() {
+        use serde::ser::SerializeTupleStruct as _;
+
+        let kind_ser = ArrayKindSerializer::start(Some(0)).unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_field(&"foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser = ArrayKindSerializer::start(Some(1)).unwrap();
+        kind_ser
+            .serialize_field(&hashmap! { "foo" => "bar" })
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Array(_)));
+    }
+
+    #[test]
+    fn wrapped_array_kind_serializer() {
+        use serde::ser::SerializeTupleVariant as _;
+
+        let kind_ser = WrappedArrayKindSerializer::start(0, "foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::InlineValue(_))));
+
+        let mut kind_ser = WrappedArrayKindSerializer::start(1, "foo").unwrap();
+        kind_ser.serialize_field("foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::InlineValue(_))));
+
+        let mut kind_ser = WrappedArrayKindSerializer::start(1, "foo").unwrap();
+        kind_ser
+            .serialize_field(&hashmap! { "foo" => "bar" })
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::Table(TableKind::Array(_)))));
+    }
+
+    #[test]
+    fn table_kind_serializer_serialize_map() {
+        use serde::ser::SerializeMap as _;
+
+        let kind_ser = TableKindSerializer::start(Some(0)).unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+
+        let mut kind_ser = TableKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_entry("foo", "bar").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+
+        let mut kind_ser = TableKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_key("foo").unwrap();
+        kind_ser.serialize_value("bar").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+    }
+
+    #[test]
+    #[should_panic(expected = "serialize_value called without calling serialize_key first")]
+    fn table_kind_serializer_serialize_value_without_key() {
+        use serde::ser::SerializeMap as _;
+
+        let mut kind_ser = TableKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_value("bar").unwrap();
+    }
+
+    #[test]
+    fn table_kind_serializer_serialize_struct() {
+        use serde::ser::SerializeStruct as _;
+
+        let kind_ser = TableKindSerializer::start(Some(0)).unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+
+        let mut kind_ser = TableKindSerializer::start(Some(1)).unwrap();
+        kind_ser.serialize_field("foo", "bar").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+    }
+
+    #[test]
+    fn table_or_datetime_kind_serializer() {
+        use serde::ser::SerializeStruct as _;
+
+        let kind_ser = TableOrDatetimeKindSerializer::start(Some(0), "foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+
+        let mut kind_ser = TableOrDatetimeKindSerializer::start(Some(0), "foo").unwrap();
+        kind_ser.serialize_field("foo", "bar").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
+
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(Datetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), LocalDatetime::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(LocalDatetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), LocalDate::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(LocalDate::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), LocalTime::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(LocalTime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::InlineValue(_));
+
+        // Wrong field name
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        assert!(kind_ser.serialize_field("foo", "bar").is_err());
+
+        // More than one field
+        let mut kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        kind_ser
+            .serialize_field(Datetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        assert!(kind_ser
+            .serialize_field(Datetime::WRAPPER_FIELD, "bar")
+            .is_err());
+
+        // No field
+        let kind_ser =
+            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        assert!(kind_ser.end().is_err());
+    }
+
+    #[test]
+    fn wrapped_table_kind_serializer() {
+        use serde::ser::SerializeStructVariant as _;
+
+        let kind_ser = WrappedTableKindSerializer::start(0, "foo").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::Table(TableKind::Table(_)))));
+
+        let mut kind_ser = WrappedTableKindSerializer::start(1, "foo").unwrap();
+        kind_ser.serialize_field("foo", "bar").unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::Table(TableKind::Table(_)))));
+
+        let mut kind_ser = WrappedTableKindSerializer::start(1, "foo").unwrap();
+        kind_ser
+            .serialize_field("foo", &hashmap! { "bar" => "baz" })
+            .unwrap();
+        let kind = kind_ser.end().unwrap();
+
+        assert_matches!(kind, ValueKind::Table(TableKind::Table(inner))
+            if matches!(&*inner, &[(ref key, ref value)]
+                if key == "foo" && matches!(value, &ValueKind::Table(TableKind::Table(_)))));
+    }
+
+    #[test]
+    fn inline_array_serializer_serialize_seq() {
+        use serde::ser::SerializeSeq as _;
+
+        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        ser.serialize_element("foo").unwrap();
+        ser.serialize_element("bar").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"["foo", "bar"]"#);
+    }
+
+    #[test]
+    fn inline_array_serializer_serialize_tuple() {
+        use serde::ser::SerializeTuple as _;
+
+        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        ser.serialize_element("foo").unwrap();
+        ser.serialize_element("bar").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"["foo", "bar"]"#);
+    }
+
+    #[test]
+    fn inline_array_serializer_serialize_tuple_struct() {
+        use serde::ser::SerializeTupleStruct as _;
+
+        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        ser.serialize_field("foo").unwrap();
+        ser.serialize_field("bar").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"["foo", "bar"]"#);
+    }
+
+    #[test]
+    fn inline_wrapped_array_serializer() {
+        use serde::ser::SerializeTupleVariant as _;
+
+        let mut ser = InlineWrappedArraySerializer::<InlineSerializer>::start(0, "foo").unwrap();
+        ser.serialize_field("foo").unwrap();
+        ser.serialize_field("bar").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"{ foo = ["foo", "bar"] }"#);
+    }
+
+    #[test]
+    fn inline_table_serializer_serialize_map() {
+        use serde::ser::SerializeMap as _;
+
+        let mut ser = InlineTableSerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        ser.serialize_entry("foo", "bar").unwrap();
+        ser.serialize_key("baz").unwrap();
+        ser.serialize_value("qux").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"{ foo = "bar", baz = "qux" }"#);
+    }
+
+    #[test]
+    fn inline_table_serializer_serialize_struct() {
+        use serde::ser::SerializeStruct as _;
+
+        let mut ser = InlineTableSerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        ser.serialize_field("foo", "bar").unwrap();
+        ser.serialize_field("baz", "qux").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"{ foo = "bar", baz = "qux" }"#);
+    }
+
+    #[test]
+    fn inline_table_or_datetime_serializer() {
+        use serde::ser::SerializeStruct as _;
+
+        let mut ser =
+            InlineTableOrDatetimeSerializer::<InlineSerializer>::start(Some(0), "foo").unwrap();
+        ser.serialize_field("foo", "bar").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"{ foo = "bar" }"#);
+
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            Datetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(Datetime::WRAPPER_FIELD, "foo").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, "foo");
+
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            OffsetDatetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, "foo");
+
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            LocalDatetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(LocalDatetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, "foo");
+
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            LocalDate::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(LocalDate::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, "foo");
+
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            LocalTime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(LocalTime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, "foo");
+
+        // Wrong field name
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            Datetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        assert!(ser.serialize_field("foo", "bar").is_err());
+
+        // More than one field
+        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            Datetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        ser.serialize_field(Datetime::WRAPPER_FIELD, "foo").unwrap();
+        assert!(ser.serialize_field(Datetime::WRAPPER_FIELD, "bar").is_err());
+
+        // No field
+        let ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+            Some(0),
+            Datetime::WRAPPER_TYPE,
+        )
+        .unwrap();
+        assert!(ser.end().is_err());
+    }
+
+    #[test]
+    fn inline_wrapped_table_serializer() {
+        use serde::ser::SerializeStructVariant as _;
+
+        let mut ser = InlineWrappedTableSerializer::<InlineSerializer>::start(1, "foo").unwrap();
+        ser.serialize_field("bar", "baz").unwrap();
+        ser.serialize_field("qux", "quux").unwrap();
+        let value = ser.end().unwrap();
+
+        assert_eq!(value, r#"{ foo = { bar = "baz", qux = "quux" } }"#);
+    }
+
+    #[test]
+    fn key_serializer() {
+        use serde::ser::Serializer as _;
+
+        assert_eq!(KeySerializer.serialize_char('b').unwrap(), "b");
+        assert_eq!(KeySerializer.serialize_str("foo").unwrap(), "foo");
+        assert_eq!(KeySerializer.serialize_str("😎").unwrap(), r#""😎""#);
+
+        assert!(KeySerializer.serialize_i64(1).is_err());
+        assert!(KeySerializer.serialize_struct("foo", 1).is_err());
+    }
+
+    #[test]
+    fn raw_string_serializer() {
+        use serde::ser::Serializer as _;
+
+        assert_eq!(RawStringSerializer.serialize_str("foo").unwrap(), "foo");
+        assert_eq!(RawStringSerializer.serialize_str("😎").unwrap(), "😎");
+
+        assert!(RawStringSerializer.serialize_i64(1).is_err());
+        assert!(RawStringSerializer.serialize_struct("foo", 1).is_err());
     }
 }
