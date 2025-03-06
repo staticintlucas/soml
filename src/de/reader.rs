@@ -2,6 +2,7 @@ use core::str;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io;
+use std::io::Read as _;
 
 use super::error::{ErrorKind, Result};
 
@@ -275,7 +276,7 @@ impl<'a> Reader<'a> for SliceReader<'a> {
 /// Read from a string
 #[derive(Debug)]
 pub struct IoReader<R> {
-    iter: io::Bytes<R>,
+    iter: io::Bytes<io::BufReader<R>>,
     peek: VecDeque<u8>,
     seq: Option<Vec<u8>>,
 }
@@ -287,7 +288,7 @@ where
     /// Create a JSON reader from a [`io::Read`].
     pub fn from_reader(read: R) -> Self {
         Self {
-            iter: read.bytes(),
+            iter: io::BufReader::new(read).bytes(),
             peek: VecDeque::with_capacity(16),
             seq: None,
         }
@@ -960,7 +961,7 @@ mod tests {
     #[test]
     fn io_reader_next() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -978,7 +979,7 @@ mod tests {
     #[test]
     fn io_reader_next_n() {
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -992,7 +993,7 @@ mod tests {
     #[test]
     fn io_reader_next_char() {
         let mut reader = IoReader {
-            iter: b"f".bytes(),
+            iter: io::BufReader::new(b"f".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1001,7 +1002,7 @@ mod tests {
         assert_eq!(reader.next_char().unwrap(), None);
 
         let mut reader = IoReader {
-            iter: b"\xff".bytes(),
+            iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1009,7 +1010,7 @@ mod tests {
         reader.next_char().unwrap_err();
 
         let mut reader = IoReader {
-            iter: b"\xcf\xff".bytes(),
+            iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1017,7 +1018,7 @@ mod tests {
         reader.next_char().unwrap_err();
 
         let mut reader = IoReader {
-            iter: b"\xcf".bytes(),
+            iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1028,7 +1029,7 @@ mod tests {
     #[test]
     fn io_reader_peek() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1043,7 +1044,7 @@ mod tests {
     #[test]
     fn io_reader_peek_n() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1060,7 +1061,7 @@ mod tests {
     #[test]
     fn io_reader_peek_char() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1068,7 +1069,7 @@ mod tests {
         assert_eq!(reader.peek_char().unwrap(), Some('f'));
 
         let mut reader = IoReader {
-            iter: b"".bytes(),
+            iter: io::BufReader::new(b"".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1076,7 +1077,7 @@ mod tests {
         assert_eq!(reader.peek_char().unwrap(), None);
 
         let mut reader = IoReader {
-            iter: b"\xff".bytes(),
+            iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1084,7 +1085,7 @@ mod tests {
         reader.peek_char().unwrap_err();
 
         let mut reader = IoReader {
-            iter: b"\xcf\xff".bytes(),
+            iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1092,7 +1093,7 @@ mod tests {
         reader.peek_char().unwrap_err();
 
         let mut reader = IoReader {
-            iter: b"\xcf".bytes(),
+            iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1103,7 +1104,7 @@ mod tests {
     #[test]
     fn io_reader_peek_at() {
         let mut reader = IoReader {
-            iter: b"bar".bytes(),
+            iter: io::BufReader::new(b"bar".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1120,7 +1121,7 @@ mod tests {
     #[test]
     fn io_reader_discard() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1143,7 +1144,7 @@ mod tests {
     #[test]
     fn io_reader_discard_n() {
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1161,7 +1162,7 @@ mod tests {
     #[test]
     fn io_reader_next_if() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1176,7 +1177,7 @@ mod tests {
     #[test]
     fn io_reader_next_while() {
         let mut reader = IoReader {
-            iter: b"bbbbaaaaaaararrrrrrr".bytes(),
+            iter: io::BufReader::new(b"bbbbaaaaaaararrrrrrr".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1210,7 +1211,7 @@ mod tests {
     #[test]
     fn io_reader_next_str_while() {
         let mut reader = IoReader {
-            iter: b"bbbbaaaaaaararrrrrrr".bytes(),
+            iter: io::BufReader::new(b"bbbbaaaaaaararrrrrrr".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1226,7 +1227,7 @@ mod tests {
         assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
 
         let mut reader = IoReader {
-            iter: b"\xff\xff\xff\xff".bytes(),
+            iter: io::BufReader::new(b"\xff\xff\xff\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1237,7 +1238,7 @@ mod tests {
     #[test]
     fn io_reader_peek_while() {
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1260,7 +1261,7 @@ mod tests {
     #[test]
     fn io_reader_eat_char() {
         let mut reader = IoReader {
-            iter: b"foo".bytes(),
+            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1275,7 +1276,7 @@ mod tests {
     #[test]
     fn io_reader_eat_str() {
         let mut reader = IoReader {
-            iter: b"foobar".bytes(),
+            iter: io::BufReader::new(b"foobar".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1292,7 +1293,7 @@ mod tests {
     #[test]
     fn io_reader_seq() {
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1310,7 +1311,7 @@ mod tests {
         assert_eq!(reader.end_seq().unwrap(), b"oo bar ba".as_slice());
 
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1330,7 +1331,7 @@ mod tests {
     #[should_panic = "Reader::end_seq called without calling Reader::start_seq first"]
     fn io_reader_end_seq_without_starting() {
         let mut reader = IoReader {
-            iter: b"foo bar baz".bytes(),
+            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
@@ -1344,12 +1345,12 @@ mod tests {
 
         impl io::Read for ErrReader {
             fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "foo"))
+                Err(io::Error::other("foo"))
             }
         }
 
         let mut reader = IoReader {
-            iter: ErrReader.bytes(),
+            iter: io::BufReader::new(ErrReader).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };

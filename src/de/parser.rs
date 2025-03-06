@@ -201,9 +201,11 @@ where
                 let subtable = Self::get_dotted_key(table, path).ok_or_else(|| {
                     ErrorKind::InvalidKeyPath(
                         full_key.join(".").into(),
-                        (!table_path.is_empty())
-                            .then(|| table_path.join(".").into())
-                            .unwrap_or_else(|| "root table".into()),
+                        if table_path.is_empty() {
+                            "root table".into()
+                        } else {
+                            table_path.join(".").into()
+                        },
                     )
                 })?;
 
@@ -211,9 +213,11 @@ where
                 if subtable.contains_key(key) {
                     return Err(ErrorKind::DuplicateKey(
                         full_key.join(".").into(),
-                        (!table_path.is_empty())
-                            .then(|| table_path.join(".").into())
-                            .unwrap_or_else(|| "root table".into()),
+                        if table_path.is_empty() {
+                            "root table".into()
+                        } else {
+                            table_path.join(".").into()
+                        },
                     )
                     .into());
                 }

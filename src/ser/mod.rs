@@ -130,7 +130,8 @@ where
         #[cfg(test)]
         let inlines = {
             let mut temp = inlines;
-            temp.sort_by(|a, b| a.0.cmp(&b.0));
+            #[allow(clippy::pattern_type_mismatch)]
+            temp.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
             temp
         };
 
@@ -156,14 +157,17 @@ where
 
     fn write_table_subtables(
         &mut self,
-        mut subtables: Vec<(String, TableKind)>,
+        subtables: Vec<(String, TableKind)>,
         path: &str,
         need_nl: bool,
     ) -> Result<()> {
         // Sort alphabetically for deterministic test output
-        if cfg!(test) {
+        #[cfg(test)]
+        let subtables = {
+            let mut temp = subtables;
             #[allow(clippy::pattern_type_mismatch)]
-            subtables.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            temp.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            temp
         };
         let mut subtables = subtables.into_iter();
 
