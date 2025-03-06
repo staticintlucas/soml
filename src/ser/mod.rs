@@ -38,6 +38,15 @@ impl<'a> Serializer<&'a mut String> {
     }
 }
 
+impl<T> Serializer<T>
+where
+    T: fmt::Write,
+{
+    pub fn from_fmt_writer(writer: T) -> Self {
+        Self { writer }
+    }
+}
+
 impl<T> Serializer<IoWriter<T>>
 where
     T: io::Write,
@@ -49,21 +58,15 @@ where
     }
 }
 
-impl<T> Serializer<T>
-where
-    T: fmt::Write,
-{
-    pub fn from_fmt_writer(writer: T) -> Self {
-        Self { writer }
-    }
-}
-
 impl<W> Serializer<W>
 where
     W: Writer,
 {
-    fn write(mut self, table: Vec<(String, ValueKind)>) -> Result<()> {
-        let (inlines, subtables) = table.into_iter().fold(
+    #[expect(clippy::type_complexity)] // It's not that complex
+    fn split_inlines_and_subtables(
+        table: Vec<(String, ValueKind)>,
+    ) -> (Vec<(String, String)>, Vec<(String, TableKind)>) {
+        table.into_iter().fold(
             (Vec::new(), Vec::new()),
             |(mut inlines, mut subtables), (k, v)| {
                 match v {
@@ -72,37 +75,33 @@ where
                 }
                 (inlines, subtables)
             },
-        );
+        )
+    }
+
+    fn write(mut self, table: Vec<(String, ValueKind)>) -> Result<()> {
+        let (inlines, subtables) = Self::split_inlines_and_subtables(table);
+        let need_nl = !inlines.is_empty();
 
         let path = "";
         self.write_table_inlines(inlines)?;
-        self.write_table_subtables(subtables, path)?;
+        self.write_table_subtables(subtables, path, need_nl)?;
 
         Ok(())
     }
 
     fn write_table(&mut self, table: Vec<(String, ValueKind)>, path: &str) -> Result<()> {
-        let (inlines, subtables) = table.into_iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut inlines, mut subtables), (k, v)| {
-                match v {
-                    ValueKind::InlineValue(value) => inlines.push((k, value)),
-                    ValueKind::Table(table) => subtables.push((k, table)),
-                }
-                (inlines, subtables)
-            },
-        );
+        let (inlines, subtables) = Self::split_inlines_and_subtables(table);
+        let need_nl = !inlines.is_empty() && !subtables.is_empty();
 
-        // The table header is only needed if the table has key/value pairs.
-        // If there are no subtables then a reader would have no idea about the existence of the
-        // table so we also write the header in that case.
-        if !path.is_empty() && (!inlines.is_empty() || subtables.is_empty()) {
-            writeln!(self.writer)?;
+        // The table header is only needed if the table has inlines (key/value pairs); but if there
+        // are no inlines and subtables then a reader would have no idea about the existence of the
+        // table, so we also write the header in that case.
+        if !inlines.is_empty() || subtables.is_empty() {
             writeln!(self.writer, "[{path}]")?;
         }
 
         self.write_table_inlines(inlines)?;
-        self.write_table_subtables(subtables, path)?;
+        self.write_table_subtables(subtables, path, need_nl)?;
 
         Ok(())
     }
@@ -113,22 +112,14 @@ where
         path: &str,
     ) -> Result<()> {
         for table in array {
-            let (inlines, subtables) = table.into_iter().fold(
-                (Vec::new(), Vec::new()),
-                |(mut inlines, mut subtables), (k, v)| {
-                    match v {
-                        ValueKind::InlineValue(value) => inlines.push((k, value)),
-                        ValueKind::Table(table) => subtables.push((k, table)),
-                    }
-                    (inlines, subtables)
-                },
-            );
+            let (inlines, subtables) = Self::split_inlines_and_subtables(table);
+            let need_nl = !inlines.is_empty() && !subtables.is_empty();
 
             // Always write the array header
             writeln!(self.writer, "[[{path}]]")?;
 
             self.write_table_inlines(inlines)?;
-            self.write_table_subtables(subtables, path)?;
+            self.write_table_subtables(subtables, path, need_nl)?;
         }
 
         Ok(())
@@ -150,30 +141,43 @@ where
         Ok(())
     }
 
-    fn write_table_subtables(
-        &mut self,
-        subtables: Vec<(String, TableKind)>,
-        path: &str,
-    ) -> Result<()> {
-        // Sort alphabetically for deterministic test output
-        #[cfg(test)]
-        let subtables = {
-            let mut temp = subtables;
-            temp.sort_by(|a, b| a.0.cmp(&b.0));
-            temp
+    fn write_subtable(&mut self, key: String, table: TableKind, path: &str) -> Result<()> {
+        let path = if path.is_empty() {
+            key
+        } else {
+            format!("{path}.{key}")
         };
 
-        for (key, table) in subtables {
-            let path = if path.is_empty() {
-                key
-            } else {
-                format!("{path}.{key}")
-            };
+        match table {
+            TableKind::Array(array) => self.write_array_of_tables(array, &path),
+            TableKind::Table(table) => self.write_table(table, &path),
+        }
+    }
 
-            match table {
-                TableKind::Array(array) => self.write_array_of_tables(array, &path)?,
-                TableKind::Table(table) => self.write_table(table, &path)?,
-            }
+    fn write_table_subtables(
+        &mut self,
+        mut subtables: Vec<(String, TableKind)>,
+        path: &str,
+        need_nl: bool,
+    ) -> Result<()> {
+        // Sort alphabetically for deterministic test output
+        if cfg!(test) {
+            #[allow(clippy::pattern_type_mismatch)]
+            subtables.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+        };
+        let mut subtables = subtables.into_iter();
+
+        let Some((key, table)) = subtables.next() else {
+            return Ok(());
+        };
+        if need_nl {
+            writeln!(self.writer)?;
+        }
+        self.write_subtable(key, table, path)?;
+
+        for (key, table) in subtables {
+            writeln!(self.writer)?;
+            self.write_subtable(key, table, path)?;
         }
 
         Ok(())

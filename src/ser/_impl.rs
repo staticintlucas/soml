@@ -1367,7 +1367,6 @@ mod tests {
         assert_eq!(
             buf,
             indoc! {r#"
-
             [table]
             foo = "bar"
         "#}
