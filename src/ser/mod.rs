@@ -456,15 +456,23 @@ impl InlineSerializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn serialize_float<T: Float>(self, v: T) -> Result<String> {
         const FORMAT: u128 = NumberFormatBuilder::new().build();
-        const FLOAT_OPTIONS: WriteFloatOptions = WriteFloatOptions::builder()
-            .nan_string(Some(b"nan"))
-            .inf_string(Some(b"inf"))
-            .build_unchecked();
+        const FLOAT_OPTIONS: WriteFloatOptions = WriteFloatOptions::new();
 
-        Ok(lexical::to_string_with_options::<T, FORMAT>(
-            v,
-            &FLOAT_OPTIONS,
-        ))
+        Ok(if v.is_nan() {
+            if v.is_sign_positive() {
+                "nan".into()
+            } else {
+                "-nan".into() // We preserve the sign for NaN
+            }
+        } else if !v.is_finite() {
+            if v.is_sign_positive() {
+                "inf".into()
+            } else {
+                "-inf".into()
+            }
+        } else {
+            lexical::to_string_with_options::<T, FORMAT>(v, &FLOAT_OPTIONS)
+        })
     }
 }
 
@@ -566,5 +574,1009 @@ impl InlineSerializer {
         buf.write_str("\"\"\"")?;
 
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use indoc::indoc;
+    use maplit::hashmap;
+    use serde::Serializer as _;
+
+    use super::*;
+    use crate::value::{LocalDate, LocalTime, Offset, OffsetDatetime};
+
+    mod example {
+        use std::collections::HashMap;
+
+        use crate::value::OffsetDatetime;
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Struct {
+            pub title: String,
+            pub owner: Owner,
+            pub database: Database,
+            pub servers: HashMap<String, Server>,
+            pub clients: Clients,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Owner {
+            pub name: String,
+            pub dob: OffsetDatetime,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Database {
+            pub server: String,
+            pub ports: Vec<u16>,
+            pub connection_max: usize,
+            pub enabled: bool,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Server {
+            pub ip: String,
+            pub dc: String,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Clients {
+            pub hosts: Vec<String>,
+            pub data: HashMap<String, usize>,
+        }
+    }
+
+    #[test]
+    fn test_to_string() {
+        let value = example::Struct {
+            title: "TOML Example".into(),
+            owner: example::Owner {
+                name: "Tom Preston-Werner".into(),
+                dob: OffsetDatetime {
+                    date: LocalDate {
+                        year: 1979,
+                        month: 5,
+                        day: 27,
+                    },
+                    time: LocalTime {
+                        hour: 7,
+                        minute: 32,
+                        second: 0,
+                        nanosecond: 0,
+                    },
+                    offset: Offset::Custom { minutes: -480 },
+                },
+            },
+            database: example::Database {
+                server: "192.168.1.1".into(),
+                ports: vec![8000, 8001, 8002],
+                connection_max: 5000,
+                enabled: true,
+            },
+            servers: hashmap! {
+                "alpha".into() => example::Server {
+                    ip: "10.0.0.1".into(),
+                    dc: "eqdc10".into(),
+                },
+                "beta".into() => example::Server {
+                    ip: "10.0.0.2".into(),
+                    dc: "eqdc10".into(),
+                },
+            },
+            clients: example::Clients {
+                hosts: vec!["alpha".into(), "omega".into()],
+                data: hashmap! {
+                    "gamma".into() => 1,
+                    "delta".into() => 2,
+                },
+            },
+        };
+
+        assert_eq!(
+            to_string(&value).unwrap(),
+            indoc! {r#"
+                title = "TOML Example"
+
+                [clients]
+                hosts = ["alpha", "omega"]
+
+                [clients.data]
+                delta = 2
+                gamma = 1
+
+                [database]
+                connection_max = 5000
+                enabled = true
+                ports = [8000, 8001, 8002]
+                server = "192.168.1.1"
+
+                [owner]
+                dob = 1979-05-27T07:32:00-08:00
+                name = "Tom Preston-Werner"
+
+                [servers.alpha]
+                dc = "eqdc10"
+                ip = "10.0.0.1"
+
+                [servers.beta]
+                dc = "eqdc10"
+                ip = "10.0.0.2"
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_new() {
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        assert_eq!(serializer.writer.as_ptr(), result.as_ptr());
+    }
+
+    #[test]
+    fn serializer_from_fmt_writer() {
+        let mut result = String::new();
+        let serializer = Serializer::from_fmt_writer(&mut result);
+
+        assert_eq!(serializer.writer.as_ptr(), result.as_ptr());
+    }
+
+    #[test]
+    fn serializer_from_io_writer() {
+        let mut result = Vec::new();
+        let _serializer = Serializer::from_io_writer(&mut result);
+
+        // TODO we don't have access to the inner buffer here
+        // assert_eq!(serializer.writer.as_ptr(), result.as_ptr());
+    }
+
+    #[test]
+    fn serializer_split_inlines_and_subtables() {
+        let table = vec![
+            ("foo".into(), ValueKind::InlineValue("bar".into())),
+            (
+                "baz".into(),
+                ValueKind::Table(TableKind::Table(vec![(
+                    "qux".into(),
+                    ValueKind::InlineValue("quux".into()),
+                )])),
+            ),
+        ];
+
+        let (inlines, subtables) = Serializer::<String>::split_inlines_and_subtables(table);
+
+        assert_eq!(inlines, vec![("foo".into(), "bar".into())]);
+        assert_eq!(
+            subtables,
+            vec![(
+                "baz".into(),
+                TableKind::Table(vec![("qux".into(), ValueKind::InlineValue("quux".into())),])
+            )]
+        );
+    }
+
+    #[test]
+    fn serializer_write() {
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        serializer
+            .write(vec![
+                ("foo".into(), ValueKind::InlineValue("bar".into())),
+                (
+                    "baz".into(),
+                    ValueKind::Table(TableKind::Table(vec![(
+                        "qux".into(),
+                        ValueKind::InlineValue("quux".into()),
+                    )])),
+                ),
+            ])
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                foo = bar
+
+                [baz]
+                qux = quux
+            "}
+        );
+    }
+
+    #[test]
+    fn serializer_write_table() {
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table(
+                vec![
+                    ("bar".into(), ValueKind::InlineValue("baz".into())),
+                    (
+                        "qux".into(),
+                        ValueKind::Table(TableKind::Table(vec![(
+                            "quux".into(),
+                            ValueKind::InlineValue("corge".into()),
+                        )])),
+                    ),
+                ],
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo]
+                bar = baz
+
+                [foo.qux]
+                quux = corge
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table(
+                vec![(
+                    "bar".into(),
+                    ValueKind::Table(TableKind::Table(vec![(
+                        "baz".into(),
+                        ValueKind::InlineValue("qux".into()),
+                    )])),
+                )],
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo.bar]
+                baz = qux
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer.write_table(vec![], "foo").unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo]
+            "}
+        );
+    }
+
+    #[test]
+    fn serializer_write_array_of_tables() {
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_array_of_tables(
+                vec![vec![
+                    ("bar".into(), ValueKind::InlineValue("baz".into())),
+                    (
+                        "qux".into(),
+                        ValueKind::Table(TableKind::Table(vec![(
+                            "quux".into(),
+                            ValueKind::InlineValue("corge".into()),
+                        )])),
+                    ),
+                ]],
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [[foo]]
+                bar = baz
+
+                [foo.qux]
+                quux = corge
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_array_of_tables(
+                vec![vec![(
+                    "bar".into(),
+                    ValueKind::Table(TableKind::Table(vec![(
+                        "baz".into(),
+                        ValueKind::InlineValue("qux".into()),
+                    )])),
+                )]],
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [[foo]]
+                [foo.bar]
+                baz = qux
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_array_of_tables(vec![vec![]], "foo")
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [[foo]]
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer.write_array_of_tables(vec![], "foo").unwrap();
+
+        assert_eq!(result, indoc! {r""});
+    }
+
+    #[test]
+    fn serializer_write_table_inlines() {
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table_inlines(vec![
+                ("foo".into(), "bar".into()),
+                ("baz".into(), "qux".into()),
+            ])
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                baz = qux
+                foo = bar
+            "}
+        );
+    }
+
+    #[test]
+    fn serializer_write_subtable() {
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_subtable(
+                "bar".into(),
+                TableKind::Table(vec![("baz".into(), ValueKind::InlineValue("qux".into()))]),
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo.bar]
+                baz = qux
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_subtable(
+                "bar".into(),
+                TableKind::Array(vec![vec![(
+                    "baz".into(),
+                    ValueKind::InlineValue("qux".into()),
+                )]]),
+                "foo",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [[foo.bar]]
+                baz = qux
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_subtable(
+                "foo".into(),
+                TableKind::Table(vec![("bar".into(), ValueKind::InlineValue("baz".into()))]),
+                "",
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo]
+                bar = baz
+            "}
+        );
+    }
+
+    #[test]
+    fn serializer_write_table_subtables() {
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table_subtables(
+                vec![
+                    (
+                        "bar".into(),
+                        TableKind::Table(vec![(
+                            "baz".into(),
+                            ValueKind::InlineValue("qux".into()),
+                        )]),
+                    ),
+                    (
+                        "quux".into(),
+                        TableKind::Array(vec![vec![(
+                            "corge".into(),
+                            ValueKind::InlineValue("grault".into()),
+                        )]]),
+                    ),
+                ],
+                "foo",
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+                [foo.bar]
+                baz = qux
+
+                [[foo.quux]]
+                corge = grault
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table_subtables(
+                vec![
+                    (
+                        "bar".into(),
+                        TableKind::Table(vec![(
+                            "baz".into(),
+                            ValueKind::InlineValue("qux".into()),
+                        )]),
+                    ),
+                    (
+                        "quux".into(),
+                        TableKind::Array(vec![vec![(
+                            "corge".into(),
+                            ValueKind::InlineValue("grault".into()),
+                        )]]),
+                    ),
+                ],
+                "foo",
+                true,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r"
+
+                [foo.bar]
+                baz = qux
+
+                [[foo.quux]]
+                corge = grault
+            "}
+        );
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table_subtables(vec![], "foo", false)
+            .unwrap();
+
+        assert_eq!(result, "");
+
+        let mut result = String::new();
+        let mut serializer = Serializer::new(&mut result);
+
+        serializer
+            .write_table_subtables(vec![], "foo", true)
+            .unwrap();
+
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn serializer_serialize_newtype_variant() {
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        serializer
+            .serialize_newtype_variant("name", 0, "foo", "bar")
+            .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                foo = "bar"
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_tuple_variant() {
+        use ser::SerializeTupleVariant as _;
+
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        let mut wrapped_arr_ser = serializer
+            .serialize_tuple_variant("name", 0, "foo", 2)
+            .unwrap();
+        wrapped_arr_ser.serialize_field(&42).unwrap();
+        wrapped_arr_ser.serialize_field("bar").unwrap();
+        wrapped_arr_ser.end().unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                foo = [42, "bar"]
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_map() {
+        use ser::SerializeMap as _;
+
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        let mut wrapped_map_ser = serializer.serialize_map(Some(1)).unwrap();
+        wrapped_map_ser.serialize_entry("foo", "bar").unwrap();
+        wrapped_map_ser.end().unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                foo = "bar"
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_struct() {
+        use ser::SerializeStruct as _;
+
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        let mut wrapped_struct_ser = serializer.serialize_struct("name", 1).unwrap();
+        wrapped_struct_ser.serialize_field("foo", "bar").unwrap();
+        wrapped_struct_ser.end().unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                foo = "bar"
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_struct_variant() {
+        use ser::SerializeStructVariant as _;
+
+        let mut result = String::new();
+        let serializer = Serializer::new(&mut result);
+
+        let mut wrapped_struct_ser = serializer
+            .serialize_struct_variant("name", 0, "foo", 1)
+            .unwrap();
+        wrapped_struct_ser.serialize_field("bar", "baz").unwrap();
+        wrapped_struct_ser.serialize_field("qux", &42).unwrap();
+        wrapped_struct_ser.end().unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                [foo]
+                bar = "baz"
+                qux = 42
+            "#}
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_bool() {
+        assert_eq!(InlineSerializer.serialize_bool(true).unwrap(), "true");
+        assert_eq!(InlineSerializer.serialize_bool(false).unwrap(), "false");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_i8() {
+        assert_eq!(InlineSerializer.serialize_i8(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_i8(-12).unwrap(), "-12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_i16() {
+        assert_eq!(InlineSerializer.serialize_i16(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_i16(-12).unwrap(), "-12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_i32() {
+        assert_eq!(InlineSerializer.serialize_i32(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_i32(-12).unwrap(), "-12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_i64() {
+        assert_eq!(InlineSerializer.serialize_i64(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_i64(-12).unwrap(), "-12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_i128() {
+        assert_eq!(InlineSerializer.serialize_i128(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_i128(-12).unwrap(), "-12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_u8() {
+        assert_eq!(InlineSerializer.serialize_u8(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_u8(12).unwrap(), "12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_u16() {
+        assert_eq!(InlineSerializer.serialize_u16(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_u16(12).unwrap(), "12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_u32() {
+        assert_eq!(InlineSerializer.serialize_u32(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_u32(12).unwrap(), "12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_u64() {
+        assert_eq!(InlineSerializer.serialize_u64(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_u64(12).unwrap(), "12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_u128() {
+        assert_eq!(InlineSerializer.serialize_u128(42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_u128(12).unwrap(), "12");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_f32() {
+        assert_eq!(InlineSerializer.serialize_f32(42.0).unwrap(), "42.0");
+        assert_eq!(InlineSerializer.serialize_f32(-12.0).unwrap(), "-12.0");
+        assert_eq!(InlineSerializer.serialize_f32(1e12).unwrap(), "1.0e12");
+        assert_eq!(InlineSerializer.serialize_f32(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(
+            InlineSerializer.serialize_f32(f32::INFINITY).unwrap(),
+            "inf"
+        );
+        assert_eq!(
+            InlineSerializer.serialize_f32(f32::NEG_INFINITY).unwrap(),
+            "-inf"
+        );
+        assert_eq!(InlineSerializer.serialize_f32(f32::NAN).unwrap(), "nan");
+        assert_eq!(InlineSerializer.serialize_f32(-f32::NAN).unwrap(), "-nan");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_f64() {
+        assert_eq!(InlineSerializer.serialize_f64(42.0).unwrap(), "42.0");
+        assert_eq!(InlineSerializer.serialize_f64(-12.0).unwrap(), "-12.0");
+        assert_eq!(InlineSerializer.serialize_f64(1e12).unwrap(), "1.0e12");
+        assert_eq!(InlineSerializer.serialize_f64(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(
+            InlineSerializer.serialize_f64(f64::INFINITY).unwrap(),
+            "inf"
+        );
+        assert_eq!(
+            InlineSerializer.serialize_f64(f64::NEG_INFINITY).unwrap(),
+            "-inf"
+        );
+        assert_eq!(InlineSerializer.serialize_f64(f64::NAN).unwrap(), "nan");
+        assert_eq!(InlineSerializer.serialize_f64(-f64::NAN).unwrap(), "-nan");
+    }
+
+    #[test]
+    fn inline_serializer_serialize_char() {
+        assert_eq!(InlineSerializer.serialize_char('a').unwrap(), r#""a""#);
+        assert_eq!(InlineSerializer.serialize_char('😎').unwrap(), r#""😎""#);
+        assert_eq!(
+            InlineSerializer.serialize_char('\n').unwrap(),
+            indoc! {r#"
+                """
+
+                """"#}
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_str() {
+        assert_eq!(InlineSerializer.serialize_str("foo").unwrap(), r#""foo""#);
+        assert_eq!(InlineSerializer.serialize_str("😎").unwrap(), r#""😎""#);
+        assert_eq!(
+            InlineSerializer.serialize_str("abc\ndef\n").unwrap(),
+            indoc! {r#"
+                """
+                abc
+                def
+                """"#}
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_bytes() {
+        assert_eq!(
+            InlineSerializer.serialize_bytes(b"foo").unwrap(),
+            "[102, 111, 111]"
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_bytes(b"\xF0\x9F\x98\x8E")
+                .unwrap(),
+            "[240, 159, 152, 142]"
+        );
+        assert_eq!(
+            InlineSerializer.serialize_bytes(b"abc\ndef\n").unwrap(),
+            "[97, 98, 99, 10, 100, 101, 102, 10]"
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_none() {
+        InlineSerializer.serialize_none().unwrap_err();
+    }
+
+    #[test]
+    fn inline_serializer_serialize_some() {
+        assert_eq!(InlineSerializer.serialize_some(&42).unwrap(), "42");
+        assert_eq!(InlineSerializer.serialize_some("foo").unwrap(), r#""foo""#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_unit() {
+        InlineSerializer.serialize_unit().unwrap_err();
+    }
+
+    #[test]
+    fn inline_serializer_serialize_unit_struct() {
+        InlineSerializer.serialize_unit_struct("name").unwrap_err();
+    }
+
+    #[test]
+    fn inline_serializer_serialize_unit_variant() {
+        assert_eq!(
+            InlineSerializer
+                .serialize_unit_variant("name", 0, "foo")
+                .unwrap(),
+            r#""foo""#
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_newtype_struct() {
+        assert_eq!(
+            InlineSerializer
+                .serialize_newtype_struct("name", &42)
+                .unwrap(),
+            "42"
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_newtype_variant() {
+        assert_eq!(
+            InlineSerializer
+                .serialize_newtype_variant("name", 0, "foo", &42)
+                .unwrap(),
+            "{ foo = 42 }"
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_seq() {
+        use ser::SerializeSeq as _;
+
+        let mut seq = InlineSerializer.serialize_seq(Some(2)).unwrap();
+        seq.serialize_element(&42).unwrap();
+        seq.serialize_element(&"foo").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_tuple() {
+        use ser::SerializeTuple as _;
+
+        let mut seq = InlineSerializer.serialize_tuple(2).unwrap();
+        seq.serialize_element(&42).unwrap();
+        seq.serialize_element(&"foo").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_tuple_struct() {
+        use ser::SerializeTupleStruct as _;
+
+        let mut seq = InlineSerializer.serialize_tuple_struct("name", 2).unwrap();
+        seq.serialize_field(&42).unwrap();
+        seq.serialize_field(&"foo").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_tuple_variant() {
+        use ser::SerializeTupleVariant as _;
+
+        let mut seq = InlineSerializer
+            .serialize_tuple_variant("name", 0, "foo", 2)
+            .unwrap();
+        seq.serialize_field(&42).unwrap();
+        seq.serialize_field(&"bar").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"{ foo = [42, "bar"] }"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_map() {
+        use ser::SerializeMap as _;
+
+        let mut seq = InlineSerializer.serialize_map(Some(2)).unwrap();
+        seq.serialize_entry("foo", &42).unwrap();
+        seq.serialize_entry("bar", &"baz").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"{ foo = 42, bar = "baz" }"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_struct() {
+        use ser::SerializeStruct as _;
+
+        let mut seq = InlineSerializer.serialize_struct("name", 2).unwrap();
+        seq.serialize_field("foo", &42).unwrap();
+        seq.serialize_field("bar", &"baz").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"{ foo = 42, bar = "baz" }"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_struct_variant() {
+        use ser::SerializeStructVariant as _;
+
+        let mut seq = InlineSerializer
+            .serialize_struct_variant("name", 0, "foo", 2)
+            .unwrap();
+        seq.serialize_field("bar", &42).unwrap();
+        seq.serialize_field("baz", &"qux").unwrap();
+        let result = seq.end().unwrap();
+
+        assert_eq!(result, r#"{ foo = { bar = 42, baz = "qux" } }"#);
+    }
+
+    #[test]
+    fn inline_serializer_serialize_basic_str() {
+        assert_eq!(
+            InlineSerializer.serialize_basic_str("foo").unwrap(),
+            r#""foo""#
+        );
+        assert_eq!(
+            InlineSerializer.serialize_basic_str("😎").unwrap(),
+            r#""😎""#
+        );
+        assert_eq!(
+            InlineSerializer.serialize_basic_str("abc\ndef\n").unwrap(),
+            r#""abc\ndef\n""#
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
+                .unwrap(),
+            r#""\b\t\n\f\r\"\\""#
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_basic_str(
+                    "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+                )
+                .unwrap(),
+                r#""\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u000b\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f""#
+        );
+    }
+
+    #[test]
+    fn inline_serializer_serialize_multiline_basic_str() {
+        assert_eq!(
+            InlineSerializer
+                .serialize_multiline_basic_str("foo")
+                .unwrap(),
+            indoc! {r#"
+                """
+                foo""""#}
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_multiline_basic_str("😎")
+                .unwrap(),
+            indoc! {r#"
+                """
+                😎""""#}
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_multiline_basic_str("abc\ndef\n")
+                .unwrap(),
+            indoc! {r#"
+                """
+                abc
+                def
+                """"#}
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_multiline_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
+                .unwrap(),
+            indoc! {"
+                \"\"\"
+                \\b\t
+                \\f\\r\\\"\\\\\"\"\""}
+        );
+        assert_eq!(
+            InlineSerializer
+                .serialize_multiline_basic_str(
+                    "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+                )
+                .unwrap(),
+            indoc! {r#"
+                """
+                \u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u000b\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f""""#}
+        );
     }
 }

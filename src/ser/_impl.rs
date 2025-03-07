@@ -8,7 +8,7 @@ use super::{InlineSerializer, Serializer};
 use crate::value::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ValueKind {
     // Simple value (int, float, string, etc) or inline array/table/etc
     InlineValue(String),
@@ -17,7 +17,7 @@ pub enum ValueKind {
 }
 
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TableKind {
     // A regular table
     Table(Vec<(String, ValueKind)>),
@@ -535,18 +535,24 @@ impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
 
 #[doc(hidden)]
 pub trait Float: lexical::ToLexicalWithOptions<Options = lexical::WriteFloatOptions> {
-    const INFINITY: Self;
-    const NEG_INFINITY: Self;
-    const NAN: Self;
-    const NEG_NAN: Self;
+    fn is_nan(self) -> bool;
+    fn is_finite(self) -> bool;
+    fn is_sign_positive(self) -> bool;
 }
 
 macro_rules! impl_float {
     ($($t:ident)*) => ($(impl Float for $t {
-        const INFINITY: Self = Self::INFINITY;
-        const NEG_INFINITY: Self = Self::NEG_INFINITY;
-        const NAN: Self = Self::NAN;
-        const NEG_NAN: Self = -Self::NAN;
+        fn is_nan(self) -> bool {
+            self.is_nan()
+        }
+
+        fn is_finite(self) -> bool {
+            self.is_finite()
+        }
+
+        fn is_sign_positive(self) -> bool {
+            self.is_sign_positive()
+        }
     })*);
 }
 
