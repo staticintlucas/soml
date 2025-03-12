@@ -13,6 +13,7 @@ impl<'de> de::Deserialize<'de> for Datetime {
         D: de::Deserializer<'de>,
     {
         enum Field {
+            Datetime,
             OffsetDatetime,
             LocalDatetime,
             LocalDate,
@@ -32,11 +33,21 @@ impl<'de> de::Deserialize<'de> for Datetime {
                 E: de::Error,
             {
                 match value {
+                    Datetime::WRAPPER_FIELD => Ok(Self::Value::Datetime),
                     OffsetDatetime::WRAPPER_FIELD => Ok(Self::Value::OffsetDatetime),
                     LocalDatetime::WRAPPER_FIELD => Ok(Self::Value::LocalDatetime),
                     LocalDate::WRAPPER_FIELD => Ok(Self::Value::LocalDate),
                     LocalTime::WRAPPER_FIELD => Ok(Self::Value::LocalTime),
-                    _ => Err(de::Error::unknown_field(value, &[Datetime::WRAPPER_FIELD])),
+                    _ => Err(de::Error::unknown_field(
+                        value,
+                        &[
+                            Datetime::WRAPPER_FIELD,
+                            OffsetDatetime::WRAPPER_FIELD,
+                            LocalDatetime::WRAPPER_FIELD,
+                            LocalDate::WRAPPER_FIELD,
+                            LocalTime::WRAPPER_FIELD,
+                        ],
+                    )),
                 }
             }
         }
@@ -64,21 +75,28 @@ impl<'de> de::Deserialize<'de> for Datetime {
                 A: de::MapAccess<'de>,
             {
                 let Some(key) = map.next_key::<Field>()? else {
-                    return Err(A::Error::missing_field(Datetime::WRAPPER_FIELD));
+                    return Err(A::Error::invalid_length(0, &"exactly one field"));
                 };
                 let value = match key {
+                    Field::Datetime => map.next_value::<DatetimeFromBytes>()?.0,
                     Field::OffsetDatetime => map.next_value::<OffsetDatetimeFromBytes>()?.0.into(),
                     Field::LocalDatetime => map.next_value::<LocalDatetimeFromBytes>()?.0.into(),
                     Field::LocalDate => map.next_value::<LocalDateFromBytes>()?.0.into(),
                     Field::LocalTime => map.next_value::<LocalTimeFromBytes>()?.0.into(),
                 };
                 if map.next_key::<Field>()?.is_some() {
-                    return Err(A::Error::duplicate_field(Datetime::WRAPPER_FIELD));
+                    let mut len = 2;
+                    while map.next_key::<Field>()?.is_some() {
+                        len += 1;
+                    }
+                    return Err(A::Error::invalid_length(len, &"exactly one field"));
                 }
                 Ok(value)
             }
         }
 
+        // The deserializer should accept any of the *::WRAPPER_FIELD values, but we can only pass
+        // one. In practice it always ignores the fields anyway, so we just pass Self::WRAPPER_FIELD
         deserializer.deserialize_struct(Self::WRAPPER_TYPE, &[Self::WRAPPER_FIELD], Visitor)
     }
 }
@@ -162,15 +180,14 @@ impl<'de> de::MapAccess<'de> for DatetimeAccess<'de> {
         V: de::DeserializeSeed<'de>,
     {
         #[allow(clippy::panic)]
-        let Some(inner) = self.0.take() else {
-            panic!("next_value_seed called without calling next_key_seed first")
-        };
-
-        let value = match inner {
+        let Some(
             DatetimeAccessInner::OffsetDatetime(value)
             | DatetimeAccessInner::LocalDatetime(value)
             | DatetimeAccessInner::LocalDate(value)
-            | DatetimeAccessInner::LocalTime(value) => value,
+            | DatetimeAccessInner::LocalTime(value),
+        ) = self.0.take()
+        else {
+            panic!("next_value_seed called without calling next_key_seed first")
         };
 
         seed.deserialize(value.into_deserializer())
@@ -273,6 +290,36 @@ macro_rules! impl_deserialize {
             }
         }
     };
+}
+
+pub struct DatetimeFromBytes(pub Datetime);
+
+impl<'de> de::Deserialize<'de> for DatetimeFromBytes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl de::Visitor<'_> for Visitor {
+            type Value = DatetimeFromBytes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a date-time")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Datetime::from_slice(v)
+                    .map(DatetimeFromBytes)
+                    .map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_bytes(Visitor)
+    }
 }
 
 pub struct OffsetDatetimeFromBytes(pub OffsetDatetime);
