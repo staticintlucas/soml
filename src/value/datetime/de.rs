@@ -395,72 +395,47 @@ mod tests {
     };
     const OFFSET: Offset = Offset::Custom { minutes: 428 };
 
+    const OFFSET_DATETIME: OffsetDatetime = OffsetDatetime {
+        date: DATE,
+        time: TIME,
+        offset: OFFSET,
+    };
+    const LOCAL_DATETIME: LocalDatetime = LocalDatetime {
+        date: DATE,
+        time: TIME,
+    };
+
     #[test]
     fn deserialize_datetime() {
         let map = indoc! {r#"{
             "<soml::_impl::Datetime::Wrapper::Field>": "2023-01-02T03:04:05.006+07:08"
         }"#};
         let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            Datetime {
-                date: Some(DATE),
-                time: Some(TIME),
-                offset: Some(OFFSET),
-            }
-        );
+        assert_eq!(date, Datetime::from(OFFSET_DATETIME));
 
         let map = indoc! {r#"{
             "<soml::_impl::OffsetDatetime::Wrapper::Field>": "2023-01-02T03:04:05.006+07:08"
         }"#};
         let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            Datetime {
-                date: Some(DATE),
-                time: Some(TIME),
-                offset: Some(OFFSET),
-            }
-        );
+        assert_eq!(date, Datetime::from(OFFSET_DATETIME));
 
         let map = indoc! {r#"{
             "<soml::_impl::LocalDatetime::Wrapper::Field>": "2023-01-02T03:04:05.006"
         }"#};
         let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            Datetime {
-                date: Some(DATE),
-                time: Some(TIME),
-                offset: None,
-            }
-        );
+        assert_eq!(date, Datetime::from(LOCAL_DATETIME));
 
         let map = indoc! {r#"{
             "<soml::_impl::LocalDate::Wrapper::Field>": "2023-01-02"
         }"#};
         let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            Datetime {
-                date: Some(DATE),
-                time: None,
-                offset: None,
-            }
-        );
+        assert_eq!(date, Datetime::from(DATE));
 
         let map = indoc! {r#"{
             "<soml::_impl::LocalTime::Wrapper::Field>": "03:04:05.006"
         }"#};
         let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            Datetime {
-                date: None,
-                time: Some(TIME),
-                offset: None,
-            }
-        );
+        assert_eq!(date, Datetime::from(TIME));
 
         let map = indoc! {r#"{
             "foo": "2023-01-02T03:04:05.006+07:08"
@@ -490,14 +465,7 @@ mod tests {
     fn deserialize_datetime_from_bytes() {
         let date: DatetimeFromBytes =
             serde_json::from_str(r#""2023-01-02T03:04:05.006+07:08""#).unwrap();
-        assert_eq!(
-            date.0,
-            Datetime {
-                date: Some(DATE),
-                time: Some(TIME),
-                offset: Some(OFFSET),
-            }
-        );
+        assert_eq!(date.0, Datetime::from(OFFSET_DATETIME));
 
         serde_json::from_str::<DatetimeFromBytes>(r#""invalid string""#).unwrap_err();
 
@@ -510,14 +478,7 @@ mod tests {
             "<soml::_impl::OffsetDatetime::Wrapper::Field>": "2023-01-02T03:04:05.006+07:08"
         }"#};
         let date: OffsetDatetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            OffsetDatetime {
-                date: DATE,
-                time: TIME,
-                offset: OFFSET,
-            }
-        );
+        assert_eq!(date, OFFSET_DATETIME);
 
         let map = indoc! {r#"{
             "foo": "2023-01-02T03:04:05.006+07:08"
@@ -541,14 +502,7 @@ mod tests {
     fn deserialize_offset_datetime_from_bytes() {
         let date: OffsetDatetimeFromBytes =
             serde_json::from_str(r#""2023-01-02T03:04:05.006+07:08""#).unwrap();
-        assert_eq!(
-            date.0,
-            OffsetDatetime {
-                date: DATE,
-                time: TIME,
-                offset: OFFSET,
-            }
-        );
+        assert_eq!(date.0, OFFSET_DATETIME);
 
         serde_json::from_str::<OffsetDatetimeFromBytes>(r#""invalid string""#).unwrap_err();
 
@@ -561,13 +515,7 @@ mod tests {
             "<soml::_impl::LocalDatetime::Wrapper::Field>": "2023-01-02T03:04:05.006"
         }"#};
         let date: LocalDatetime = serde_json::from_str(map).unwrap();
-        assert_eq!(
-            date,
-            LocalDatetime {
-                date: DATE,
-                time: TIME,
-            }
-        );
+        assert_eq!(date, LOCAL_DATETIME);
 
         let map = indoc! {r#"{
             "foo": "2023-01-02T03:04:05.006"
@@ -591,13 +539,7 @@ mod tests {
     fn deserialize_local_datetime_from_bytes() {
         let date: LocalDatetimeFromBytes =
             serde_json::from_str(r#""2023-01-02T03:04:05.006""#).unwrap();
-        assert_eq!(
-            date.0,
-            LocalDatetime {
-                date: DATE,
-                time: TIME,
-            }
-        );
+        assert_eq!(date.0, LOCAL_DATETIME);
 
         serde_json::from_str::<LocalDatetimeFromBytes>(r#""invalid string""#).unwrap_err();
 

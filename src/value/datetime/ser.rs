@@ -66,3 +66,78 @@ impl ser::Serialize for LocalTime {
         s.end()
     }
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::value::Offset;
+
+    const DATE: LocalDate = LocalDate {
+        year: 2023,
+        month: 1,
+        day: 2,
+    };
+    const TIME: LocalTime = LocalTime {
+        hour: 3,
+        minute: 4,
+        second: 5,
+        nanosecond: 6_000_000,
+    };
+    const OFFSET: Offset = Offset::Custom { minutes: 428 };
+
+    const OFFSET_DATETIME: OffsetDatetime = OffsetDatetime {
+        date: DATE,
+        time: TIME,
+        offset: OFFSET,
+    };
+    const LOCAL_DATETIME: LocalDatetime = LocalDatetime {
+        date: DATE,
+        time: TIME,
+    };
+
+    #[test]
+    fn serialize_datetime() {
+        let result = serde_json::to_string(&Datetime::from(OFFSET_DATETIME)).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::Datetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+        );
+    }
+
+    #[test]
+    fn serialize_offset_datetime() {
+        let result = serde_json::to_string(&OFFSET_DATETIME).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+        );
+    }
+
+    #[test]
+    fn serialize_local_datetime() {
+        let result = serde_json::to_string(&LOCAL_DATETIME).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006"}"#
+        );
+    }
+
+    #[test]
+    fn serialize_local_date() {
+        let result = serde_json::to_string(&DATE).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalDate::Wrapper::Field>":"2023-01-02"}"#
+        );
+    }
+
+    #[test]
+    fn serialize_local_time() {
+        let result = serde_json::to_string(&TIME).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalTime::Wrapper::Field>":"03:04:05.006"}"#
+        );
+    }
+}
