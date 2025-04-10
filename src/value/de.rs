@@ -1,5 +1,9 @@
 use std::borrow::Cow;
-use std::collections::{hash_map, HashMap};
+#[cfg(not(test))]
+use std::collections::hash_map;
+use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::{btree_map, BTreeMap};
 use std::result::Result as StdResult;
 use std::{fmt, slice, vec};
 
@@ -50,6 +54,7 @@ impl<'de> de::Deserialize<'de> for Value {
     where
         D: de::Deserializer<'de>,
     {
+        #[derive(Debug)]
         enum MapField<'de> {
             OffsetDatetime,
             LocalDatetime,
@@ -223,7 +228,7 @@ impl<'de> de::Deserialize<'de> for Value {
                             Some(MapField::OffsetDatetime) => {
                                 Err(de::Error::duplicate_field(OffsetDatetime::WRAPPER_FIELD))
                             }
-                            Some(_) => Err(de::Error::unknown_field(
+                            Some(key) => Err(de::Error::unknown_field(
                                 key.as_str(),
                                 &[LocalDatetime::WRAPPER_FIELD],
                             )),
@@ -236,7 +241,7 @@ impl<'de> de::Deserialize<'de> for Value {
                             Some(MapField::LocalDatetime) => {
                                 Err(de::Error::duplicate_field(LocalDatetime::WRAPPER_FIELD))
                             }
-                            Some(_) => Err(de::Error::unknown_field(
+                            Some(key) => Err(de::Error::unknown_field(
                                 key.as_str(),
                                 &[LocalDatetime::WRAPPER_FIELD],
                             )),
@@ -396,14 +401,23 @@ impl<'de> de::SeqAccess<'de> for SeqAccess {
 }
 
 struct MapAccess {
+    #[cfg(test)]
+    kv_pairs: btree_map::IntoIter<String, Value>,
+    #[cfg(not(test))]
     kv_pairs: hash_map::IntoIter<String, Value>,
     next_value: Option<Value>,
 }
 
 impl MapAccess {
     fn new(table: HashMap<String, Value>) -> Self {
+        let kv_pairs = table.into_iter();
+
+        // Use a sorted BTreeMap for deterministic test output
+        #[cfg(test)]
+        let kv_pairs = kv_pairs.collect::<BTreeMap<_, _>>().into_iter();
+
         Self {
-            kv_pairs: table.into_iter(),
+            kv_pairs,
             next_value: None,
         }
     }
@@ -431,7 +445,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
     {
         #[allow(clippy::panic)]
         let Some(value) = self.next_value.take() else {
-            panic!("next_value_seed called without calling next_key_seed first")
+            panic!("MapAccess::next_value called without calling MapAccess::next_key first")
         };
         seed.deserialize(value)
     }
@@ -641,14 +655,23 @@ impl<'de> de::SeqAccess<'de> for SeqRefAccess<'de> {
 }
 
 struct MapRefAccess<'de> {
+    #[cfg(test)]
+    kv_pairs: btree_map::IntoIter<&'de String, &'de Value>,
+    #[cfg(not(test))]
     kv_pairs: hash_map::Iter<'de, String, Value>,
     next_value: Option<&'de Value>,
 }
 
 impl<'de> MapRefAccess<'de> {
     fn new(table: &'de HashMap<String, Value>) -> Self {
+        let kv_pairs = table.iter();
+
+        // Use a sorted BTreeMap for deterministic test output
+        #[cfg(test)]
+        let kv_pairs = kv_pairs.collect::<BTreeMap<_, _>>().into_iter();
+
         Self {
-            kv_pairs: table.iter(),
+            kv_pairs,
             next_value: None,
         }
     }
@@ -676,7 +699,7 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
     {
         #[allow(clippy::panic)]
         let Some(value) = self.next_value.take() else {
-            panic!("next_value_seed called without calling next_key_seed first")
+            panic!("MapRefAccess::next_value called without calling MapRefAccess::next_key first")
         };
         seed.deserialize(value)
     }
@@ -772,5 +795,1064 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
         V: de::Visitor<'de>,
     {
         de::Deserializer::deserialize_map(self.value, visitor)
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use std::marker::PhantomData;
+
+    use maplit::hashmap;
+    use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
+    use serde::{de, Deserialize};
+
+    use super::*;
+    use crate::value::{Datetime, Offset};
+
+    struct OptionDeserializer<T, E> {
+        value: Option<T>,
+        marker: PhantomData<E>,
+    }
+
+    impl<T, E> OptionDeserializer<T, E> {
+        fn new(value: Option<T>) -> Self {
+            Self {
+                value,
+                marker: PhantomData,
+            }
+        }
+    }
+
+    impl<'de, T, E> de::Deserializer<'de> for OptionDeserializer<T, E>
+    where
+        T: de::IntoDeserializer<'de, E>,
+        E: de::Error,
+    {
+        type Error = E;
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str
+            string bytes byte_buf option unit unit_struct newtype_struct seq
+            tuple tuple_struct map struct enum identifier ignored_any
+        }
+
+        fn deserialize_any<V>(self, visitor: V) -> std::result::Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de>,
+        {
+            match self.value {
+                Some(value) => visitor.visit_some(value.into_deserializer()),
+                None => visitor.visit_none(),
+            }
+        }
+    }
+
+    #[test]
+    fn value_try_into() {
+        Value::Integer(2).try_into::<i32>().unwrap();
+        Value::String("hi".to_string())
+            .try_into::<i32>()
+            .unwrap_err();
+    }
+
+    #[test]
+    fn unexpected_from_type() {
+        let string = Type::String;
+        let unexp = de::Unexpected::from(string);
+
+        assert_eq!(unexp.to_string(), "string");
+    }
+
+    #[test]
+    fn value_into_deserializer() {
+        let value = Value::String("foo".to_string());
+        let deserializer = value.clone().into_deserializer();
+
+        assert_eq!(deserializer, value);
+    }
+
+    #[test]
+    fn value_ref_into_deserializer() {
+        let value = Value::String("foo".to_string());
+        let deserializer = (&value).into_deserializer();
+
+        assert_eq!(deserializer, &value);
+    }
+
+    #[test]
+    fn value_deserialize_primitive() {
+        let value = Value::deserialize(de::value::BoolDeserializer::<Error>::new(true)).unwrap();
+        assert_eq!(value, Value::Boolean(true));
+
+        let value = Value::deserialize(de::value::I64Deserializer::<Error>::new(123)).unwrap();
+        assert_eq!(value, Value::Integer(123));
+
+        let value = Value::deserialize(de::value::I128Deserializer::<Error>::new(123)).unwrap();
+        assert_eq!(value, Value::Integer(123));
+        let result = Value::deserialize(de::value::I128Deserializer::<Error>::new(i128::MIN));
+        assert!(result.is_err());
+
+        let value = Value::deserialize(de::value::U64Deserializer::<Error>::new(123)).unwrap();
+        assert_eq!(value, Value::Integer(123));
+        let result = Value::deserialize(de::value::U64Deserializer::<Error>::new(u64::MAX));
+        assert!(result.is_err());
+
+        let value = Value::deserialize(de::value::U128Deserializer::<Error>::new(123)).unwrap();
+        assert_eq!(value, Value::Integer(123));
+        let result = Value::deserialize(de::value::U128Deserializer::<Error>::new(u128::MAX));
+        assert!(result.is_err());
+
+        let value = Value::deserialize(de::value::F64Deserializer::<Error>::new(123.0)).unwrap();
+        assert_eq!(value, Value::Float(123.0));
+
+        let value = Value::deserialize(de::value::StrDeserializer::<Error>::new(
+            "Does it smell like updog in here?",
+        ))
+        .unwrap();
+        assert_eq!(
+            value,
+            Value::String("Does it smell like updog in here?".to_string())
+        );
+
+        let value = Value::deserialize(de::value::StringDeserializer::<Error>::new(
+            "No, what's updog?".into(),
+        ))
+        .unwrap();
+        assert_eq!(value, Value::String("No, what's updog?".to_string()));
+
+        let value = Value::deserialize(OptionDeserializer::<_, Error>::new(Some(123))).unwrap();
+        assert_eq!(value, Value::Integer(123));
+
+        let result = Value::deserialize(OptionDeserializer::<i32, Error>::new(None));
+        assert!(result.is_err());
+
+        let result = Value::deserialize(de::value::UnitDeserializer::<Error>::new());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_deserialize_array() {
+        let value =
+            Value::deserialize(de::value::BytesDeserializer::<Error>::new(&[1, 2, 3])).unwrap();
+        assert_eq!(
+            value,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+
+        let value = Value::deserialize(de::value::SeqDeserializer::<_, Error>::new(
+            [1, 2, 3].into_iter().map(de::value::I64Deserializer::new),
+        ))
+        .unwrap();
+        assert_eq!(
+            value,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+    }
+
+    #[test]
+    fn value_deserialize_table() {
+        let value = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+            [("one", 1), ("two", 2), ("three", 3)]
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        de::value::StrDeserializer::new(k),
+                        de::value::I64Deserializer::new(v),
+                    )
+                }),
+        ))
+        .unwrap();
+        assert_eq!(
+            value,
+            Value::Table(hashmap! {
+                "one".to_string() => Value::Integer(1),
+                "two".to_string() => Value::Integer(2),
+                "three".to_string() => Value::Integer(3),
+            })
+        );
+
+        let value = Value::deserialize(de::value::MapDeserializer::<
+            std::iter::Empty<(de::value::StrDeserializer<_>, de::value::I64Deserializer<_>)>,
+            Error,
+        >::new(std::iter::empty()))
+        .unwrap();
+        assert_eq!(value, Value::Table(hashmap! {}));
+
+        let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+            std::iter::once((
+                de::value::I64Deserializer::new(123),
+                de::value::StrDeserializer::new("foo"),
+            )),
+        ));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn value_deserialize_datetime() {
+        let date = || LocalDate {
+            year: 2023,
+            month: 1,
+            day: 2,
+        };
+        let time = || LocalTime {
+            hour: 3,
+            minute: 4,
+            second: 5,
+            nanosecond: 6_000_000,
+        };
+        let offset = || Offset::Custom { minutes: 428 };
+
+        let tests = [
+            (
+                OffsetDatetime::WRAPPER_FIELD,
+                &b"2023-01-02T03:04:05.006+07:08"[..],
+                Datetime {
+                    date: Some(date()),
+                    time: Some(time()),
+                    offset: Some(offset()),
+                },
+            ),
+            (
+                LocalDatetime::WRAPPER_FIELD,
+                &b"2023-01-02T03:04:05.006"[..],
+                Datetime {
+                    date: Some(date()),
+                    time: Some(time()),
+                    offset: None,
+                },
+            ),
+            (
+                LocalDate::WRAPPER_FIELD,
+                &b"2023-01-02"[..],
+                Datetime {
+                    date: Some(date()),
+                    time: None,
+                    offset: None,
+                },
+            ),
+            (
+                LocalTime::WRAPPER_FIELD,
+                &b"03:04:05.006"[..],
+                Datetime {
+                    date: None,
+                    time: Some(time()),
+                    offset: None,
+                },
+            ),
+        ];
+
+        for (field, bytes, expected) in tests {
+            let value = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                std::iter::once((
+                    de::value::StrDeserializer::new(field),
+                    de::value::BytesDeserializer::new(bytes),
+                )),
+            ))
+            .unwrap();
+            assert_eq!(value, expected);
+
+            let value = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                std::iter::once((
+                    de::value::BorrowedStrDeserializer::new(field),
+                    de::value::BytesDeserializer::new(bytes),
+                )),
+            ))
+            .unwrap();
+            assert_eq!(value, expected);
+        }
+
+        let tests = [
+            (
+                OffsetDatetime::WRAPPER_FIELD,
+                &b"2023-01-02T03:04:05.006+07:08"[..],
+            ),
+            (
+                LocalDatetime::WRAPPER_FIELD,
+                &b"2023-01-02T03:04:05.006"[..],
+            ),
+            (LocalDate::WRAPPER_FIELD, &b"2023-01-02"[..]),
+            (LocalTime::WRAPPER_FIELD, &b"03:04:05.006"[..]),
+        ];
+
+        for (i, (field, bytes)) in tests.into_iter().enumerate() {
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                [(field, bytes); 2]
+                    .map(|(k, v)| {
+                        (
+                            de::value::StrDeserializer::new(k),
+                            de::value::BytesDeserializer::new(v),
+                        )
+                    })
+                    .into_iter(),
+            ));
+            assert!(result.is_err());
+
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                [(field, bytes), ("foo", b"bar")]
+                    .map(|(k, v)| {
+                        (
+                            de::value::StrDeserializer::new(k),
+                            de::value::BytesDeserializer::new(v),
+                        )
+                    })
+                    .into_iter(),
+            ));
+            assert!(result.is_err());
+
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                [(field, bytes), ("foo", b"bar")]
+                    .map(|(k, v)| {
+                        (
+                            de::value::BorrowedStrDeserializer::new(k),
+                            de::value::BytesDeserializer::new(v),
+                        )
+                    })
+                    .into_iter(),
+            ));
+            assert!(result.is_err());
+
+            let other_field = tests[(i + 1) % tests.len()].0;
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                [(field, bytes), (other_field, b"bar")]
+                    .map(|(k, v)| {
+                        (
+                            de::value::StrDeserializer::new(k),
+                            de::value::BytesDeserializer::new(v),
+                        )
+                    })
+                    .into_iter(),
+            ));
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn value_deserializer() {
+        String::deserialize(Value::String("Hello".to_string())).unwrap();
+
+        i32::deserialize(Value::Integer(42)).unwrap();
+
+        f64::deserialize(Value::Float(42.0)).unwrap();
+
+        bool::deserialize(Value::Boolean(true)).unwrap();
+
+        Vec::<i32>::deserialize(Value::Array(vec![
+            Value::Integer(123),
+            Value::Integer(456),
+            Value::Integer(789),
+        ]))
+        .unwrap();
+
+        HashMap::<String, i32>::deserialize(Value::Table(hashmap! {
+            "abc".into() => Value::Integer(123),
+            "def".into() => Value::Integer(456),
+            "ghi".into() => Value::Integer(789),
+        }))
+        .unwrap();
+
+        Option::<i32>::deserialize(Value::Integer(123)).unwrap();
+    }
+
+    #[test]
+    fn value_deserializer_newtype() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        struct Newtype(i32);
+
+        let result = Newtype::deserialize(Value::Integer(123)).unwrap();
+        assert_eq!(result, Newtype(123));
+    }
+
+    #[test]
+    fn value_deserializer_enum() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        enum Enum {
+            A,
+            B(i32),
+        }
+
+        let result = Enum::deserialize(Value::String("A".to_string())).unwrap();
+        assert_eq!(result, Enum::A);
+
+        let result = Enum::deserialize(Value::Table(hashmap! {
+            "B".into() => Value::Integer(123),
+        }))
+        .unwrap();
+        assert_eq!(result, Enum::B(123));
+
+        Enum::deserialize(Value::Integer(123)).unwrap_err();
+    }
+
+    #[test]
+    fn value_deserializer_datetime() {
+        let date = || LocalDate {
+            year: 2023,
+            month: 1,
+            day: 2,
+        };
+        let time = || LocalTime {
+            hour: 3,
+            minute: 4,
+            second: 5,
+            nanosecond: 6_000_000,
+        };
+        let offset = || Offset::Custom { minutes: 428 };
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: Some(time()),
+            offset: Some(offset()),
+        };
+        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = OffsetDatetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: Some(time()),
+            offset: None,
+        };
+        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalDatetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: None,
+            offset: None,
+        };
+        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalDate::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(time()),
+            offset: None,
+        };
+        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalTime::deserialize(Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(time()),
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: None,
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: None,
+        };
+        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+    }
+
+    #[test]
+    fn seq_access() {
+        let mut seq_access = SeqAccess::new(vec![
+            Value::Integer(1),
+            Value::Integer(2),
+            Value::Integer(3),
+        ]);
+
+        assert_eq!(seq_access.size_hint(), Some(3));
+
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(1));
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(2));
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(3));
+
+        assert_eq!(seq_access.size_hint(), Some(0));
+
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), None);
+
+        assert_eq!(seq_access.size_hint(), Some(0));
+    }
+
+    #[test]
+    fn map_access() {
+        let mut map_access = MapAccess::new(hashmap! {
+            "one".to_string() => Value::Integer(1),
+            "two".to_string() => Value::Integer(2),
+            "three".to_string() => Value::Integer(3),
+        });
+
+        assert_eq!(map_access.size_hint().unwrap(), 3);
+
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "one");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 1);
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "three");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 3);
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "two");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 2);
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        assert!(map_access.next_key::<String>().unwrap().is_none());
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        let mut map_access = MapAccess::new(hashmap! {
+            "one".to_string() => Value::Integer(1),
+            "two".to_string() => Value::Integer(2),
+            "three".to_string() => Value::Integer(3),
+        });
+
+        assert_eq!(map_access.size_hint().unwrap(), 3);
+
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("one".to_string(), 1)
+        );
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("three".to_string(), 3)
+        );
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("two".to_string(), 2)
+        );
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        assert!(map_access.next_entry::<String, i32>().unwrap().is_none());
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+    }
+
+    #[test]
+    #[should_panic = "MapAccess::next_value called without calling MapAccess::next_key first"]
+    fn map_access_empty() {
+        let mut map_access = MapAccess::new(hashmap! {});
+
+        map_access.next_value::<i32>().unwrap();
+    }
+
+    #[test]
+    fn enum_access_unit() {
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {}),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_ok());
+
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Integer(42),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_err());
+
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {
+                "foo".to_string() => Value::Integer(42),
+            }),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_err());
+    }
+
+    #[test]
+    fn enum_access_newtype() {
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Integer(42),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(value.newtype_variant::<i32>().unwrap(), 42);
+    }
+
+    #[test]
+    fn enum_access_tuple() {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = Vec<i32>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a tuple")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut result = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(value) = seq.next_element::<i32>()? {
+                    result.push(value);
+                }
+                Ok(result)
+            }
+        }
+
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+            ]),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(value.tuple_variant(3, Visitor).unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn enum_access_struct() {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = HashMap<String, i32>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a struct")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> StdResult<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut result = HashMap::new();
+                while let Some((key, value)) = map.next_entry::<String, i32>()? {
+                    result.insert(key, value);
+                }
+                Ok(result)
+            }
+        }
+
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {
+                "one".to_string() => Value::Integer(1),
+                "two".to_string() => Value::Integer(2),
+            }),
+        })
+        .unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(
+            value.struct_variant(&["one", "two"], Visitor).unwrap(),
+            hashmap! {
+                "one".to_string() => 1,
+                "two".to_string() => 2,
+            }
+        );
+    }
+
+    #[test]
+    fn enum_access_error() {
+        let enum_access = EnumAccess::new(hashmap! {});
+        assert!(enum_access.is_err());
+
+        let enum_access = EnumAccess::new(hashmap! {
+            "variant".to_string() => Value::Integer(1),
+            "variant2".to_string() => Value::Integer(2),
+        });
+        assert!(enum_access.is_err());
+    }
+
+    #[test]
+    fn value_ref_deserializer() {
+        String::deserialize(&Value::String("Hello".to_string())).unwrap();
+
+        i32::deserialize(&Value::Integer(42)).unwrap();
+
+        f64::deserialize(&Value::Float(42.0)).unwrap();
+
+        bool::deserialize(&Value::Boolean(true)).unwrap();
+
+        Vec::<i32>::deserialize(&Value::Array(vec![
+            Value::Integer(123),
+            Value::Integer(456),
+            Value::Integer(789),
+        ]))
+        .unwrap();
+
+        HashMap::<String, i32>::deserialize(&Value::Table(hashmap! {
+            "abc".into() => Value::Integer(123),
+            "def".into() => Value::Integer(456),
+            "ghi".into() => Value::Integer(789),
+        }))
+        .unwrap();
+
+        Option::<i32>::deserialize(&Value::Integer(123)).unwrap();
+    }
+
+    #[test]
+    fn value_ref_deserializer_newtype() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        struct Newtype(i32);
+
+        let result = Newtype::deserialize(&Value::Integer(123)).unwrap();
+        assert_eq!(result, Newtype(123));
+    }
+
+    #[test]
+    fn value_ref_deserializer_enum() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        enum Enum {
+            A,
+            B(i32),
+        }
+
+        let result = Enum::deserialize(&Value::String("A".to_string())).unwrap();
+        assert_eq!(result, Enum::A);
+
+        let result = Enum::deserialize(&Value::Table(hashmap! {
+            "B".into() => Value::Integer(123),
+        }))
+        .unwrap();
+        assert_eq!(result, Enum::B(123));
+
+        Enum::deserialize(&Value::Integer(123)).unwrap_err();
+    }
+
+    #[test]
+    fn value_ref_deserializer_datetime() {
+        let date = || LocalDate {
+            year: 2023,
+            month: 1,
+            day: 2,
+        };
+        let time = || LocalTime {
+            hour: 3,
+            minute: 4,
+            second: 5,
+            nanosecond: 6_000_000,
+        };
+        let offset = || Offset::Custom { minutes: 428 };
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: Some(time()),
+            offset: Some(offset()),
+        };
+        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = OffsetDatetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: Some(time()),
+            offset: None,
+        };
+        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalDatetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: None,
+            offset: None,
+        };
+        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalDate::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(time()),
+            offset: None,
+        };
+        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime);
+
+        let result = LocalTime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
+        assert_eq!(result, datetime.try_into().unwrap());
+
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(time()),
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: Some(date()),
+            time: None,
+            offset: Some(offset()),
+        };
+        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: None,
+        };
+        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+    }
+
+    #[test]
+    fn seq_ref_access() {
+        let array = vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)];
+        let mut seq_access = SeqRefAccess::new(&array);
+
+        assert_eq!(seq_access.size_hint(), Some(3));
+
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(1));
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(2));
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(3));
+
+        assert_eq!(seq_access.size_hint(), Some(0));
+
+        assert_eq!(seq_access.next_element::<i32>().unwrap(), None);
+
+        assert_eq!(seq_access.size_hint(), Some(0));
+    }
+
+    #[test]
+    fn map_ref_access() {
+        let table = hashmap! {
+            "one".to_string() => Value::Integer(1),
+            "two".to_string() => Value::Integer(2),
+            "three".to_string() => Value::Integer(3),
+        };
+        let mut map_access = MapRefAccess::new(&table);
+
+        assert_eq!(map_access.size_hint().unwrap(), 3);
+
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "one");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 1);
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "three");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 3);
+        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "two");
+        assert_eq!(map_access.next_value::<i32>().unwrap(), 2);
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        assert!(map_access.next_key::<String>().unwrap().is_none());
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        let table = hashmap! {
+            "one".to_string() => Value::Integer(1),
+            "two".to_string() => Value::Integer(2),
+            "three".to_string() => Value::Integer(3),
+        };
+        let mut map_access = MapRefAccess::new(&table);
+
+        assert_eq!(map_access.size_hint().unwrap(), 3);
+
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("one".to_string(), 1)
+        );
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("three".to_string(), 3)
+        );
+        assert_eq!(
+            map_access.next_entry::<String, i32>().unwrap().unwrap(),
+            ("two".to_string(), 2)
+        );
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+
+        assert!(map_access.next_entry::<String, i32>().unwrap().is_none());
+
+        assert_eq!(map_access.size_hint().unwrap(), 0);
+    }
+
+    #[test]
+    #[should_panic = "MapRefAccess::next_value called without calling MapRefAccess::next_key first"]
+    fn map_ref_access_empty() {
+        let table = hashmap! {};
+        let mut map_access = MapRefAccess::new(&table);
+
+        map_access.next_value::<i32>().unwrap();
+    }
+
+    #[test]
+    fn enum_ref_access_unit() {
+        let table = hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {}),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_ok());
+
+        let table = hashmap! {
+            "variant".to_string() => Value::Integer(42),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_err());
+
+        let table = hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {
+                "foo".to_string() => Value::Integer(42),
+            }),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert!(value.unit_variant().is_err());
+    }
+
+    #[test]
+    fn enum_ref_access_newtype() {
+        let table = hashmap! {
+            "variant".to_string() => Value::Integer(42),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(value.newtype_variant::<i32>().unwrap(), 42);
+    }
+
+    #[test]
+    fn enum_ref_access_tuple() {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = Vec<i32>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a tuple")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut result = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(value) = seq.next_element::<i32>()? {
+                    result.push(value);
+                }
+                Ok(result)
+            }
+        }
+
+        let table = hashmap! {
+            "variant".to_string() => Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+            ]),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(value.tuple_variant(3, Visitor).unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn enum_ref_access_struct() {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = HashMap<String, i32>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a struct")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> StdResult<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut result = HashMap::new();
+                while let Some((key, value)) = map.next_entry::<String, i32>()? {
+                    result.insert(key, value);
+                }
+                Ok(result)
+            }
+        }
+
+        let table = hashmap! {
+            "variant".to_string() => Value::Table(hashmap! {
+                "one".to_string() => Value::Integer(1),
+                "two".to_string() => Value::Integer(2),
+            }),
+        };
+        let enum_access = EnumRefAccess::new(&table).unwrap();
+
+        let (variant, value) = enum_access.variant::<String>().unwrap();
+        assert_eq!(variant, "variant".to_string());
+        assert_eq!(
+            value.struct_variant(&["one", "two"], Visitor).unwrap(),
+            hashmap! {
+                "one".to_string() => 1,
+                "two".to_string() => 2,
+            }
+        );
+    }
+
+    #[test]
+    fn enum_ref_access_error() {
+        let table = hashmap! {};
+        let enum_access = EnumRefAccess::new(&table);
+        assert!(enum_access.is_err());
+
+        let table = hashmap! {
+            "variant".to_string() => Value::Integer(1),
+            "variant2".to_string() => Value::Integer(2),
+        };
+        let enum_access = EnumRefAccess::new(&table);
+        assert!(enum_access.is_err());
     }
 }
