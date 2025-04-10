@@ -130,8 +130,7 @@ where
         #[cfg(test)]
         let inlines = {
             let mut temp = inlines;
-            #[allow(clippy::pattern_type_mismatch)]
-            temp.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            temp.sort_by(|a, b| a.0.cmp(&b.0));
             temp
         };
 
@@ -165,8 +164,7 @@ where
         #[cfg(test)]
         let subtables = {
             let mut temp = subtables;
-            #[allow(clippy::pattern_type_mismatch)]
-            temp.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            temp.sort_by(|a, b| a.0.cmp(&b.0));
             temp
         };
         let mut subtables = subtables.into_iter();

@@ -731,7 +731,7 @@ impl ser::SerializeMap for TableKindSerializer {
     {
         #[allow(clippy::panic)]
         let Some(key) = self.key.take() else {
-            panic!("serialize_value called without calling serialize_key first")
+            panic!("TableKindSerializer::serialize_value called without calling TableKindSerializer::serialize_key first")
         };
 
         self.arr.push((key, value.serialize(ValueKindSerializer)?));
@@ -1642,7 +1642,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "serialize_value called without calling serialize_key first")]
+    #[should_panic = "TableKindSerializer::serialize_value called without calling TableKindSerializer::serialize_key first"]
     fn table_kind_serializer_serialize_value_without_key() {
         use serde::ser::SerializeMap as _;
 

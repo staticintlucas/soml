@@ -267,7 +267,7 @@ impl<'a> Reader<'a> for SliceReader<'a> {
     #[allow(clippy::panic)]
     fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
         let Some(start) = self.seq_start.take() else {
-            panic!("Reader::end_seq called without calling Reader::start_seq first")
+            panic!("SliceReader::end_seq called without calling SliceReader::start_seq first")
         };
         Ok(Cow::Borrowed(&self.bytes[start..self.offset]))
     }
@@ -443,7 +443,7 @@ where
     #[allow(clippy::panic)]
     fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
         let Some(seq) = self.seq.take() else {
-            panic!("Reader::end_seq called without calling Reader::start_seq first")
+            panic!("IoReader::end_seq called without calling IoReader::start_seq first")
         };
         Ok(Cow::Owned(seq))
     }
@@ -933,7 +933,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "Reader::end_seq called without calling Reader::start_seq first"]
+    #[should_panic = "SliceReader::end_seq called without calling SliceReader::start_seq first"]
     fn slice_reader_end_seq_without_starting() {
         let mut reader = SliceReader {
             bytes: b"foo bar baz",
@@ -1328,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "Reader::end_seq called without calling Reader::start_seq first"]
+    #[should_panic = "IoReader::end_seq called without calling IoReader::start_seq first"]
     fn io_reader_end_seq_without_starting() {
         let mut reader = IoReader {
             iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
