@@ -351,7 +351,7 @@ impl ser::SerializeMap for ToValueTableSerializer {
     {
         #[allow(clippy::panic)]
         let Some(key) = self.key.take() else {
-            panic!("serialize_value called without calling serialize_key first")
+            panic!("ToValueTableSerializer::serialize_value called without calling ToValueTableSerializer::serialize_key first")
         };
 
         self.table.insert(key, value.serialize(ToValueSerializer)?);

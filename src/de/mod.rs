@@ -584,7 +584,7 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
     {
         #[allow(clippy::panic)]
         let Some(value) = self.next_value.take() else {
-            panic!("next_value_seed called without calling next_key_seed first")
+            panic!("MapAccess::next_value called without calling MapAccess::next_key first")
         };
         seed.deserialize(ValueDeserializer::new(value))
     }

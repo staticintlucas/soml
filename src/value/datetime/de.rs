@@ -364,7 +364,9 @@ impl<'de> de::MapAccess<'de> for DatetimeAccess<'de> {
             | DatetimeAccessInner::LocalTime(value),
         ) = self.0.take()
         else {
-            panic!("next_value_seed called without calling next_key_seed first")
+            panic!(
+                "DatetimeAccess::next_value called without calling DatetimeAccess::next_key first"
+            )
         };
 
         seed.deserialize(value.into_deserializer())
