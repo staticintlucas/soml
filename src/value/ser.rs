@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -19,6 +21,12 @@ impl ser::Serialize for Value {
             Self::Boolean(bool) => bool.serialize(serializer),
             Self::Datetime(ref datetime) => datetime.serialize(serializer),
             Self::Array(ref array) => array.serialize(serializer),
+            #[cfg(test)]
+            Self::Table(ref table) => table
+                .iter()
+                .collect::<BTreeMap<_, _>>()
+                .serialize(serializer),
+            #[cfg(not(test))]
             Self::Table(ref table) => table.serialize(serializer),
         }
     }
@@ -508,5 +516,456 @@ impl ser::Serializer for RawStringSerializer {
 
     fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
         Ok(value.to_owned())
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use maplit::hashmap;
+    use serde::Serializer as _;
+
+    use super::*;
+    use crate::value::Offset;
+
+    #[test]
+    fn serialize_value() {
+        let result = serde_json::to_string(&Value::String("Hello!".to_string())).unwrap();
+        assert_eq!(result, r#""Hello!""#);
+
+        let result = serde_json::to_string(&Value::Integer(42)).unwrap();
+        assert_eq!(result, "42");
+
+        let result = serde_json::to_string(&Value::Float(42.0)).unwrap();
+        assert_eq!(result, "42.0");
+
+        let result = serde_json::to_string(&Value::Boolean(true)).unwrap();
+        assert_eq!(result, "true");
+
+        let result = serde_json::to_string(&Value::Datetime(Datetime {
+            date: Some(LocalDate {
+                year: 2023,
+                month: 1,
+                day: 2,
+            }),
+            time: Some(LocalTime {
+                hour: 3,
+                minute: 4,
+                second: 5,
+                nanosecond: 6_000_000,
+            }),
+            offset: Some(Offset::Custom { minutes: 428 }),
+        }))
+        .unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::Datetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+        );
+
+        let result = serde_json::to_string(&Value::Array(vec![
+            Value::Integer(1),
+            Value::Integer(2),
+            Value::Integer(3),
+        ]))
+        .unwrap();
+        assert_eq!(result, "[1,2,3]");
+
+        let result = serde_json::to_string(&Value::Table(hashmap! {
+            "one".to_string() => Value::Integer(1),
+            "two".to_string() => Value::Integer(2),
+            "three".to_string() => Value::Integer(3),
+        }))
+        .unwrap();
+        assert_eq!(result, r#"{"one":1,"three":3,"two":2}"#);
+    }
+
+    #[test]
+    #[allow(clippy::cognitive_complexity)]
+    fn to_value_serializer() {
+        let result = ToValueSerializer.serialize_bool(true).unwrap();
+        assert_eq!(result, Value::Boolean(true));
+
+        let result = ToValueSerializer.serialize_i8(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_i16(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_i32(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_i64(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_i128(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+        let result = ToValueSerializer.serialize_i128(i128::MIN);
+        assert!(result.is_err());
+
+        let result = ToValueSerializer.serialize_u8(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_u16(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_u32(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_u64(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+        let result = ToValueSerializer.serialize_u64(u64::MAX);
+        assert!(result.is_err());
+
+        let result = ToValueSerializer.serialize_u128(42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+        let result = ToValueSerializer.serialize_u128(u128::MAX);
+        assert!(result.is_err());
+
+        let result = ToValueSerializer.serialize_f32(42.0).unwrap();
+        assert_eq!(result, Value::Float(42.0));
+
+        let result = ToValueSerializer.serialize_f64(42.0).unwrap();
+        assert_eq!(result, Value::Float(42.0));
+
+        let result = ToValueSerializer.serialize_char('a').unwrap();
+        assert_eq!(result, Value::String("a".to_string()));
+
+        let result = ToValueSerializer.serialize_str("Hello!").unwrap();
+        assert_eq!(result, Value::String("Hello!".to_string()));
+
+        let result = ToValueSerializer.serialize_bytes(&[1, 2, 3]).unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+
+        let result = ToValueSerializer.serialize_none();
+        assert!(result.is_err());
+
+        let result = ToValueSerializer.serialize_some(&42).unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer.serialize_unit();
+        assert!(result.is_err());
+
+        let result = ToValueSerializer.serialize_unit_struct("UnitStruct");
+        assert!(result.is_err());
+
+        let result = ToValueSerializer
+            .serialize_unit_variant("Enum", 0, "UnitVariant")
+            .unwrap();
+        assert_eq!(result, Value::String("UnitVariant".to_string()));
+
+        let result = ToValueSerializer
+            .serialize_newtype_struct("NewtypeStruct", &42)
+            .unwrap();
+        assert_eq!(result, Value::Integer(42));
+
+        let result = ToValueSerializer
+            .serialize_newtype_variant("Enum", 0, "NewtypeVariant", &42)
+            .unwrap();
+        assert_eq!(
+            result,
+            Value::Table(hashmap! { "NewtypeVariant".to_string() => Value::Integer(42) })
+        );
+
+        // These create a type-specific serializer which is tested below, so just unwrap to test for panics
+        ToValueSerializer.serialize_seq(Some(3)).unwrap();
+        ToValueSerializer.serialize_tuple(3).unwrap();
+        ToValueSerializer
+            .serialize_tuple_struct("TupleStruct", 3)
+            .unwrap();
+        ToValueSerializer
+            .serialize_tuple_variant("Enum", 0, "TupleVariant", 3)
+            .unwrap();
+        ToValueSerializer.serialize_map(Some(3)).unwrap();
+        ToValueSerializer.serialize_struct("Struct", 3).unwrap();
+        ToValueSerializer
+            .serialize_struct_variant("Enum", 0, "StructVariant", 3)
+            .unwrap();
+    }
+
+    #[test]
+    fn to_value_array_serializer_seq() {
+        use ser::SerializeSeq as _;
+
+        let mut serializer = ToValueArraySerializer::start(Some(3)).unwrap();
+        serializer.serialize_element(&1).unwrap();
+        serializer.serialize_element(&2).unwrap();
+        serializer.serialize_element(&3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+    }
+
+    #[test]
+    fn to_value_array_serializer_tuple() {
+        use ser::SerializeTuple as _;
+
+        let mut serializer = ToValueArraySerializer::start(Some(3)).unwrap();
+        serializer.serialize_element(&1).unwrap();
+        serializer.serialize_element(&2).unwrap();
+        serializer.serialize_element(&3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+    }
+
+    #[test]
+    fn to_value_array_serializer_tuple_struct() {
+        use ser::SerializeTupleStruct as _;
+
+        let mut serializer = ToValueArraySerializer::start(Some(3)).unwrap();
+        serializer.serialize_field(&1).unwrap();
+        serializer.serialize_field(&2).unwrap();
+        serializer.serialize_field(&3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+        );
+    }
+
+    #[test]
+    fn to_value_wrapped_array_serializer() {
+        use ser::SerializeTupleVariant as _;
+
+        let mut serializer = ToValueWrappedArraySerializer::start(3, "TupleVariant").unwrap();
+        serializer.serialize_field(&1).unwrap();
+        serializer.serialize_field(&2).unwrap();
+        serializer.serialize_field(&3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Table(
+                hashmap! { "TupleVariant".to_string() => Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]) }
+            )
+        );
+    }
+
+    #[test]
+    fn to_value_table_serializer_map() {
+        use ser::SerializeMap as _;
+
+        let mut serializer = ToValueTableSerializer::start(Some(3)).unwrap();
+        serializer.serialize_key("one").unwrap();
+        serializer.serialize_value(&1).unwrap();
+        serializer.serialize_key("two").unwrap();
+        serializer.serialize_value(&2).unwrap();
+        serializer.serialize_key("three").unwrap();
+        serializer.serialize_value(&3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Table(
+                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+            )
+        );
+    }
+
+    #[test]
+    #[should_panic = "ToValueTableSerializer::serialize_value called without calling ToValueTableSerializer::serialize_key first"]
+    fn to_value_table_serializer_map_error() {
+        use ser::SerializeMap as _;
+
+        let mut serializer = ToValueTableSerializer::start(Some(3)).unwrap();
+        serializer.serialize_value(&1).unwrap();
+    }
+
+    #[test]
+    fn to_value_table_serializer_struct() {
+        use ser::SerializeStruct as _;
+
+        let mut serializer = ToValueTableSerializer::start(Some(3)).unwrap();
+        serializer.serialize_field("one", &1).unwrap();
+        serializer.serialize_field("two", &2).unwrap();
+        serializer.serialize_field("three", &3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Table(
+                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+            )
+        );
+    }
+
+    #[test]
+    fn to_value_table_or_datetime_serializer() {
+        use ser::SerializeStruct as _;
+
+        let date = || LocalDate {
+            year: 2023,
+            month: 1,
+            day: 2,
+        };
+        let time = || LocalTime {
+            hour: 3,
+            minute: 4,
+            second: 5,
+            nanosecond: 6_000_000,
+        };
+        let offset = || Offset::Custom { minutes: 428 };
+
+        let mut serializer = ToValueTableOrDatetimeSerializer::start(Some(3), "Struct").unwrap();
+        serializer.serialize_field("one", &1).unwrap();
+        serializer.serialize_field("two", &2).unwrap();
+        serializer.serialize_field("three", &3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Table(
+                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+            )
+        );
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Datetime(Datetime {
+                date: Some(date()),
+                time: Some(time()),
+                offset: Some(offset()),
+            })
+        );
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                &"2023-01-02T03:04:05.006+07:08",
+            )
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Datetime(Datetime {
+                date: Some(date()),
+                time: Some(time()),
+                offset: Some(offset()),
+            })
+        );
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), LocalDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(LocalDatetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006")
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Datetime(Datetime {
+                date: Some(date()),
+                time: Some(time()),
+                offset: None,
+            })
+        );
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), LocalDate::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(LocalDate::WRAPPER_FIELD, &"2023-01-02")
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Datetime(Datetime {
+                date: Some(date()),
+                time: None,
+                offset: None,
+            })
+        );
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), LocalTime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(LocalTime::WRAPPER_FIELD, &"03:04:05.006")
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Datetime(Datetime {
+                date: None,
+                time: Some(time()),
+                offset: None,
+            })
+        );
+    }
+
+    #[test]
+    fn to_value_table_or_datetime_serializer_error() {
+        use ser::SerializeStruct as _;
+
+        let serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(0), Datetime::WRAPPER_TYPE).unwrap();
+        assert!(serializer.end().is_err());
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        assert!(serializer.serialize_field("one", &1).is_err());
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(2), Datetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+            .unwrap();
+        assert!(serializer
+            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+            .is_err());
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(Datetime::WRAPPER_FIELD, &"blah")
+            .unwrap();
+        assert!(serializer.end().is_err());
+    }
+
+    #[test]
+    fn to_value_wrapped_table_serializer() {
+        use ser::SerializeStructVariant as _;
+
+        let mut serializer = ToValueWrappedTableSerializer::start(3, "StructVariant").unwrap();
+        serializer.serialize_field("one", &1).unwrap();
+        serializer.serialize_field("two", &2).unwrap();
+        serializer.serialize_field("three", &3).unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(
+            result,
+            Value::Table(
+                hashmap! { "StructVariant".to_string() => Value::Table(hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }) }
+            )
+        );
+    }
+
+    #[test]
+    fn raw_string_serializer() {
+        let result = RawStringSerializer.serialize_str("Hello!").unwrap();
+        assert_eq!(result, "Hello!".to_string());
     }
 }
