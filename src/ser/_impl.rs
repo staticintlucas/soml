@@ -68,8 +68,10 @@ macro_rules! __serialize_unimplemented {
 pub(crate) use __serialize_unimplemented;
 
 #[macro_export(local_inner_macros)]
+#[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! __serialize_unimplemented_method {
     ($func:ident $(<$t:ident>)* ($($arg:ty),*) -> $ret:ident, $msg:expr) => {
+        #[inline]
         fn $func $(<$t>)* (self $(, _: $arg)*) -> $crate::ser::Result<Self::$ret>
         where
             $($t: ?Sized + ::serde::Serialize,)*
@@ -79,6 +81,7 @@ macro_rules! __serialize_unimplemented_method {
     };
 
     ($func:ident $(<$t:ident>)* (name: $name:ty $(, $arg:ty)*) -> $ret:ident) => {
+        #[inline]
         fn $func $(<$t>)* (self, name: $name $(, _: $arg)*) -> $crate::ser::Result<Self::$ret>
         where
             $($t: ?Sized + ::serde::Serialize,)*
@@ -197,6 +200,7 @@ pub struct WrappedArraySerializer<W> {
 }
 
 impl<W> WrappedArraySerializer<W> {
+    #[inline]
     pub fn start(ser: Serializer<W>, len: usize, key: &'static str) -> Result<Self> {
         Ok(Self {
             ser,
@@ -212,6 +216,7 @@ where
     type Ok = ();
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -219,6 +224,7 @@ where
         self.kind.serialize_field(value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         self.ser.write(self.kind.end_inner()?)
     }
@@ -232,6 +238,7 @@ pub struct TableSerializer<W> {
 }
 
 impl<W> TableSerializer<W> {
+    #[inline]
     pub fn start(ser: Serializer<W>, len: Option<usize>) -> Result<Self> {
         Ok(Self {
             ser,
@@ -247,6 +254,7 @@ where
     type Ok = ();
     type Error = Error;
 
+    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -254,6 +262,7 @@ where
         self.kind.serialize_key(key)
     }
 
+    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -261,6 +270,7 @@ where
         self.kind.serialize_value(value)
     }
 
+    #[inline]
     fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<()>
     where
         K: ?Sized + ser::Serialize,
@@ -269,6 +279,7 @@ where
         self.kind.serialize_entry(key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         self.ser.write(self.kind.end_inner())
     }
@@ -281,6 +292,7 @@ where
     type Ok = ();
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -288,6 +300,7 @@ where
         self.kind.serialize_field(key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         self.ser.write(self.kind.end_inner())
     }
@@ -301,6 +314,7 @@ pub struct WrappedTableSerializer<W> {
 }
 
 impl<W> WrappedTableSerializer<W> {
+    #[inline]
     pub fn start(ser: Serializer<W>, len: usize, key: &'static str) -> Result<Self> {
         Ok(Self {
             ser,
@@ -316,6 +330,7 @@ where
     type Ok = ();
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -323,6 +338,7 @@ where
         self.kind.serialize_field(key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         self.ser.write(self.kind.end_inner()?)
     }
@@ -343,84 +359,102 @@ impl ser::Serializer for ValueKindSerializer {
     type SerializeStruct = TableOrDatetimeKindSerializer;
     type SerializeStructVariant = WrappedTableKindSerializer;
 
+    #[inline]
     fn serialize_bool(self, value: bool) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_bool(value)
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_i8(self, value: i8) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i16(self, value: i16) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i32(self, value: i32) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i64(self, value: i64) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i128(self, value: i128) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u8(self, value: u8) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u16(self, value: u16) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u32(self, value: u32) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u64(self, value: u64) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u128(self, value: u128) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_f32(self, value: f32) -> Result<Self::Ok> {
         self.serialize_float(value)
     }
 
+    #[inline]
     fn serialize_f64(self, value: f64) -> Result<Self::Ok> {
         self.serialize_float(value)
     }
 
+    #[inline]
     fn serialize_char(self, value: char) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_char(value)
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_str(value)
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_bytes(value)
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_none(self) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_none()
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok>
     where
         T: ?Sized + ser::Serialize,
@@ -430,18 +464,21 @@ impl ser::Serializer for ValueKindSerializer {
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_unit(self) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_unit()
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok> {
         InlineSerializer
             .serialize_unit_struct(name)
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_unit_variant(
         self,
         name: &'static str,
@@ -453,6 +490,7 @@ impl ser::Serializer for ValueKindSerializer {
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_newtype_struct<T>(self, name: &'static str, value: &T) -> Result<Self::Ok>
     where
         T: ?Sized + ser::Serialize,
@@ -462,6 +500,7 @@ impl ser::Serializer for ValueKindSerializer {
             .map(ValueKind::InlineValue)
     }
 
+    #[inline]
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -479,14 +518,17 @@ impl ser::Serializer for ValueKindSerializer {
         map.end()
     }
 
+    #[inline]
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         Self::SerializeSeq::start(len)
     }
 
+    #[inline]
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
         Self::SerializeTuple::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
@@ -495,6 +537,7 @@ impl ser::Serializer for ValueKindSerializer {
         Self::SerializeTupleStruct::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -505,14 +548,17 @@ impl ser::Serializer for ValueKindSerializer {
         Self::SerializeTupleVariant::start(len, variant)
     }
 
+    #[inline]
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         Self::SerializeMap::start(len)
     }
 
+    #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         Self::SerializeStruct::start(Some(len), name)
     }
 
+    #[inline]
     fn serialize_struct_variant(
         self,
         _name: &'static str,
@@ -542,14 +588,17 @@ pub trait Float: lexical::ToLexicalWithOptions<Options = lexical::WriteFloatOpti
 
 macro_rules! impl_float {
     ($($t:ident)*) => ($(impl Float for $t {
+        #[inline]
         fn is_nan(self) -> bool {
             self.is_nan()
         }
 
+        #[inline]
         fn is_finite(self) -> bool {
             self.is_finite()
         }
 
+        #[inline]
         fn is_sign_positive(self) -> bool {
             self.is_sign_positive()
         }
@@ -560,6 +609,7 @@ impl_float!(f32 f64);
 
 impl ValueKindSerializer {
     #[allow(clippy::unused_self)]
+    #[inline]
     fn serialize_integer<T: Integer>(self, value: T) -> Result<ValueKind> {
         InlineSerializer
             .serialize_integer(value)
@@ -567,6 +617,7 @@ impl ValueKindSerializer {
     }
 
     #[allow(clippy::unused_self)]
+    #[inline]
     fn serialize_float<T: Float>(self, value: T) -> Result<ValueKind> {
         InlineSerializer
             .serialize_float(value)
@@ -581,6 +632,7 @@ struct ArrayKindSerializer {
 
 impl ArrayKindSerializer {
     #[allow(clippy::unnecessary_wraps)]
+    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let arr = Vec::with_capacity(len.unwrap_or(0).min(256));
         Ok(Self { arr })
@@ -598,7 +650,7 @@ impl ser::SerializeSeq for ArrayKindSerializer {
         self.arr.push(value.serialize(ValueKindSerializer)?);
         Ok(())
     }
-
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         if !self.arr.is_empty()
             && self
@@ -630,6 +682,7 @@ impl ser::SerializeTuple for ArrayKindSerializer {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -637,6 +690,7 @@ impl ser::SerializeTuple for ArrayKindSerializer {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeSeq::end(self)
     }
@@ -646,6 +700,7 @@ impl ser::SerializeTupleStruct for ArrayKindSerializer {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -653,6 +708,7 @@ impl ser::SerializeTupleStruct for ArrayKindSerializer {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeSeq::end(self)
     }
@@ -665,6 +721,7 @@ struct WrappedArrayKindSerializer {
 }
 
 impl WrappedArrayKindSerializer {
+    #[inline]
     pub fn start(len: usize, key: &'static str) -> Result<Self> {
         Ok(Self {
             key: key.to_owned(),
@@ -672,6 +729,7 @@ impl WrappedArrayKindSerializer {
         })
     }
 
+    #[inline]
     fn end_inner(self) -> Result<Vec<(String, ValueKind)>> {
         use ser::SerializeTuple as _;
         Ok(vec![(self.key, self.arr.end()?)])
@@ -682,6 +740,7 @@ impl ser::SerializeTupleVariant for WrappedArrayKindSerializer {
     type Ok = ValueKind;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -690,6 +749,7 @@ impl ser::SerializeTupleVariant for WrappedArrayKindSerializer {
         self.arr.serialize_element(value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         Ok(ValueKind::Table(TableKind::Table(self.end_inner()?)))
     }
@@ -703,11 +763,13 @@ struct TableKindSerializer {
 
 impl TableKindSerializer {
     #[allow(clippy::unnecessary_wraps)]
+    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let arr = Vec::with_capacity(len.unwrap_or(0).min(256));
         Ok(Self { key: None, arr })
     }
 
+    #[inline]
     fn end_inner(self) -> Vec<(String, ValueKind)> {
         self.arr
     }
@@ -717,6 +779,7 @@ impl ser::SerializeMap for TableKindSerializer {
     type Ok = ValueKind;
     type Error = Error;
 
+    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -725,6 +788,7 @@ impl ser::SerializeMap for TableKindSerializer {
         Ok(())
     }
 
+    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -738,6 +802,7 @@ impl ser::SerializeMap for TableKindSerializer {
         Ok(())
     }
 
+    #[inline]
     fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<()>
     where
         K: ?Sized + ser::Serialize,
@@ -750,6 +815,7 @@ impl ser::SerializeMap for TableKindSerializer {
         Ok(())
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         Ok(ValueKind::Table(TableKind::Table(self.end_inner())))
     }
@@ -759,13 +825,14 @@ impl ser::SerializeStruct for TableKindSerializer {
     type Ok = <Self as ser::SerializeMap>::Ok;
     type Error = <Self as ser::SerializeMap>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
     {
         ser::SerializeMap::serialize_entry(self, key, value)
     }
-
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeMap::end(self)
     }
@@ -782,6 +849,7 @@ enum TableOrDatetimeKindSerializer {
 }
 
 impl TableOrDatetimeKindSerializer {
+    #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
             Datetime::WRAPPER_TYPE => Self::Datetime(None),
@@ -798,6 +866,7 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
     type Ok = <TableKindSerializer as ser::SerializeStruct>::Ok;
     type Error = <TableKindSerializer as ser::SerializeStruct>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -826,6 +895,7 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
         }
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
             Self::Datetime(inner)
@@ -848,6 +918,7 @@ struct WrappedTableKindSerializer {
 }
 
 impl WrappedTableKindSerializer {
+    #[inline]
     pub fn start(len: usize, key: &'static str) -> Result<Self> {
         Ok(Self {
             key: key.to_owned(),
@@ -855,6 +926,7 @@ impl WrappedTableKindSerializer {
         })
     }
 
+    #[inline]
     fn end_inner(self) -> Result<Vec<(String, ValueKind)>> {
         use ser::SerializeMap as _;
         Ok(vec![(self.key, self.table.end()?)])
@@ -865,6 +937,7 @@ impl ser::SerializeStructVariant for WrappedTableKindSerializer {
     type Ok = ValueKind;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -873,6 +946,7 @@ impl ser::SerializeStructVariant for WrappedTableKindSerializer {
         self.table.serialize_entry(key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         Ok(ValueKind::Table(TableKind::Table(self.end_inner()?)))
     }
@@ -886,6 +960,7 @@ pub struct InlineArraySerializer<S> {
 }
 
 impl<S> InlineArraySerializer<S> {
+    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let cap = (16 * len.unwrap_or(0)).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -906,6 +981,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -916,7 +992,7 @@ where
         self.first = false;
         self.buf.write_str(&value.serialize(S::new())?)
     }
-
+    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_char(']')?;
         Ok(self.buf)
@@ -930,6 +1006,7 @@ where
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -937,6 +1014,7 @@ where
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeSeq::end(self)
     }
@@ -949,6 +1027,7 @@ where
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -956,6 +1035,7 @@ where
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeSeq::end(self)
     }
@@ -969,6 +1049,7 @@ pub struct InlineWrappedArraySerializer<S> {
 }
 
 impl<S> InlineWrappedArraySerializer<S> {
+    #[inline]
     pub fn start(len: usize, key: &'static str) -> Result<Self> {
         let cap = (16 * len).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -991,6 +1072,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1002,6 +1084,7 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
+    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str("] }")?;
         Ok(self.buf)
@@ -1016,6 +1099,7 @@ pub struct InlineTableSerializer<S> {
 }
 
 impl<S> InlineTableSerializer<S> {
+    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let cap = (32 * len.unwrap_or(0)).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1036,6 +1120,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1047,6 +1132,7 @@ where
         self.buf.write_str(&key.serialize(KeySerializer)?)
     }
 
+    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1055,6 +1141,7 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
+    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str(" }")?;
         Ok(self.buf)
@@ -1068,6 +1155,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1075,6 +1163,7 @@ where
         ser::SerializeMap::serialize_entry(self, key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         ser::SerializeMap::end(self)
     }
@@ -1091,6 +1180,7 @@ pub enum InlineTableOrDatetimeSerializer<S> {
 }
 
 impl<S> InlineTableOrDatetimeSerializer<S> {
+    #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
             Datetime::WRAPPER_TYPE => Self::Datetime(None),
@@ -1139,7 +1229,7 @@ where
             _ => Err(ErrorKind::UnsupportedValue(key).into()),
         }
     }
-
+    #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
             Self::Datetime(inner)
@@ -1162,6 +1252,7 @@ pub struct InlineWrappedTableSerializer<S> {
 }
 
 impl<S> InlineWrappedTableSerializer<S> {
+    #[inline]
     pub fn start(len: usize, variant: &'static str) -> Result<Self> {
         let cap = (32 * len).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1184,6 +1275,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1197,6 +1289,7 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
+    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str(" } }")?;
         Ok(self.buf)
@@ -1215,10 +1308,12 @@ impl ser::Serializer for KeySerializer {
         tuple_struct tuple_variant map struct struct_variant
     );
 
+    #[inline]
     fn serialize_char(self, v: char) -> Result<Self::Ok> {
         self.serialize_str(v.encode_utf8(&mut [0; 4]))
     }
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         let is_bare_key = |b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-');
 
@@ -1242,6 +1337,7 @@ impl ser::Serializer for RawStringSerializer {
         tuple tuple_struct tuple_variant map struct struct_variant
     );
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         Ok(value.to_owned())
     }
@@ -1252,12 +1348,14 @@ pub trait InlineValueSerializer: ser::Serializer<Ok = String, Error = Error> {
 }
 
 impl InlineValueSerializer for InlineSerializer {
+    #[inline]
     fn new() -> Self {
         Self
     }
 }
 
 impl InlineValueSerializer for RawStringSerializer {
+    #[inline]
     fn new() -> Self {
         Self
     }

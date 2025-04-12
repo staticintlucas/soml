@@ -1,7 +1,7 @@
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use serde::ser;
 
@@ -10,6 +10,7 @@ use crate::__serialize_unimplemented;
 use crate::ser::{Error, ErrorKind};
 
 impl ser::Serialize for Value {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,

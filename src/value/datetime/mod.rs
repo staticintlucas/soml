@@ -1,6 +1,6 @@
 use std::{fmt, str};
 
-use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
+use lexical::{FromLexicalWithOptions as _, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de::{Error as _, Unexpected};
 
 pub use self::de::{
@@ -23,6 +23,7 @@ impl Datetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::Datetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::Datetime::Wrapper::Field>";
 
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         if let Some(position) = bytes.iter().position(|b| b"Tt ".contains(b)) {
             let (date, rest) = (&bytes[..position], &bytes[position + 1..]);
@@ -61,6 +62,7 @@ impl Datetime {
         }
     }
 
+    #[inline]
     pub(crate) const fn type_str(&self) -> &'static str {
         match (self.date.as_ref(), self.time.as_ref(), self.offset.as_ref()) {
             (Some(_), Some(_), Some(_)) => "offset date-time",
@@ -79,12 +81,14 @@ impl Datetime {
 impl str::FromStr for Datetime {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl fmt::Display for Datetime {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (self.date.as_ref(), self.time.as_ref(), self.offset.as_ref()) {
             (Some(date), Some(time), Some(offset)) => write!(f, "{date}T{time}{offset}"),
@@ -107,6 +111,7 @@ impl OffsetDatetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::OffsetDatetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::OffsetDatetime::Wrapper::Field>";
 
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let position = bytes
             .iter()
@@ -131,12 +136,14 @@ impl OffsetDatetime {
 impl str::FromStr for OffsetDatetime {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl fmt::Display for OffsetDatetime {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             ref date,
@@ -148,6 +155,7 @@ impl fmt::Display for OffsetDatetime {
 }
 
 impl From<OffsetDatetime> for Datetime {
+    #[inline]
     fn from(value: OffsetDatetime) -> Self {
         Self {
             date: Some(value.date),
@@ -160,6 +168,7 @@ impl From<OffsetDatetime> for Datetime {
 impl TryFrom<Datetime> for OffsetDatetime {
     type Error = Error;
 
+    #[inline]
     fn try_from(value: Datetime) -> Result<Self, Self::Error> {
         let Datetime {
             date: Some(date),
@@ -186,6 +195,7 @@ impl LocalDatetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDatetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDatetime::Wrapper::Field>";
 
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let position = bytes
             .iter()
@@ -203,12 +213,14 @@ impl LocalDatetime {
 impl str::FromStr for LocalDatetime {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl fmt::Display for LocalDatetime {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { ref date, ref time } = *self;
         write!(f, "{date}T{time}")
@@ -216,6 +228,7 @@ impl fmt::Display for LocalDatetime {
 }
 
 impl From<LocalDatetime> for Datetime {
+    #[inline]
     fn from(value: LocalDatetime) -> Self {
         Self {
             date: Some(value.date),
@@ -228,6 +241,7 @@ impl From<LocalDatetime> for Datetime {
 impl TryFrom<Datetime> for LocalDatetime {
     type Error = Error;
 
+    #[inline]
     fn try_from(value: Datetime) -> Result<Self, Self::Error> {
         let Datetime {
             date: Some(date),
@@ -261,6 +275,7 @@ impl LocalDate {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDate::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDate::Wrapper::Field>";
 
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()
             .no_positive_mantissa_sign(true)
@@ -314,12 +329,14 @@ impl LocalDate {
 impl str::FromStr for LocalDate {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl fmt::Display for LocalDate {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { year, month, day } = *self;
         write!(f, "{year:04}-{month:02}-{day:02}")
@@ -327,6 +344,7 @@ impl fmt::Display for LocalDate {
 }
 
 impl From<LocalDate> for Datetime {
+    #[inline]
     fn from(value: LocalDate) -> Self {
         Self {
             date: Some(value),
@@ -339,6 +357,7 @@ impl From<LocalDate> for Datetime {
 impl TryFrom<Datetime> for LocalDate {
     type Error = Error;
 
+    #[inline]
     fn try_from(value: Datetime) -> Result<Self, Self::Error> {
         let Datetime {
             date: Some(date),
@@ -373,6 +392,7 @@ impl LocalTime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalTime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalTime::Wrapper::Field>";
 
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()
             .no_positive_mantissa_sign(true)
@@ -450,12 +470,14 @@ impl LocalTime {
 impl str::FromStr for LocalTime {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl fmt::Display for LocalTime {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             hour,
@@ -476,6 +498,7 @@ impl fmt::Display for LocalTime {
 }
 
 impl From<LocalTime> for Datetime {
+    #[inline]
     fn from(value: LocalTime) -> Self {
         Self {
             date: None,
@@ -488,6 +511,7 @@ impl From<LocalTime> for Datetime {
 impl TryFrom<Datetime> for LocalTime {
     type Error = Error;
 
+    #[inline]
     fn try_from(value: Datetime) -> Result<Self, Self::Error> {
         let Datetime {
             date: None,
@@ -512,6 +536,7 @@ pub enum Offset {
 }
 
 impl Offset {
+    #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()
             .no_positive_mantissa_sign(true)
@@ -555,6 +580,7 @@ impl Offset {
 }
 
 impl fmt::Display for Offset {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::Z => write!(f, "Z"),
@@ -571,6 +597,7 @@ impl fmt::Display for Offset {
 impl str::FromStr for Offset {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_slice(s.as_bytes())
     }

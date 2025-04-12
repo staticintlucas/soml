@@ -7,6 +7,7 @@ use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::de::Error;
 
 impl<'de> de::Deserialize<'de> for Datetime {
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -107,6 +108,7 @@ impl<'de> de::Deserialize<'de> for Datetime {
 pub struct DatetimeFromBytes(pub Datetime);
 
 impl<'de> de::Deserialize<'de> for DatetimeFromBytes {
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -137,6 +139,7 @@ impl<'de> de::Deserialize<'de> for DatetimeFromBytes {
 macro_rules! impl_deserialize {
     ($type:ty, $from_bytes:ty, $expecting:literal) => {
         impl<'de> de::Deserialize<'de> for $type {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -203,6 +206,7 @@ macro_rules! impl_deserialize {
         }
 
         impl<'de> de::Deserialize<'de> for $from_bytes {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -236,6 +240,7 @@ macro_rules! impl_deserialize {
 pub struct OffsetDatetimeFromBytes(pub OffsetDatetime);
 
 impl OffsetDatetimeFromBytes {
+    #[inline]
     pub const fn new(value: OffsetDatetime) -> Self {
         Self(value)
     }
@@ -247,6 +252,7 @@ impl_deserialize!(OffsetDatetime, OffsetDatetimeFromBytes, "offset date-time");
 pub struct LocalDatetimeFromBytes(pub LocalDatetime);
 
 impl LocalDatetimeFromBytes {
+    #[inline]
     pub const fn new(value: LocalDatetime) -> Self {
         Self(value)
     }
@@ -258,6 +264,7 @@ impl_deserialize!(LocalDatetime, LocalDatetimeFromBytes, "local date-time");
 pub struct LocalDateFromBytes(pub LocalDate);
 
 impl LocalDateFromBytes {
+    #[inline]
     pub const fn new(value: LocalDate) -> Self {
         Self(value)
     }
@@ -269,6 +276,7 @@ impl_deserialize!(LocalDate, LocalDateFromBytes, "local date");
 pub struct LocalTimeFromBytes(pub LocalTime);
 
 impl LocalTimeFromBytes {
+    #[inline]
     pub const fn new(value: LocalTime) -> Self {
         Self(value)
     }
@@ -288,18 +296,22 @@ enum DatetimeAccessInner<'de> {
 }
 
 impl<'de> DatetimeAccess<'de> {
+    #[inline]
     pub fn offset_datetime(value: impl Into<Cow<'de, [u8]>>) -> Self {
         Self(Some(DatetimeAccessInner::OffsetDatetime(value.into())))
     }
 
+    #[inline]
     pub fn local_datetime(value: impl Into<Cow<'de, [u8]>>) -> Self {
         Self(Some(DatetimeAccessInner::LocalDatetime(value.into())))
     }
 
+    #[inline]
     pub fn local_date(value: impl Into<Cow<'de, [u8]>>) -> Self {
         Self(Some(DatetimeAccessInner::LocalDate(value.into())))
     }
 
+    #[inline]
     pub fn local_time(value: impl Into<Cow<'de, [u8]>>) -> Self {
         Self(Some(DatetimeAccessInner::LocalTime(value.into())))
     }
@@ -351,7 +363,7 @@ impl<'de> de::MapAccess<'de> for DatetimeAccess<'de> {
 
         seed.deserialize(field).map(Some)
     }
-
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -378,7 +390,7 @@ impl<'de> de::MapAccess<'de> for DatetimeAccess<'de> {
 mod tests {
     use assert_matches::assert_matches;
     use indoc::indoc;
-    use serde::de::MapAccess;
+    use serde::de::MapAccess as _;
     use serde_bytes::ByteBuf;
 
     use super::*;

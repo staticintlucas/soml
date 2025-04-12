@@ -17,6 +17,7 @@ mod _impl;
 mod error;
 mod writer;
 
+#[inline]
 pub fn to_string<T>(value: &T) -> Result<String>
 where
     T: ser::Serialize,
@@ -33,6 +34,7 @@ pub struct Serializer<W> {
 
 impl<'a> Serializer<&'a mut String> {
     #[must_use]
+    #[inline]
     pub fn new(buf: &'a mut String) -> Self {
         Self::from_fmt_writer(buf)
     }
@@ -42,6 +44,7 @@ impl<T> Serializer<T>
 where
     T: fmt::Write,
 {
+    #[inline]
     pub fn from_fmt_writer(writer: T) -> Self {
         Self { writer }
     }
@@ -51,6 +54,7 @@ impl<T> Serializer<IoWriter<T>>
 where
     T: io::Write,
 {
+    #[inline]
     pub fn from_io_writer(writer: T) -> Self {
         Self {
             writer: IoWriter::new(writer),
@@ -203,6 +207,7 @@ where
         some unit unit_struct unit_variant newtype_struct seq tuple tuple_struct
     );
 
+    #[inline]
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -220,6 +225,7 @@ where
         map.end()
     }
 
+    #[inline]
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -230,14 +236,17 @@ where
         Self::SerializeTupleVariant::start(self, len, variant)
     }
 
+    #[inline]
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         Self::SerializeMap::start(self, len)
     }
 
+    #[inline]
     fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         Self::SerializeStruct::start(self, Some(len))
     }
 
+    #[inline]
     fn serialize_struct_variant(
         self,
         _name: &'static str,
@@ -265,62 +274,77 @@ impl ser::Serializer for InlineSerializer {
     type SerializeStruct = InlineTableOrDatetimeSerializer<Self>;
     type SerializeStructVariant = InlineWrappedTableSerializer<Self>;
 
+    #[inline]
     fn serialize_bool(self, value: bool) -> Result<Self::Ok> {
         Ok(if value { "true" } else { "false" }.to_owned())
     }
 
+    #[inline]
     fn serialize_i8(self, value: i8) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i16(self, value: i16) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i32(self, value: i32) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i64(self, value: i64) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_i128(self, value: i128) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u8(self, value: u8) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u16(self, value: u16) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u32(self, value: u32) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u64(self, value: u64) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_u128(self, value: u128) -> Result<Self::Ok> {
         self.serialize_integer(value)
     }
 
+    #[inline]
     fn serialize_f32(self, value: f32) -> Result<Self::Ok> {
         self.serialize_float(value)
     }
 
+    #[inline]
     fn serialize_f64(self, value: f64) -> Result<Self::Ok> {
         self.serialize_float(value)
     }
 
+    #[inline]
     fn serialize_char(self, value: char) -> Result<Self::Ok> {
         self.serialize_str(value.encode_utf8(&mut [0; 4]))
     }
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         // TODO also test where literal strings might be better?
         if value.contains('\n') {
@@ -330,6 +354,7 @@ impl ser::Serializer for InlineSerializer {
         }
     }
 
+    #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok> {
         use ser::SerializeSeq as _;
 
@@ -340,10 +365,12 @@ impl ser::Serializer for InlineSerializer {
         seq.end()
     }
 
+    #[inline]
     fn serialize_none(self) -> Result<Self::Ok> {
         Err(ErrorKind::UnsupportedValue("None").into())
     }
 
+    #[inline]
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok>
     where
         T: ?Sized + ser::Serialize,
@@ -351,14 +378,17 @@ impl ser::Serializer for InlineSerializer {
         value.serialize(self)
     }
 
+    #[inline]
     fn serialize_unit(self) -> Result<Self::Ok> {
         Err(ErrorKind::UnsupportedType("()").into())
     }
 
+    #[inline]
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok> {
         self.serialize_unit()
     }
 
+    #[inline]
     fn serialize_unit_variant(
         self,
         _name: &'static str,
@@ -368,6 +398,7 @@ impl ser::Serializer for InlineSerializer {
         self.serialize_str(variant)
     }
 
+    #[inline]
     fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Self::Ok>
     where
         T: ?Sized + ser::Serialize,
@@ -375,6 +406,7 @@ impl ser::Serializer for InlineSerializer {
         value.serialize(self)
     }
 
+    #[inline]
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -392,14 +424,17 @@ impl ser::Serializer for InlineSerializer {
         map.end()
     }
 
+    #[inline]
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         Self::SerializeSeq::start(len)
     }
 
+    #[inline]
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
         Self::SerializeTuple::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
@@ -408,6 +443,7 @@ impl ser::Serializer for InlineSerializer {
         Self::SerializeTupleStruct::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -418,14 +454,17 @@ impl ser::Serializer for InlineSerializer {
         Self::SerializeTupleVariant::start(len, variant)
     }
 
+    #[inline]
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         Self::SerializeMap::start(len)
     }
 
+    #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         Self::SerializeStruct::start(Some(len), name)
     }
 
+    #[inline]
     fn serialize_struct_variant(
         self,
         _name: &'static str,

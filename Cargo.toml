@@ -13,7 +13,7 @@ categories = ["config", "parser-implementations", "parsing"]
 [features]
 default = ["std", "datetime"]
 std = []
-alloc = [] # TODO
+# alloc = [] # TODO
 datetime = [] # TODO
 fast = []
 
@@ -32,41 +32,60 @@ serde_bytes = "0.11"
 serde_json = "1.0"
 
 [lints.rust]
-future-incompatible = "warn"
-let-underscore = "warn"
-nonstandard-style = "warn"
+deprecated_safe = "warn"
+future_incompatible = "warn"
+keyword_idents = "warn"
+let_underscore = "warn"
+nonstandard_style = "warn"
+refining_impl_trait = "warn"
+rust_2024_compatibility = "warn"
 unused = "warn"
 
-missing-copy-implementations = "warn"
-missing-debug-implementations = "warn"
-# missing-docs = "warn" # TODO
-non-ascii-idents = "warn"
-single-use-lifetimes = "warn"
-trivial-casts = "warn"
-trivial-numeric-casts = "warn"
-unit-bindings = "warn"
-unstable-features = "warn"
-# unused-crate-dependencies = "warn" # TODO rust-lang/rust#95513
-unused-lifetimes = "warn"
-unused-qualifications = "warn"
-variant-size-differences = "warn"
-unsafe-code = { level = "forbid", priority = 1 }
+ambiguous_negative_literals = "warn"
+closure_returning_async_block = "warn"
+deref_into_dyn_supertrait = "warn"
+linker_messages = "warn"
+missing_copy_implementations = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+non_ascii_idents = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+single_use_lifetimes = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] } # taiki-e/cargo-llvm-cov#123
+unit_bindings = "warn"
+unstable_features = "warn"
+# unused_crate_dependencies = "warn" # TODO rust-lang/rust#95513
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+# unused_results = "warn" # TODO?
+variant_size_differences = "warn"
+
+unsafe_code = { level = "forbid", priority = 1 }
 
 [lints.clippy]
-all = "warn"
+all = "warn" # complexity, correctness, perf, style, suspicious
 cargo = "warn"
 nursery = "warn"
 pedantic = "warn"
 
-allow_attributes_without_reason = "warn"
+# cfg_not_test = "warn" # TODO when we have better map ordering support
 dbg_macro = "warn"
+else_if_without_else = "warn"
 expect_used = "warn"
+if_then_some_else_none = "warn"
+missing_inline_in_public_items = "warn"
+module_name_repetitions = "warn"
 panic = "warn"
 pattern_type_mismatch = "warn"
 redundant_type_annotations = "warn"
+semicolon_outside_block = "warn"
 try_err = "warn"
 unseparated_literal_suffix = "warn"
+unused_trait_names = "warn"
 unwrap_used = "warn"
 
 missing_const_for_fn = { level = "allow", priority = 1 } # TODO decide on constness of public API

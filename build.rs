@@ -1,10 +1,10 @@
-#![allow(clippy::unwrap_used, clippy::too_many_lines)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::too_many_lines)]
 
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 fn main() {

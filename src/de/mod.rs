@@ -21,6 +21,7 @@ mod error;
 mod parser;
 mod reader;
 
+#[inline]
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: Deserialize<'a>,
@@ -28,6 +29,7 @@ where
     T::deserialize(Deserializer::from_str(s))
 }
 
+#[inline]
 pub fn from_slice<'a, T>(bytes: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
@@ -35,6 +37,7 @@ where
     T::deserialize(Deserializer::from_slice(bytes))
 }
 
+#[inline]
 pub fn from_reader<R, T>(read: R) -> Result<T>
 where
     R: io::Read,
@@ -54,6 +57,7 @@ where
 impl<'de> Deserializer<'de, SliceReader<'de>> {
     #[allow(clippy::should_implement_trait)]
     #[must_use]
+    #[inline]
     pub fn from_str(str: &'de str) -> Self {
         Self {
             parser: Parser::from_str(str),
@@ -61,6 +65,7 @@ impl<'de> Deserializer<'de, SliceReader<'de>> {
     }
 
     #[must_use]
+    #[inline]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
         Self {
             parser: Parser::from_slice(bytes),
@@ -73,6 +78,7 @@ where
     R: io::Read,
 {
     #[must_use]
+    #[inline]
     pub fn from_reader(read: R) -> Self {
         Self {
             parser: Parser::from_reader(read),
@@ -86,6 +92,7 @@ where
 {
     type Error = Error;
 
+    #[inline]
     fn deserialize_any<V>(mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -106,6 +113,7 @@ struct ValueDeserializer<'de> {
 }
 
 impl<'de> ValueDeserializer<'de> {
+    #[inline]
     const fn new(value: ParsedValue<'de>) -> Self {
         Self { value }
     }
@@ -114,6 +122,7 @@ impl<'de> ValueDeserializer<'de> {
 impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     type Error = Error;
 
+    #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -144,6 +153,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -154,6 +164,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -167,6 +178,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -180,6 +192,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -193,6 +206,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -206,6 +220,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -219,6 +234,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -232,6 +248,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -245,6 +262,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -258,6 +276,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -271,6 +290,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -284,6 +304,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -295,6 +316,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -306,6 +328,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -313,6 +336,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_str(visitor)
     }
 
+    #[inline]
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -324,6 +348,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -331,6 +356,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_str(visitor)
     }
 
+    #[inline]
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -342,6 +368,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -349,6 +376,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_bytes(visitor)
     }
 
+    #[inline]
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -356,6 +384,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         visitor.visit_some(self)
     }
 
+    #[inline]
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -363,6 +392,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         Err(Error::invalid_type(self.value.typ().into(), &visitor))
     }
 
+    #[inline]
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -370,6 +400,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_unit(visitor)
     }
 
+    #[inline]
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -377,6 +408,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         visitor.visit_newtype_struct(self)
     }
 
+    #[inline]
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -388,6 +420,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -395,6 +428,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_seq(visitor)
     }
 
+    #[inline]
     fn deserialize_tuple_struct<V>(
         self,
         _name: &'static str,
@@ -407,6 +441,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_seq(visitor)
     }
 
+    #[inline]
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -420,6 +455,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_struct<V>(
         self,
         name: &'static str,
@@ -462,6 +498,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_enum<V>(
         self,
         _name: &'static str,
@@ -481,6 +518,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
+    #[inline]
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -488,6 +526,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_str(visitor)
     }
 
+    #[inline]
     fn deserialize_ignored_any<V>(self, visitor: V) -> StdResult<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
@@ -501,6 +540,7 @@ struct SeqAccess<T> {
 }
 
 impl<T> SeqAccess<T> {
+    #[inline]
     fn new(array: Vec<T>) -> Self {
         Self {
             values: array.into_iter(),
@@ -512,6 +552,7 @@ impl<T> SeqAccess<T> {
 impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
     where
         S: de::DeserializeSeed<'de>,
@@ -522,6 +563,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.values.len())
     }
@@ -531,6 +573,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
 impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable<'de>> {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
     where
         S: de::DeserializeSeed<'de>,
@@ -543,6 +586,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable<'de>> {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.values.len())
     }
@@ -554,6 +598,7 @@ struct MapAccess<'de> {
 }
 
 impl<'de> MapAccess<'de> {
+    #[inline]
     fn new(table: ParsedTable<'de>) -> Self {
         Self {
             kv_pairs: table.into_iter(),
@@ -565,6 +610,7 @@ impl<'de> MapAccess<'de> {
 impl<'de> de::MapAccess<'de> for MapAccess<'de> {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -578,6 +624,7 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
             .transpose()
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
@@ -589,6 +636,7 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
         seed.deserialize(ValueDeserializer::new(value))
     }
 
+    #[inline]
     fn next_entry_seed<K, V>(&mut self, kseed: K, vseed: V) -> Result<Option<(K::Value, V::Value)>>
     where
         K: de::DeserializeSeed<'de>,
@@ -606,6 +654,7 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.kv_pairs.len())
     }
@@ -618,6 +667,7 @@ struct EnumAccess<'de> {
 }
 
 impl<'de> EnumAccess<'de> {
+    #[inline]
     fn new(table: ParsedTable<'de>) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
@@ -640,6 +690,7 @@ impl<'de> de::EnumAccess<'de> for EnumAccess<'de> {
     type Error = Error;
     type Variant = Self;
 
+    #[inline]
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
     where
         V: de::DeserializeSeed<'de>,
@@ -652,6 +703,7 @@ impl<'de> de::EnumAccess<'de> for EnumAccess<'de> {
 impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
     type Error = Error;
 
+    #[inline]
     fn unit_variant(self) -> Result<()> {
         // We allow unit variants to be represented by `x = { variant = {} }` in addition to the
         // normal `x = "variant"`. toml-rs seems to do the same.
@@ -661,6 +713,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
         }
     }
 
+    #[inline]
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
@@ -668,6 +721,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
         seed.deserialize(ValueDeserializer::new(self.value))
     }
 
+    #[inline]
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -675,6 +729,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
         de::Deserializer::deserialize_seq(ValueDeserializer::new(self.value), visitor)
     }
 
+    #[inline]
     fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -709,6 +764,7 @@ macro_rules! impl_float {
 
 impl_float!(f32 f64);
 
+#[inline]
 fn parse_integer<T: Integer>(bytes: &[u8]) -> Result<T> {
     const FORMAT: u128 = NumberFormatBuilder::new()
         .digit_separator(NonZero::new(b'_'))
@@ -721,6 +777,7 @@ fn parse_integer<T: Integer>(bytes: &[u8]) -> Result<T> {
         .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
+#[inline]
 fn parse_binary<T: Integer>(bytes: &[u8]) -> Result<T> {
     const FORMAT: u128 = NumberFormatBuilder::new()
         .digit_separator(NonZero::new(b'_'))
@@ -733,6 +790,7 @@ fn parse_binary<T: Integer>(bytes: &[u8]) -> Result<T> {
         .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
+#[inline]
 fn parse_octal<T: Integer>(bytes: &[u8]) -> Result<T> {
     const FORMAT: u128 = NumberFormatBuilder::new()
         .digit_separator(NonZero::new(b'_'))
@@ -745,6 +803,7 @@ fn parse_octal<T: Integer>(bytes: &[u8]) -> Result<T> {
         .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
+#[inline]
 fn parse_hexadecimal<T: Integer>(bytes: &[u8]) -> Result<T> {
     const FORMAT: u128 = NumberFormatBuilder::new()
         .digit_separator(NonZero::new(b'_'))
@@ -757,6 +816,7 @@ fn parse_hexadecimal<T: Integer>(bytes: &[u8]) -> Result<T> {
         .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
+#[inline]
 fn parse_float<T: Float>(bytes: &[u8]) -> Result<T> {
     const FORMAT: u128 = NumberFormatBuilder::new()
         .digit_separator(NonZero::new(b'_'))
@@ -772,6 +832,7 @@ fn parse_float<T: Float>(bytes: &[u8]) -> Result<T> {
         .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
 }
 
+#[inline]
 const fn parse_special<T: Float>(special: SpecialFloat) -> T {
     match special {
         SpecialFloat::Nan => T::NAN,
@@ -795,7 +856,7 @@ mod tests {
     use serde_bytes::ByteBuf;
 
     use super::*;
-    use crate::value::{Datetime, Offset};
+    use crate::value::Offset;
     use crate::Value;
 
     mod example {

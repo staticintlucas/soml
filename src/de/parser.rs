@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::io;
 use std::marker::PhantomData;
 
-use lexical::{FromLexicalWithOptions, NumberFormatBuilder, ParseIntegerOptions};
+use lexical::{FromLexicalWithOptions as _, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
 
 use super::error::{ErrorKind, Result};
@@ -30,6 +30,7 @@ pub(super) enum Type {
 }
 
 impl Type {
+    #[inline]
     pub const fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",
@@ -44,12 +45,14 @@ impl Type {
 }
 
 impl fmt::Display for Type {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.to_str())
     }
 }
 
 impl From<Type> for de::Unexpected<'_> {
+    #[inline]
     fn from(typ: Type) -> Self {
         de::Unexpected::Other(typ.to_str())
     }
@@ -97,6 +100,7 @@ pub(super) enum Value<'de> {
 }
 
 impl Value<'_> {
+    #[inline]
     pub const fn typ(&self) -> Type {
         match *self {
             Self::String(_) => Type::String,
@@ -128,6 +132,7 @@ pub(super) struct Parser<'de, R: Reader<'de>> {
 
 impl<'de> Parser<'de, SliceReader<'de>> {
     #[must_use]
+    #[inline]
     pub fn from_str(str: &'de str) -> Self {
         Self {
             reader: SliceReader::from_str(str),
@@ -136,6 +141,7 @@ impl<'de> Parser<'de, SliceReader<'de>> {
     }
 
     #[must_use]
+    #[inline]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
         Self {
             reader: SliceReader::from_slice(bytes),
@@ -149,6 +155,7 @@ where
     R: io::Read,
 {
     #[must_use]
+    #[inline]
     pub fn from_reader(read: R) -> Self {
         Self {
             reader: IoReader::from_reader(read),
@@ -224,14 +231,17 @@ where
                 subtable.insert(key.clone(), value);
             }
             // Anything else is unexpected
-            else if let Some(ch) = self.reader.peek()? {
-                self.reader.discard()?;
+            else if let Some(ch) = self.reader.next()? {
                 return Err(if is_toml_legal(&ch) {
                     ErrorKind::ExpectedToken("table header or key/value pair".into())
                 } else {
                     ErrorKind::IllegalChar(ch)
                 }
                 .into());
+            }
+            // Or if there was no more input we break for EOF
+            else {
+                break;
             }
 
             // Expect newline/comment after a key/value pair or table/array header
@@ -976,7 +986,8 @@ where
 
             if self.reader.eat_char(b']')? {
                 break; // End of array
-            } else if !self.reader.eat_char(b',')? {
+            }
+            if !self.reader.eat_char(b',')? {
                 return Err(ErrorKind::ExpectedToken(", or ] after value in array".into()).into());
             }
         }
@@ -1202,27 +1213,32 @@ where
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_whitespace(char: &u8) -> bool {
     matches!(*char, b'\t' | b' ')
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_whitespace_or_newline(char: &u8) -> bool {
     matches!(*char, b'\t' | b' ' | b'\r' | b'\n')
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_word(char: &u8) -> bool {
     matches!(*char, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_comment(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09)
     matches!(*char, 0x09 | 0x20..=0x7e | 0x80..)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_basic_str_sans_escapes(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), the delimiter '"' (0x22), and escape
     // char '\' (0x5c)
@@ -1230,6 +1246,7 @@ const fn is_toml_basic_str_sans_escapes(char: &u8) -> bool {
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_multiline_basic_str_sans_escapes(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), the delimiter '"' (0x22),
     // and escape char '\' (0x5c)
@@ -1237,12 +1254,14 @@ const fn is_toml_multiline_basic_str_sans_escapes(char: &u8) -> bool {
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_literal_str(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), and the delimiter '\'' (0x27)
     matches!(*char, 0x09 | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_multiline_literal_str(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), and the delimiter '\''
     // (0x27)
@@ -1250,6 +1269,7 @@ const fn is_toml_multiline_literal_str(char: &u8) -> bool {
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_legal(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09), carriage return (0x0d) and newline (0x0a)
     matches!(*char, 0x09 | 0x0a | 0x0d | 0x20..=0x7e | 0x80..)

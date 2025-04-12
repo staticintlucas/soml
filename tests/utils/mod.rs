@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 
 use chrono::{
-    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, Timelike,
+    DateTime, Datelike as _, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset as _,
+    Timelike as _,
 };
 
 #[derive(Debug, Clone, serde::Deserialize)]

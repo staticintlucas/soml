@@ -3,6 +3,7 @@ use serde::ser;
 use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 impl ser::Serialize for Datetime {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -16,6 +17,7 @@ impl ser::Serialize for Datetime {
 }
 
 impl ser::Serialize for OffsetDatetime {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -29,6 +31,7 @@ impl ser::Serialize for OffsetDatetime {
 }
 
 impl ser::Serialize for LocalDatetime {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -42,6 +45,7 @@ impl ser::Serialize for LocalDatetime {
 }
 
 impl ser::Serialize for LocalDate {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -55,6 +59,7 @@ impl ser::Serialize for LocalDate {
 }
 
 impl ser::Serialize for LocalTime {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,

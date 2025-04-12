@@ -13,12 +13,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error(Box<ErrorImpl>);
 
 impl fmt::Display for Error {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
     }
 }
 
 impl fmt::Debug for Error {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("type", &self.0.kind)
@@ -27,6 +29,7 @@ impl fmt::Debug for Error {
 }
 
 impl std::error::Error for Error {
+    #[inline]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self.0.kind {
             ErrorKind::Io(ref io_error) => Some(&**io_error),
@@ -36,6 +39,7 @@ impl std::error::Error for Error {
 }
 
 impl de::Error for Error {
+    #[inline]
     fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
@@ -43,6 +47,7 @@ impl de::Error for Error {
         ErrorKind::Custom(msg.to_string().into_boxed_str()).into()
     }
 
+    #[inline]
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         ErrorKind::InvalidType(
             unexp.to_string().into_boxed_str(),
@@ -51,6 +56,7 @@ impl de::Error for Error {
         .into()
     }
 
+    #[inline]
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         ErrorKind::InvalidValue(
             unexp.to_string().into_boxed_str(),
@@ -59,10 +65,12 @@ impl de::Error for Error {
         .into()
     }
 
+    #[inline]
     fn invalid_length(len: usize, exp: &dyn de::Expected) -> Self {
         ErrorKind::InvalidLength(len, exp.to_string().into_boxed_str()).into()
     }
 
+    #[inline]
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
         let expected = match *expected {
             [] => "no variant".into(),
@@ -74,6 +82,7 @@ impl de::Error for Error {
         ErrorKind::UnknownVariant(variant.into(), expected).into()
     }
 
+    #[inline]
     fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
         let expected = match *expected {
             [] => "no field".into(),
@@ -85,10 +94,12 @@ impl de::Error for Error {
         ErrorKind::UnknownField(field.into(), expected).into()
     }
 
+    #[inline]
     fn missing_field(field: &'static str) -> Self {
         ErrorKind::MissingField(field).into()
     }
 
+    #[inline]
     fn duplicate_field(field: &'static str) -> Self {
         ErrorKind::DuplicateField(field).into()
     }
@@ -96,18 +107,21 @@ impl de::Error for Error {
 
 // Convenience impl to box the error
 impl From<ErrorImpl> for Error {
+    #[inline]
     fn from(value: ErrorImpl) -> Self {
         Self(Box::new(value))
     }
 }
 
 impl From<ErrorKind> for Error {
+    #[inline]
     fn from(kind: ErrorKind) -> Self {
         ErrorImpl { kind }.into()
     }
 }
 
 impl From<io::Error> for Error {
+    #[inline]
     fn from(value: io::Error) -> Self {
         ErrorImpl {
             kind: ErrorKind::Io(Arc::new(value)),
@@ -122,6 +136,7 @@ struct ErrorImpl {
 }
 
 impl fmt::Display for ErrorImpl {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.kind, f)
     }
@@ -177,6 +192,7 @@ pub enum ErrorKind {
 }
 
 impl fmt::Display for ErrorKind {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[allow(clippy::enum_glob_use)] // Just for match
         use ErrorKind::*;

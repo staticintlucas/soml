@@ -31,6 +31,7 @@ pub(crate) enum Type {
 }
 
 impl Type {
+    #[inline]
     pub fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",
@@ -45,6 +46,7 @@ impl Type {
 }
 
 impl fmt::Display for Type {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.to_str())
     }
@@ -62,6 +64,7 @@ pub enum Value {
 }
 
 impl Value {
+    #[inline]
     pub fn try_from<T>(value: T) -> Result<Self, crate::ser::Error>
     where
         T: serde::Serialize,
@@ -69,16 +72,19 @@ impl Value {
         value.serialize(ToValueSerializer)
     }
 
+    #[inline]
     pub fn get(&self, index: impl Index) -> Option<&Self> {
         index.get(self)
     }
 
+    #[inline]
     pub fn get_mut(&mut self, index: impl Index) -> Option<&mut Self> {
         index.get_mut(self)
     }
 
     /// Returns `true` if `self` is a string.
     #[must_use]
+    #[inline]
     pub fn is_string(&self) -> bool {
         matches!(*self, Self::String(_))
     }
@@ -87,24 +93,28 @@ impl Value {
     ///
     /// [toml]: https://github.com/toml-rs/toml
     #[must_use]
+    #[inline]
     pub fn is_str(&self) -> bool {
         self.is_string()
     }
 
     /// Returns `true` if `self` is an integer.
     #[must_use]
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(*self, Self::Integer(_))
     }
 
     /// Returns `true` if `self` is a float.
     #[must_use]
+    #[inline]
     pub fn is_float(&self) -> bool {
         matches!(*self, Self::Float(_))
     }
 
     /// Returns `true` if `self` is a boolean.
     #[must_use]
+    #[inline]
     pub fn is_boolean(&self) -> bool {
         matches!(*self, Self::Boolean(_))
     }
@@ -113,30 +123,35 @@ impl Value {
     ///
     /// [toml]: https://github.com/toml-rs/toml
     #[must_use]
+    #[inline]
     pub fn is_bool(&self) -> bool {
         self.is_boolean()
     }
 
     /// Returns `true` if `self` is a datetime.
     #[must_use]
+    #[inline]
     pub fn is_datetime(&self) -> bool {
         matches!(*self, Self::Datetime(_))
     }
 
     /// Returns `true` if `self` is an array.
     #[must_use]
+    #[inline]
     pub fn is_array(&self) -> bool {
         matches!(*self, Self::Array(_))
     }
 
     /// Returns `true` if `self` is a table.
     #[must_use]
+    #[inline]
     pub fn is_table(&self) -> bool {
         matches!(*self, Self::Table(_))
     }
 
     /// If `self` is a string, returns it as a `&str`.
     #[must_use]
+    #[inline]
     pub fn as_str(&self) -> Option<&str> {
         match *self {
             Self::String(ref str) => Some(str),
@@ -146,6 +161,7 @@ impl Value {
 
     /// If `self` is an integer, returns it as an `i64`.
     #[must_use]
+    #[inline]
     pub fn as_integer(&self) -> Option<i64> {
         match *self {
             Self::Integer(int) => Some(int),
@@ -155,6 +171,7 @@ impl Value {
 
     /// If `self` is a float, returns it as an `f64`.
     #[must_use]
+    #[inline]
     pub fn as_float(&self) -> Option<f64> {
         match *self {
             Self::Float(float) => Some(float),
@@ -164,6 +181,7 @@ impl Value {
 
     /// If `self` is a boolean, returns it as a `bool`.
     #[must_use]
+    #[inline]
     pub fn as_bool(&self) -> Option<bool> {
         match *self {
             Self::Boolean(bool) => Some(bool),
@@ -173,6 +191,7 @@ impl Value {
 
     /// If `self` is a datetime, returns it as a [`Datetime`].
     #[must_use]
+    #[inline]
     pub fn as_datetime(&self) -> Option<&Datetime> {
         match *self {
             Self::Datetime(ref datetime) => Some(datetime),
@@ -182,6 +201,7 @@ impl Value {
 
     /// If `self` is an array, returns it as a [`Vec<Value>`].
     #[must_use]
+    #[inline]
     pub fn as_array(&self) -> Option<&Vec<Self>> {
         match *self {
             Self::Array(ref array) => Some(array),
@@ -191,6 +211,7 @@ impl Value {
 
     /// If `self` is an array, returns a mutable reference as a [`Vec<Value>`].
     #[must_use]
+    #[inline]
     pub fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
         match *self {
             Self::Array(ref mut array) => Some(array),
@@ -200,6 +221,7 @@ impl Value {
 
     /// If `self` is a table, returns it as a [`HashMap<String, Self>`].
     #[must_use]
+    #[inline]
     pub fn as_table(&self) -> Option<&HashMap<String, Self>> {
         match *self {
             Self::Table(ref table) => Some(table),
@@ -209,6 +231,7 @@ impl Value {
 
     /// If `self` is a table, returns a mutable reference as a [`HashMap<String, Self>`].
     #[must_use]
+    #[inline]
     pub fn as_table_mut(&mut self) -> Option<&mut HashMap<String, Self>> {
         match *self {
             Self::Table(ref mut table) => Some(table),
@@ -218,11 +241,13 @@ impl Value {
 
     /// Returns `true` if two values have the same type.
     #[must_use]
+    #[inline]
     pub fn same_type(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
     #[must_use]
+    #[inline]
     const fn typ(&self) -> Type {
         match *self {
             Self::String(_) => Type::String,
@@ -237,6 +262,7 @@ impl Value {
 
     /// Returns the type of `self` as a `&str`.
     #[must_use]
+    #[inline]
     pub fn type_str(&self) -> &'static str {
         self.typ().to_str()
     }
@@ -244,6 +270,7 @@ impl Value {
 
 impl fmt::Display for Value {
     #[allow(clippy::panic)]
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.serialize(crate::ser::InlineSerializer) {
             Ok(s) => s.fmt(f),
@@ -269,6 +296,7 @@ pub trait Index: private::Sealed {
 impl private::Sealed for usize {}
 
 impl Index for usize {
+    #[inline]
     fn get<'a>(&self, value: &'a Value) -> Option<&'a Value> {
         match *value {
             Value::Array(ref array) => array.get(*self),
@@ -276,6 +304,7 @@ impl Index for usize {
         }
     }
 
+    #[inline]
     fn get_mut<'a>(&self, value: &'a mut Value) -> Option<&'a mut Value> {
         match *value {
             Value::Array(ref mut array) => array.get_mut(*self),
@@ -284,6 +313,7 @@ impl Index for usize {
     }
 
     #[allow(clippy::panic)]
+    #[inline]
     fn index<'a>(&self, value: &'a Value) -> &'a Value {
         match *value {
             Value::Array(ref array) => array
@@ -294,6 +324,7 @@ impl Index for usize {
     }
 
     #[allow(clippy::panic)]
+    #[inline]
     fn index_mut<'a>(&self, value: &'a mut Value) -> &'a mut Value {
         match *value {
             Value::Array(ref mut array) => array
@@ -307,6 +338,7 @@ impl Index for usize {
 impl private::Sealed for str {}
 
 impl Index for str {
+    #[inline]
     fn get<'a>(&self, value: &'a Value) -> Option<&'a Value> {
         match *value {
             Value::Table(ref table) => table.get(self),
@@ -314,6 +346,7 @@ impl Index for str {
         }
     }
 
+    #[inline]
     fn get_mut<'a>(&self, value: &'a mut Value) -> Option<&'a mut Value> {
         match *value {
             Value::Table(ref mut table) => table.get_mut(self),
@@ -322,6 +355,7 @@ impl Index for str {
     }
 
     #[allow(clippy::panic)]
+    #[inline]
     fn index<'a>(&self, value: &'a Value) -> &'a Value {
         match *value {
             Value::Table(ref table) => table
@@ -332,6 +366,7 @@ impl Index for str {
     }
 
     #[allow(clippy::panic)]
+    #[inline]
     fn index_mut<'a>(&self, value: &'a mut Value) -> &'a mut Value {
         match *value {
             Value::Table(ref mut table) => table
@@ -345,18 +380,22 @@ impl Index for str {
 impl private::Sealed for String {}
 
 impl Index for String {
+    #[inline]
     fn get<'a>(&self, value: &'a Value) -> Option<&'a Value> {
         <str as Index>::get(self, value)
     }
 
+    #[inline]
     fn get_mut<'a>(&self, value: &'a mut Value) -> Option<&'a mut Value> {
         <str as Index>::get_mut(self, value)
     }
 
+    #[inline]
     fn index<'a>(&self, value: &'a Value) -> &'a Value {
         <str as Index>::index(self, value)
     }
 
+    #[inline]
     fn index_mut<'a>(&self, value: &'a mut Value) -> &'a mut Value {
         <str as Index>::index_mut(self, value)
     }
@@ -368,18 +407,22 @@ impl<T> Index for &T
 where
     T: Index + ?Sized,
 {
+    #[inline]
     fn get<'a>(&self, value: &'a Value) -> Option<&'a Value> {
         T::get(self, value)
     }
 
+    #[inline]
     fn get_mut<'a>(&self, value: &'a mut Value) -> Option<&'a mut Value> {
         T::get_mut(self, value)
     }
 
+    #[inline]
     fn index<'a>(&self, value: &'a Value) -> &'a Value {
         T::index(self, value)
     }
 
+    #[inline]
     fn index_mut<'a>(&self, value: &'a mut Value) -> &'a mut Value {
         T::index_mut(self, value)
     }
@@ -391,6 +434,7 @@ where
 {
     type Output = Self;
 
+    #[inline]
     fn index(&self, index: I) -> &Self::Output {
         index.index(self)
     }
@@ -400,48 +444,56 @@ impl<I> ops::IndexMut<I> for Value
 where
     I: Index,
 {
+    #[inline]
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         index.index_mut(self)
     }
 }
 
 impl From<String> for Value {
+    #[inline]
     fn from(value: String) -> Self {
         Self::String(value)
     }
 }
 
 impl From<&str> for Value {
+    #[inline]
     fn from(value: &str) -> Self {
         Self::String(value.to_string())
     }
 }
 
 impl From<Cow<'_, str>> for Value {
+    #[inline]
     fn from(value: Cow<'_, str>) -> Self {
         Self::String(value.into_owned())
     }
 }
 
 impl From<i8> for Value {
+    #[inline]
     fn from(value: i8) -> Self {
         Self::Integer(value.into())
     }
 }
 
 impl From<i16> for Value {
+    #[inline]
     fn from(value: i16) -> Self {
         Self::Integer(value.into())
     }
 }
 
 impl From<i32> for Value {
+    #[inline]
     fn from(value: i32) -> Self {
         Self::Integer(value.into())
     }
 }
 
 impl From<i64> for Value {
+    #[inline]
     fn from(value: i64) -> Self {
         Self::Integer(value)
     }
@@ -450,24 +502,28 @@ impl From<i64> for Value {
 impl TryFrom<i128> for Value {
     type Error = std::num::TryFromIntError;
 
+    #[inline]
     fn try_from(value: i128) -> Result<Self, Self::Error> {
         value.try_into().map(Self::Integer)
     }
 }
 
 impl From<u8> for Value {
+    #[inline]
     fn from(value: u8) -> Self {
         Self::Integer(value.into())
     }
 }
 
 impl From<u16> for Value {
+    #[inline]
     fn from(value: u16) -> Self {
         Self::Integer(value.into())
     }
 }
 
 impl From<u32> for Value {
+    #[inline]
     fn from(value: u32) -> Self {
         Self::Integer(value.into())
     }
@@ -476,6 +532,7 @@ impl From<u32> for Value {
 impl TryFrom<u64> for Value {
     type Error = std::num::TryFromIntError;
 
+    #[inline]
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         value.try_into().map(Self::Integer)
     }
@@ -484,30 +541,35 @@ impl TryFrom<u64> for Value {
 impl TryFrom<u128> for Value {
     type Error = std::num::TryFromIntError;
 
+    #[inline]
     fn try_from(value: u128) -> Result<Self, Self::Error> {
         value.try_into().map(Self::Integer)
     }
 }
 
 impl From<f32> for Value {
+    #[inline]
     fn from(value: f32) -> Self {
         Self::Float(value.into())
     }
 }
 
 impl From<f64> for Value {
+    #[inline]
     fn from(value: f64) -> Self {
         Self::Float(value)
     }
 }
 
 impl From<bool> for Value {
+    #[inline]
     fn from(value: bool) -> Self {
         Self::Boolean(value)
     }
 }
 
 impl From<Datetime> for Value {
+    #[inline]
     fn from(value: Datetime) -> Self {
         Self::Datetime(value)
     }
@@ -517,6 +579,7 @@ impl<V> From<Vec<V>> for Value
 where
     V: Into<Self>,
 {
+    #[inline]
     fn from(value: Vec<V>) -> Self {
         Self::Array(value.into_iter().map(Into::into).collect())
     }
@@ -526,6 +589,7 @@ impl<V> From<&[V]> for Value
 where
     V: Into<Self> + Clone,
 {
+    #[inline]
     fn from(value: &[V]) -> Self {
         Self::Array(value.iter().cloned().map(Into::into).collect())
     }
@@ -535,6 +599,7 @@ impl<V, const N: usize> From<[V; N]> for Value
 where
     V: Into<Self>,
 {
+    #[inline]
     fn from(value: [V; N]) -> Self {
         Self::Array(value.into_iter().map(Into::into).collect())
     }
@@ -545,6 +610,7 @@ where
     K: Into<String>,
     V: Into<Self>,
 {
+    #[inline]
     fn from(value: HashMap<K, V>) -> Self {
         Self::Table(
             value
@@ -560,6 +626,7 @@ where
     K: Into<String>,
     V: Into<Self>,
 {
+    #[inline]
     fn from(value: BTreeMap<K, V>) -> Self {
         Self::Table(
             value
@@ -573,6 +640,7 @@ where
 impl FromStr for Value {
     type Err = crate::de::Error;
 
+    #[inline]
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         crate::from_str(s)
     }
@@ -582,6 +650,7 @@ impl<V> FromIterator<V> for Value
 where
     V: Into<Self>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = V>>(iter: I) -> Self {
         Self::Array(iter.into_iter().map(Into::into).collect())
     }
@@ -592,6 +661,7 @@ where
     K: Into<String>,
     V: Into<Self>,
 {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         Self::Table(
             iter.into_iter()
@@ -602,6 +672,7 @@ where
 }
 
 impl PartialEq<&str> for Value {
+    #[inline]
     fn eq(&self, other: &&str) -> bool {
         match *self {
             Self::String(ref str) => str == *other,
@@ -611,6 +682,7 @@ impl PartialEq<&str> for Value {
 }
 
 impl PartialEq<Value> for &str {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::String(ref str) => self == str,
@@ -620,6 +692,7 @@ impl PartialEq<Value> for &str {
 }
 
 impl PartialEq<String> for Value {
+    #[inline]
     fn eq(&self, other: &String) -> bool {
         match *self {
             Self::String(ref str) => str == other,
@@ -629,6 +702,7 @@ impl PartialEq<String> for Value {
 }
 
 impl PartialEq<Value> for String {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::String(ref str) => self == str,
@@ -638,6 +712,7 @@ impl PartialEq<Value> for String {
 }
 
 impl PartialEq<Cow<'_, str>> for Value {
+    #[inline]
     fn eq(&self, other: &Cow<'_, str>) -> bool {
         match *self {
             Self::String(ref str) => str == other,
@@ -647,6 +722,7 @@ impl PartialEq<Cow<'_, str>> for Value {
 }
 
 impl PartialEq<Value> for Cow<'_, str> {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::String(ref str) => self == str,
@@ -656,6 +732,7 @@ impl PartialEq<Value> for Cow<'_, str> {
 }
 
 impl PartialEq<i64> for Value {
+    #[inline]
     fn eq(&self, other: &i64) -> bool {
         match *self {
             Self::Integer(int) => int == *other,
@@ -665,6 +742,7 @@ impl PartialEq<i64> for Value {
 }
 
 impl PartialEq<Value> for i64 {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::Integer(int) => *self == int,
@@ -674,6 +752,7 @@ impl PartialEq<Value> for i64 {
 }
 
 impl PartialEq<f64> for Value {
+    #[inline]
     fn eq(&self, other: &f64) -> bool {
         match *self {
             Self::Float(float) => float == *other,
@@ -683,6 +762,7 @@ impl PartialEq<f64> for Value {
 }
 
 impl PartialEq<Value> for f64 {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::Float(float) => *self == float,
@@ -692,6 +772,7 @@ impl PartialEq<Value> for f64 {
 }
 
 impl PartialEq<bool> for Value {
+    #[inline]
     fn eq(&self, other: &bool) -> bool {
         match *self {
             Self::Boolean(bool) => bool == *other,
@@ -701,6 +782,7 @@ impl PartialEq<bool> for Value {
 }
 
 impl PartialEq<Value> for bool {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::Boolean(bool) => *self == bool,
@@ -710,6 +792,7 @@ impl PartialEq<Value> for bool {
 }
 
 impl PartialEq<Datetime> for Value {
+    #[inline]
     fn eq(&self, other: &Datetime) -> bool {
         match *self {
             Self::Datetime(ref datetime) => datetime == other,
@@ -719,6 +802,7 @@ impl PartialEq<Datetime> for Value {
 }
 
 impl PartialEq<Value> for Datetime {
+    #[inline]
     fn eq(&self, other: &Value) -> bool {
         match *other {
             Value::Datetime(ref datetime) => self == datetime,

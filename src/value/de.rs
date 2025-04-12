@@ -18,6 +18,7 @@ use super::{Type, Value};
 use crate::de::{Error, Result};
 
 impl Value {
+    #[inline]
     pub fn try_into<'de, T>(self) -> Result<T>
     where
         T: de::Deserialize<'de>,
@@ -27,6 +28,7 @@ impl Value {
 }
 
 impl From<Type> for de::Unexpected<'_> {
+    #[inline]
     fn from(typ: Type) -> Self {
         de::Unexpected::Other(typ.to_str())
     }
@@ -35,6 +37,7 @@ impl From<Type> for de::Unexpected<'_> {
 impl de::IntoDeserializer<'_, Error> for Value {
     type Deserializer = Self;
 
+    #[inline]
     fn into_deserializer(self) -> Self::Deserializer {
         self
     }
@@ -43,6 +46,7 @@ impl de::IntoDeserializer<'_, Error> for Value {
 impl<'de> de::IntoDeserializer<'de, Error> for &'de Value {
     type Deserializer = Self;
 
+    #[inline]
     fn into_deserializer(self) -> Self::Deserializer {
         self
     }
@@ -50,6 +54,7 @@ impl<'de> de::IntoDeserializer<'de, Error> for &'de Value {
 
 impl<'de> de::Deserialize<'de> for Value {
     #[allow(clippy::too_many_lines)]
+    #[inline]
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -293,6 +298,7 @@ impl<'de> de::Deserialize<'de> for Value {
 impl<'de> de::Deserializer<'de> for Value {
     type Error = Error;
 
+    #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -334,6 +340,7 @@ impl<'de> de::Deserializer<'de> for Value {
         }
     }
 
+    #[inline]
     fn deserialize_option<V>(self, visitor: V) -> StdResult<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
@@ -341,6 +348,7 @@ impl<'de> de::Deserializer<'de> for Value {
         visitor.visit_some(self)
     }
 
+    #[inline]
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -348,6 +356,7 @@ impl<'de> de::Deserializer<'de> for Value {
         visitor.visit_newtype_struct(self)
     }
 
+    #[inline]
     fn deserialize_enum<V>(
         self,
         _name: &'static str,
@@ -375,6 +384,7 @@ struct SeqAccess {
 }
 
 impl SeqAccess {
+    #[inline]
     fn new(array: Vec<Value>) -> Self {
         Self {
             values: array.into_iter(),
@@ -385,6 +395,7 @@ impl SeqAccess {
 impl<'de> de::SeqAccess<'de> for SeqAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
         T: de::DeserializeSeed<'de>,
@@ -395,6 +406,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.values.len())
     }
@@ -409,6 +421,7 @@ struct MapAccess {
 }
 
 impl MapAccess {
+    #[inline]
     fn new(table: HashMap<String, Value>) -> Self {
         let kv_pairs = table.into_iter();
 
@@ -426,6 +439,7 @@ impl MapAccess {
 impl<'de> de::MapAccess<'de> for MapAccess {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -439,6 +453,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
             .transpose()
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
@@ -450,6 +465,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
         seed.deserialize(value)
     }
 
+    #[inline]
     fn next_entry_seed<K, V>(&mut self, kseed: K, vseed: V) -> Result<Option<(K::Value, V::Value)>>
     where
         K: de::DeserializeSeed<'de>,
@@ -466,6 +482,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.kv_pairs.len())
     }
@@ -477,6 +494,7 @@ struct EnumAccess {
 }
 
 impl EnumAccess {
+    #[inline]
     fn new(table: HashMap<String, Value>) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
@@ -499,6 +517,7 @@ impl<'de> de::EnumAccess<'de> for EnumAccess {
     type Error = Error;
     type Variant = Self;
 
+    #[inline]
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
     where
         V: de::DeserializeSeed<'de>,
@@ -511,6 +530,7 @@ impl<'de> de::EnumAccess<'de> for EnumAccess {
 impl<'de> de::VariantAccess<'de> for EnumAccess {
     type Error = Error;
 
+    #[inline]
     fn unit_variant(self) -> Result<()> {
         match self.value {
             Value::Table(table) if table.is_empty() => Ok(()),
@@ -522,6 +542,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess {
         }
     }
 
+    #[inline]
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
@@ -529,6 +550,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess {
         seed.deserialize(self.value)
     }
 
+    #[inline]
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -536,6 +558,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess {
         de::Deserializer::deserialize_seq(self.value, visitor)
     }
 
+    #[inline]
     fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -547,6 +570,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess {
 impl<'de> de::Deserializer<'de> for &'de Value {
     type Error = Error;
 
+    #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -588,6 +612,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
         }
     }
 
+    #[inline]
     fn deserialize_option<V>(self, visitor: V) -> StdResult<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
@@ -595,6 +620,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
         visitor.visit_some(self)
     }
 
+    #[inline]
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -602,6 +628,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
         visitor.visit_newtype_struct(self)
     }
 
+    #[inline]
     fn deserialize_enum<V>(
         self,
         _name: &'static str,
@@ -629,6 +656,7 @@ struct SeqRefAccess<'de> {
 }
 
 impl<'de> SeqRefAccess<'de> {
+    #[inline]
     fn new(array: &'de [Value]) -> Self {
         Self {
             values: array.iter(),
@@ -639,6 +667,7 @@ impl<'de> SeqRefAccess<'de> {
 impl<'de> de::SeqAccess<'de> for SeqRefAccess<'de> {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
         T: de::DeserializeSeed<'de>,
@@ -649,6 +678,7 @@ impl<'de> de::SeqAccess<'de> for SeqRefAccess<'de> {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.values.len())
     }
@@ -663,6 +693,7 @@ struct MapRefAccess<'de> {
 }
 
 impl<'de> MapRefAccess<'de> {
+    #[inline]
     fn new(table: &'de HashMap<String, Value>) -> Self {
         let kv_pairs = table.iter();
 
@@ -680,6 +711,7 @@ impl<'de> MapRefAccess<'de> {
 impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -693,6 +725,7 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
             .transpose()
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
@@ -704,6 +737,7 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
         seed.deserialize(value)
     }
 
+    #[inline]
     fn next_entry_seed<K, V>(&mut self, kseed: K, vseed: V) -> Result<Option<(K::Value, V::Value)>>
     where
         K: de::DeserializeSeed<'de>,
@@ -720,6 +754,7 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
             .transpose()
     }
 
+    #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.kv_pairs.len())
     }
@@ -731,6 +766,7 @@ struct EnumRefAccess<'de> {
 }
 
 impl<'de> EnumRefAccess<'de> {
+    #[inline]
     fn new(table: &'de HashMap<String, Value>) -> Result<Self> {
         let mut table = table.iter();
         let (variant, value) = table.next().ok_or_else(|| {
@@ -753,6 +789,7 @@ impl<'de> de::EnumAccess<'de> for EnumRefAccess<'de> {
     type Error = Error;
     type Variant = Self;
 
+    #[inline]
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
     where
         V: de::DeserializeSeed<'de>,
@@ -765,6 +802,7 @@ impl<'de> de::EnumAccess<'de> for EnumRefAccess<'de> {
 impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
     type Error = Error;
 
+    #[inline]
     fn unit_variant(self) -> Result<()> {
         match *self.value {
             Value::Table(ref table) if table.is_empty() => Ok(()),
@@ -776,6 +814,7 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
         }
     }
 
+    #[inline]
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
@@ -783,6 +822,7 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
         seed.deserialize(self.value)
     }
 
+    #[inline]
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -790,6 +830,7 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
         de::Deserializer::deserialize_seq(self.value, visitor)
     }
 
+    #[inline]
     fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -805,7 +846,7 @@ mod tests {
 
     use maplit::hashmap;
     use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
-    use serde::{de, Deserialize};
+    use serde::Deserialize;
 
     use super::*;
     use crate::value::{Datetime, Offset};

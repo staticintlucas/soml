@@ -1,5 +1,4 @@
-// Tests don't use all our deps
-#![allow(unused_crate_dependencies)]
+#![allow(missing_docs)]
 
 mod utils;
 

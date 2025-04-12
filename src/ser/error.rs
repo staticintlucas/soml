@@ -13,12 +13,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error(Box<ErrorImpl>);
 
 impl fmt::Display for Error {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
     }
 }
 
 impl fmt::Debug for Error {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("type", &self.0.kind)
@@ -27,6 +29,7 @@ impl fmt::Debug for Error {
 }
 
 impl std::error::Error for Error {
+    #[inline]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self.0.kind {
             ErrorKind::Io(ref io_error) => Some(&**io_error),
@@ -37,6 +40,7 @@ impl std::error::Error for Error {
 }
 
 impl ser::Error for Error {
+    #[inline]
     fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
@@ -47,18 +51,21 @@ impl ser::Error for Error {
 
 // Convenience impl to box the error
 impl From<ErrorImpl> for Error {
+    #[inline]
     fn from(value: ErrorImpl) -> Self {
         Self(Box::new(value))
     }
 }
 
 impl From<ErrorKind> for Error {
+    #[inline]
     fn from(kind: ErrorKind) -> Self {
         ErrorImpl { kind }.into()
     }
 }
 
 impl From<io::Error> for Error {
+    #[inline]
     fn from(value: io::Error) -> Self {
         ErrorImpl {
             kind: ErrorKind::Io(Arc::new(value)),
@@ -68,6 +75,7 @@ impl From<io::Error> for Error {
 }
 
 impl From<fmt::Error> for Error {
+    #[inline]
     fn from(value: fmt::Error) -> Self {
         ErrorImpl {
             kind: ErrorKind::Fmt(value),
@@ -82,6 +90,7 @@ struct ErrorImpl {
 }
 
 impl fmt::Display for ErrorImpl {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.kind, f)
     }
@@ -105,6 +114,7 @@ pub enum ErrorKind {
 }
 
 impl fmt::Display for ErrorKind {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[allow(clippy::enum_glob_use)] // Just for match
         use ErrorKind::*;
