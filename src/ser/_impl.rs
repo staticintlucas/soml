@@ -4,7 +4,7 @@ use serde::{ser, Serialize as _};
 
 use super::error::{Error, ErrorKind, Result};
 use super::writer::Writer;
-use super::{InlineSerializer, Serializer};
+use super::{Serializer, ValueSerializer};
 use crate::value::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 #[doc(hidden)]
@@ -33,7 +33,7 @@ impl ValueKind {
             Self::InlineValue(value) => Ok(value),
             Self::Table(TableKind::Table(table)) => {
                 let mut table_serializer =
-                    InlineTableSerializer::<RawStringSerializer>::start(Some(table.len()))?;
+                    InlineTableSerializer::<RawSerializer>::start(Some(table.len()))?;
                 table.into_iter().try_for_each(|(k, v)| {
                     table_serializer.serialize_entry(&k, &v.into_inline_value()?)
                 })?;
@@ -41,10 +41,10 @@ impl ValueKind {
             }
             Self::Table(TableKind::Array(array)) => {
                 let mut array_serializer =
-                    InlineArraySerializer::<RawStringSerializer>::start(Some(array.len()))?;
+                    InlineArraySerializer::<RawSerializer>::start(Some(array.len()))?;
                 array.into_iter().try_for_each(|table| {
                     let mut table_serializer =
-                        InlineTableSerializer::<RawStringSerializer>::start(Some(table.len()))?;
+                        InlineTableSerializer::<RawSerializer>::start(Some(table.len()))?;
                     table.into_iter().try_for_each(|(k, v)| {
                         table_serializer.serialize_entry(&k, &v.into_inline_value()?)
                     })?;
@@ -364,7 +364,7 @@ impl ser::Serializer for ValueKindSerializer {
 
     #[inline]
     fn serialize_bool(self, value: bool) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_bool(value)
             .map(ValueKind::InlineValue)
     }
@@ -431,30 +431,28 @@ impl ser::Serializer for ValueKindSerializer {
 
     #[inline]
     fn serialize_char(self, value: char) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_char(value)
             .map(ValueKind::InlineValue)
     }
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_str(value)
             .map(ValueKind::InlineValue)
     }
 
     #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_bytes(value)
             .map(ValueKind::InlineValue)
     }
 
     #[inline]
     fn serialize_none(self) -> Result<Self::Ok> {
-        InlineSerializer
-            .serialize_none()
-            .map(ValueKind::InlineValue)
+        ValueSerializer.serialize_none().map(ValueKind::InlineValue)
     }
 
     #[inline]
@@ -462,21 +460,19 @@ impl ser::Serializer for ValueKindSerializer {
     where
         T: ?Sized + ser::Serialize,
     {
-        InlineSerializer
+        ValueSerializer
             .serialize_some(value)
             .map(ValueKind::InlineValue)
     }
 
     #[inline]
     fn serialize_unit(self) -> Result<Self::Ok> {
-        InlineSerializer
-            .serialize_unit()
-            .map(ValueKind::InlineValue)
+        ValueSerializer.serialize_unit().map(ValueKind::InlineValue)
     }
 
     #[inline]
     fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_unit_struct(name)
             .map(ValueKind::InlineValue)
     }
@@ -488,7 +484,7 @@ impl ser::Serializer for ValueKindSerializer {
         variant_index: u32,
         variant: &'static str,
     ) -> Result<Self::Ok> {
-        InlineSerializer
+        ValueSerializer
             .serialize_unit_variant(name, variant_index, variant)
             .map(ValueKind::InlineValue)
     }
@@ -498,7 +494,7 @@ impl ser::Serializer for ValueKindSerializer {
     where
         T: ?Sized + ser::Serialize,
     {
-        InlineSerializer
+        ValueSerializer
             .serialize_newtype_struct(name, value)
             .map(ValueKind::InlineValue)
     }
@@ -614,7 +610,7 @@ impl ValueKindSerializer {
     #[allow(clippy::unused_self)]
     #[inline]
     fn serialize_integer<T: Integer>(self, value: T) -> Result<ValueKind> {
-        InlineSerializer
+        ValueSerializer
             .serialize_integer(value)
             .map(ValueKind::InlineValue)
     }
@@ -622,7 +618,7 @@ impl ValueKindSerializer {
     #[allow(clippy::unused_self)]
     #[inline]
     fn serialize_float<T: Float>(self, value: T) -> Result<ValueKind> {
-        InlineSerializer
+        ValueSerializer
             .serialize_float(value)
             .map(ValueKind::InlineValue)
     }
@@ -672,7 +668,7 @@ impl ser::SerializeSeq for ArrayKindSerializer {
             )))
         } else {
             let mut array_serializer =
-                InlineArraySerializer::<RawStringSerializer>::start(Some(self.arr.len()))?;
+                InlineArraySerializer::<RawSerializer>::start(Some(self.arr.len()))?;
             self.arr.into_iter().try_for_each(|value| {
                 array_serializer.serialize_element(&value.into_inline_value()?)
             })?;
@@ -881,7 +877,7 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
             | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
             | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
                 None => {
-                    *inner = Some(value.serialize(RawStringSerializer)?);
+                    *inner = Some(value.serialize(RawSerializer)?);
                     Ok(())
                 }
                 Some(_) => Err(ErrorKind::UnsupportedValue(
@@ -1216,7 +1212,7 @@ where
             | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
             | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
                 None => {
-                    *inner = Some(value.serialize(RawStringSerializer)?);
+                    *inner = Some(value.serialize(RawSerializer)?);
                     Ok(())
                 }
                 Some(_) => Err(ErrorKind::UnsupportedValue(
@@ -1323,14 +1319,14 @@ impl ser::Serializer for KeySerializer {
         if !value.is_empty() && value.bytes().all(is_bare_key) {
             Ok(value.to_owned())
         } else {
-            InlineSerializer.serialize_basic_str(value)
+            ValueSerializer.serialize_basic_str(value)
         }
     }
 }
 
-struct RawStringSerializer;
+struct RawSerializer;
 
-impl ser::Serializer for RawStringSerializer {
+impl ser::Serializer for RawSerializer {
     type Ok = String;
     type Error = Error;
 
@@ -1350,14 +1346,14 @@ pub trait ValueOrRawSerializer: ser::Serializer<Ok = String, Error = Error> {
     fn new() -> Self;
 }
 
-impl ValueOrRawSerializer for InlineSerializer {
+impl ValueOrRawSerializer for ValueSerializer {
     #[inline]
     fn new() -> Self {
         Self
     }
 }
 
-impl ValueOrRawSerializer for RawStringSerializer {
+impl ValueOrRawSerializer for RawSerializer {
     #[inline]
     fn new() -> Self {
         Self
@@ -1882,7 +1878,7 @@ mod tests {
     fn inline_array_serializer_serialize_seq() {
         use serde::ser::SerializeSeq as _;
 
-        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        let mut ser = InlineArraySerializer::<ValueSerializer>::start(Some(0)).unwrap();
         ser.serialize_element("foo").unwrap();
         ser.serialize_element("bar").unwrap();
         let value = ser.end().unwrap();
@@ -1894,7 +1890,7 @@ mod tests {
     fn inline_array_serializer_serialize_tuple() {
         use serde::ser::SerializeTuple as _;
 
-        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        let mut ser = InlineArraySerializer::<ValueSerializer>::start(Some(0)).unwrap();
         ser.serialize_element("foo").unwrap();
         ser.serialize_element("bar").unwrap();
         let value = ser.end().unwrap();
@@ -1906,7 +1902,7 @@ mod tests {
     fn inline_array_serializer_serialize_tuple_struct() {
         use serde::ser::SerializeTupleStruct as _;
 
-        let mut ser = InlineArraySerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        let mut ser = InlineArraySerializer::<ValueSerializer>::start(Some(0)).unwrap();
         ser.serialize_field("foo").unwrap();
         ser.serialize_field("bar").unwrap();
         let value = ser.end().unwrap();
@@ -1918,7 +1914,7 @@ mod tests {
     fn inline_wrapped_array_serializer() {
         use serde::ser::SerializeTupleVariant as _;
 
-        let mut ser = InlineWrappedArraySerializer::<InlineSerializer>::start(0, "foo").unwrap();
+        let mut ser = InlineWrappedArraySerializer::<ValueSerializer>::start(0, "foo").unwrap();
         ser.serialize_field("foo").unwrap();
         ser.serialize_field("bar").unwrap();
         let value = ser.end().unwrap();
@@ -1930,7 +1926,7 @@ mod tests {
     fn inline_table_serializer_serialize_map() {
         use serde::ser::SerializeMap as _;
 
-        let mut ser = InlineTableSerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        let mut ser = InlineTableSerializer::<ValueSerializer>::start(Some(0)).unwrap();
         ser.serialize_entry("foo", "bar").unwrap();
         ser.serialize_key("baz").unwrap();
         ser.serialize_value("qux").unwrap();
@@ -1943,7 +1939,7 @@ mod tests {
     fn inline_table_serializer_serialize_struct() {
         use serde::ser::SerializeStruct as _;
 
-        let mut ser = InlineTableSerializer::<InlineSerializer>::start(Some(0)).unwrap();
+        let mut ser = InlineTableSerializer::<ValueSerializer>::start(Some(0)).unwrap();
         ser.serialize_field("foo", "bar").unwrap();
         ser.serialize_field("baz", "qux").unwrap();
         let value = ser.end().unwrap();
@@ -1956,13 +1952,13 @@ mod tests {
         use serde::ser::SerializeStruct as _;
 
         let mut ser =
-            InlineTableOrDatetimeSerializer::<InlineSerializer>::start(Some(0), "foo").unwrap();
+            InlineTableOrDatetimeSerializer::<ValueSerializer>::start(Some(0), "foo").unwrap();
         ser.serialize_field("foo", "bar").unwrap();
         let value = ser.end().unwrap();
 
         assert_eq!(value, r#"{ foo = "bar" }"#);
 
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             Datetime::WRAPPER_TYPE,
         )
@@ -1972,7 +1968,7 @@ mod tests {
 
         assert_eq!(value, "foo");
 
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             OffsetDatetime::WRAPPER_TYPE,
         )
@@ -1983,7 +1979,7 @@ mod tests {
 
         assert_eq!(value, "foo");
 
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             LocalDatetime::WRAPPER_TYPE,
         )
@@ -1994,7 +1990,7 @@ mod tests {
 
         assert_eq!(value, "foo");
 
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             LocalDate::WRAPPER_TYPE,
         )
@@ -2005,7 +2001,7 @@ mod tests {
 
         assert_eq!(value, "foo");
 
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             LocalTime::WRAPPER_TYPE,
         )
@@ -2017,7 +2013,7 @@ mod tests {
         assert_eq!(value, "foo");
 
         // Wrong field name
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             Datetime::WRAPPER_TYPE,
         )
@@ -2025,7 +2021,7 @@ mod tests {
         assert!(ser.serialize_field("foo", "bar").is_err());
 
         // More than one field
-        let mut ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             Datetime::WRAPPER_TYPE,
         )
@@ -2034,7 +2030,7 @@ mod tests {
         assert!(ser.serialize_field(Datetime::WRAPPER_FIELD, "bar").is_err());
 
         // No field
-        let ser = InlineTableOrDatetimeSerializer::<InlineSerializer>::start(
+        let ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
             Datetime::WRAPPER_TYPE,
         )
@@ -2046,7 +2042,7 @@ mod tests {
     fn inline_wrapped_table_serializer() {
         use serde::ser::SerializeStructVariant as _;
 
-        let mut ser = InlineWrappedTableSerializer::<InlineSerializer>::start(1, "foo").unwrap();
+        let mut ser = InlineWrappedTableSerializer::<ValueSerializer>::start(1, "foo").unwrap();
         ser.serialize_field("bar", "baz").unwrap();
         ser.serialize_field("qux", "quux").unwrap();
         let value = ser.end().unwrap();
@@ -2070,10 +2066,10 @@ mod tests {
     fn raw_string_serializer() {
         use serde::ser::Serializer as _;
 
-        assert_eq!(RawStringSerializer.serialize_str("foo").unwrap(), "foo");
-        assert_eq!(RawStringSerializer.serialize_str("😎").unwrap(), "😎");
+        assert_eq!(RawSerializer.serialize_str("foo").unwrap(), "foo");
+        assert_eq!(RawSerializer.serialize_str("😎").unwrap(), "😎");
 
-        assert!(RawStringSerializer.serialize_i64(1).is_err());
-        assert!(RawStringSerializer.serialize_struct("foo", 1).is_err());
+        assert!(RawSerializer.serialize_i64(1).is_err());
+        assert!(RawSerializer.serialize_struct("foo", 1).is_err());
     }
 }

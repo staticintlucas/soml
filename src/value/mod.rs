@@ -295,7 +295,7 @@ impl fmt::Display for Value {
     #[allow(clippy::panic)]
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.serialize(crate::ser::InlineSerializer) {
+        match self.serialize(crate::ser::ValueSerializer) {
             Ok(s) => s.fmt(f),
             Err(e) => panic!("{e}"), // This should never happen
         }

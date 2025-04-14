@@ -275,9 +275,9 @@ where
 /// document.
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
-pub struct InlineSerializer;
+pub struct ValueSerializer;
 
-impl ser::Serializer for InlineSerializer {
+impl ser::Serializer for ValueSerializer {
     type Ok = String;
     type Error = Error;
 
@@ -491,7 +491,7 @@ impl ser::Serializer for InlineSerializer {
     }
 }
 
-impl InlineSerializer {
+impl ValueSerializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn serialize_integer<T: Integer>(self, v: T) -> Result<String> {
         const FORMAT: u128 = NumberFormatBuilder::new().build();
@@ -504,7 +504,7 @@ impl InlineSerializer {
     }
 }
 
-impl InlineSerializer {
+impl ValueSerializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn serialize_float<T: Float>(self, v: T) -> Result<String> {
         const FORMAT: u128 = NumberFormatBuilder::new().build();
@@ -528,7 +528,7 @@ impl InlineSerializer {
     }
 }
 
-impl InlineSerializer {
+impl ValueSerializer {
     #[allow(clippy::unused_self)]
     fn serialize_basic_str(self, value: &str) -> Result<String> {
         #[allow(clippy::trivially_copy_pass_by_ref)] // makes the function more ergonomic to use
@@ -1269,112 +1269,106 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_bool() {
-        assert_eq!(InlineSerializer.serialize_bool(true).unwrap(), "true");
-        assert_eq!(InlineSerializer.serialize_bool(false).unwrap(), "false");
+        assert_eq!(ValueSerializer.serialize_bool(true).unwrap(), "true");
+        assert_eq!(ValueSerializer.serialize_bool(false).unwrap(), "false");
     }
 
     #[test]
     fn inline_serializer_serialize_i8() {
-        assert_eq!(InlineSerializer.serialize_i8(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_i8(-12).unwrap(), "-12");
+        assert_eq!(ValueSerializer.serialize_i8(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_i8(-12).unwrap(), "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i16() {
-        assert_eq!(InlineSerializer.serialize_i16(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_i16(-12).unwrap(), "-12");
+        assert_eq!(ValueSerializer.serialize_i16(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_i16(-12).unwrap(), "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i32() {
-        assert_eq!(InlineSerializer.serialize_i32(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_i32(-12).unwrap(), "-12");
+        assert_eq!(ValueSerializer.serialize_i32(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_i32(-12).unwrap(), "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i64() {
-        assert_eq!(InlineSerializer.serialize_i64(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_i64(-12).unwrap(), "-12");
+        assert_eq!(ValueSerializer.serialize_i64(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_i64(-12).unwrap(), "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i128() {
-        assert_eq!(InlineSerializer.serialize_i128(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_i128(-12).unwrap(), "-12");
+        assert_eq!(ValueSerializer.serialize_i128(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_i128(-12).unwrap(), "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_u8() {
-        assert_eq!(InlineSerializer.serialize_u8(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_u8(12).unwrap(), "12");
+        assert_eq!(ValueSerializer.serialize_u8(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_u8(12).unwrap(), "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u16() {
-        assert_eq!(InlineSerializer.serialize_u16(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_u16(12).unwrap(), "12");
+        assert_eq!(ValueSerializer.serialize_u16(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_u16(12).unwrap(), "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u32() {
-        assert_eq!(InlineSerializer.serialize_u32(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_u32(12).unwrap(), "12");
+        assert_eq!(ValueSerializer.serialize_u32(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_u32(12).unwrap(), "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u64() {
-        assert_eq!(InlineSerializer.serialize_u64(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_u64(12).unwrap(), "12");
+        assert_eq!(ValueSerializer.serialize_u64(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_u64(12).unwrap(), "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u128() {
-        assert_eq!(InlineSerializer.serialize_u128(42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_u128(12).unwrap(), "12");
+        assert_eq!(ValueSerializer.serialize_u128(42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_u128(12).unwrap(), "12");
     }
 
     #[test]
     fn inline_serializer_serialize_f32() {
-        assert_eq!(InlineSerializer.serialize_f32(42.0).unwrap(), "42.0");
-        assert_eq!(InlineSerializer.serialize_f32(-12.0).unwrap(), "-12.0");
-        assert_eq!(InlineSerializer.serialize_f32(1e12).unwrap(), "1.0e12");
-        assert_eq!(InlineSerializer.serialize_f32(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f32(42.0).unwrap(), "42.0");
+        assert_eq!(ValueSerializer.serialize_f32(-12.0).unwrap(), "-12.0");
+        assert_eq!(ValueSerializer.serialize_f32(1e12).unwrap(), "1.0e12");
+        assert_eq!(ValueSerializer.serialize_f32(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f32(f32::INFINITY).unwrap(), "inf");
         assert_eq!(
-            InlineSerializer.serialize_f32(f32::INFINITY).unwrap(),
-            "inf"
-        );
-        assert_eq!(
-            InlineSerializer.serialize_f32(f32::NEG_INFINITY).unwrap(),
+            ValueSerializer.serialize_f32(f32::NEG_INFINITY).unwrap(),
             "-inf"
         );
-        assert_eq!(InlineSerializer.serialize_f32(f32::NAN).unwrap(), "nan");
-        assert_eq!(InlineSerializer.serialize_f32(-f32::NAN).unwrap(), "-nan");
+        assert_eq!(ValueSerializer.serialize_f32(f32::NAN).unwrap(), "nan");
+        assert_eq!(ValueSerializer.serialize_f32(-f32::NAN).unwrap(), "-nan");
     }
 
     #[test]
     fn inline_serializer_serialize_f64() {
-        assert_eq!(InlineSerializer.serialize_f64(42.0).unwrap(), "42.0");
-        assert_eq!(InlineSerializer.serialize_f64(-12.0).unwrap(), "-12.0");
-        assert_eq!(InlineSerializer.serialize_f64(1e12).unwrap(), "1.0e12");
-        assert_eq!(InlineSerializer.serialize_f64(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f64(42.0).unwrap(), "42.0");
+        assert_eq!(ValueSerializer.serialize_f64(-12.0).unwrap(), "-12.0");
+        assert_eq!(ValueSerializer.serialize_f64(1e12).unwrap(), "1.0e12");
+        assert_eq!(ValueSerializer.serialize_f64(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f64(f64::INFINITY).unwrap(), "inf");
         assert_eq!(
-            InlineSerializer.serialize_f64(f64::INFINITY).unwrap(),
-            "inf"
-        );
-        assert_eq!(
-            InlineSerializer.serialize_f64(f64::NEG_INFINITY).unwrap(),
+            ValueSerializer.serialize_f64(f64::NEG_INFINITY).unwrap(),
             "-inf"
         );
-        assert_eq!(InlineSerializer.serialize_f64(f64::NAN).unwrap(), "nan");
-        assert_eq!(InlineSerializer.serialize_f64(-f64::NAN).unwrap(), "-nan");
+        assert_eq!(ValueSerializer.serialize_f64(f64::NAN).unwrap(), "nan");
+        assert_eq!(ValueSerializer.serialize_f64(-f64::NAN).unwrap(), "-nan");
     }
 
     #[test]
     fn inline_serializer_serialize_char() {
-        assert_eq!(InlineSerializer.serialize_char('a').unwrap(), r#""a""#);
-        assert_eq!(InlineSerializer.serialize_char('😎').unwrap(), r#""😎""#);
+        assert_eq!(ValueSerializer.serialize_char('a').unwrap(), r#""a""#);
+        assert_eq!(ValueSerializer.serialize_char('😎').unwrap(), r#""😎""#);
         assert_eq!(
-            InlineSerializer.serialize_char('\n').unwrap(),
+            ValueSerializer.serialize_char('\n').unwrap(),
             indoc! {r#"
                 """
 
@@ -1384,10 +1378,10 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_str() {
-        assert_eq!(InlineSerializer.serialize_str("foo").unwrap(), r#""foo""#);
-        assert_eq!(InlineSerializer.serialize_str("😎").unwrap(), r#""😎""#);
+        assert_eq!(ValueSerializer.serialize_str("foo").unwrap(), r#""foo""#);
+        assert_eq!(ValueSerializer.serialize_str("😎").unwrap(), r#""😎""#);
         assert_eq!(
-            InlineSerializer.serialize_str("abc\ndef\n").unwrap(),
+            ValueSerializer.serialize_str("abc\ndef\n").unwrap(),
             indoc! {r#"
                 """
                 abc
@@ -1399,46 +1393,46 @@ mod tests {
     #[test]
     fn inline_serializer_serialize_bytes() {
         assert_eq!(
-            InlineSerializer.serialize_bytes(b"foo").unwrap(),
+            ValueSerializer.serialize_bytes(b"foo").unwrap(),
             "[102, 111, 111]"
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_bytes(b"\xF0\x9F\x98\x8E")
                 .unwrap(),
             "[240, 159, 152, 142]"
         );
         assert_eq!(
-            InlineSerializer.serialize_bytes(b"abc\ndef\n").unwrap(),
+            ValueSerializer.serialize_bytes(b"abc\ndef\n").unwrap(),
             "[97, 98, 99, 10, 100, 101, 102, 10]"
         );
     }
 
     #[test]
     fn inline_serializer_serialize_none() {
-        InlineSerializer.serialize_none().unwrap_err();
+        ValueSerializer.serialize_none().unwrap_err();
     }
 
     #[test]
     fn inline_serializer_serialize_some() {
-        assert_eq!(InlineSerializer.serialize_some(&42).unwrap(), "42");
-        assert_eq!(InlineSerializer.serialize_some("foo").unwrap(), r#""foo""#);
+        assert_eq!(ValueSerializer.serialize_some(&42).unwrap(), "42");
+        assert_eq!(ValueSerializer.serialize_some("foo").unwrap(), r#""foo""#);
     }
 
     #[test]
     fn inline_serializer_serialize_unit() {
-        InlineSerializer.serialize_unit().unwrap_err();
+        ValueSerializer.serialize_unit().unwrap_err();
     }
 
     #[test]
     fn inline_serializer_serialize_unit_struct() {
-        InlineSerializer.serialize_unit_struct("name").unwrap_err();
+        ValueSerializer.serialize_unit_struct("name").unwrap_err();
     }
 
     #[test]
     fn inline_serializer_serialize_unit_variant() {
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_unit_variant("name", 0, "foo")
                 .unwrap(),
             r#""foo""#
@@ -1448,7 +1442,7 @@ mod tests {
     #[test]
     fn inline_serializer_serialize_newtype_struct() {
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_newtype_struct("name", &42)
                 .unwrap(),
             "42"
@@ -1458,7 +1452,7 @@ mod tests {
     #[test]
     fn inline_serializer_serialize_newtype_variant() {
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_newtype_variant("name", 0, "foo", &42)
                 .unwrap(),
             "{ foo = 42 }"
@@ -1469,7 +1463,7 @@ mod tests {
     fn inline_serializer_serialize_seq() {
         use ser::SerializeSeq as _;
 
-        let mut seq = InlineSerializer.serialize_seq(Some(2)).unwrap();
+        let mut seq = ValueSerializer.serialize_seq(Some(2)).unwrap();
         seq.serialize_element(&42).unwrap();
         seq.serialize_element(&"foo").unwrap();
         let result = seq.end().unwrap();
@@ -1481,7 +1475,7 @@ mod tests {
     fn inline_serializer_serialize_tuple() {
         use ser::SerializeTuple as _;
 
-        let mut seq = InlineSerializer.serialize_tuple(2).unwrap();
+        let mut seq = ValueSerializer.serialize_tuple(2).unwrap();
         seq.serialize_element(&42).unwrap();
         seq.serialize_element(&"foo").unwrap();
         let result = seq.end().unwrap();
@@ -1493,7 +1487,7 @@ mod tests {
     fn inline_serializer_serialize_tuple_struct() {
         use ser::SerializeTupleStruct as _;
 
-        let mut seq = InlineSerializer.serialize_tuple_struct("name", 2).unwrap();
+        let mut seq = ValueSerializer.serialize_tuple_struct("name", 2).unwrap();
         seq.serialize_field(&42).unwrap();
         seq.serialize_field(&"foo").unwrap();
         let result = seq.end().unwrap();
@@ -1505,7 +1499,7 @@ mod tests {
     fn inline_serializer_serialize_tuple_variant() {
         use ser::SerializeTupleVariant as _;
 
-        let mut seq = InlineSerializer
+        let mut seq = ValueSerializer
             .serialize_tuple_variant("name", 0, "foo", 2)
             .unwrap();
         seq.serialize_field(&42).unwrap();
@@ -1519,7 +1513,7 @@ mod tests {
     fn inline_serializer_serialize_map() {
         use ser::SerializeMap as _;
 
-        let mut seq = InlineSerializer.serialize_map(Some(2)).unwrap();
+        let mut seq = ValueSerializer.serialize_map(Some(2)).unwrap();
         seq.serialize_entry("foo", &42).unwrap();
         seq.serialize_entry("bar", &"baz").unwrap();
         let result = seq.end().unwrap();
@@ -1531,7 +1525,7 @@ mod tests {
     fn inline_serializer_serialize_struct() {
         use ser::SerializeStruct as _;
 
-        let mut seq = InlineSerializer.serialize_struct("name", 2).unwrap();
+        let mut seq = ValueSerializer.serialize_struct("name", 2).unwrap();
         seq.serialize_field("foo", &42).unwrap();
         seq.serialize_field("bar", &"baz").unwrap();
         let result = seq.end().unwrap();
@@ -1543,7 +1537,7 @@ mod tests {
     fn inline_serializer_serialize_struct_variant() {
         use ser::SerializeStructVariant as _;
 
-        let mut seq = InlineSerializer
+        let mut seq = ValueSerializer
             .serialize_struct_variant("name", 0, "foo", 2)
             .unwrap();
         seq.serialize_field("bar", &42).unwrap();
@@ -1556,25 +1550,25 @@ mod tests {
     #[test]
     fn inline_serializer_serialize_basic_str() {
         assert_eq!(
-            InlineSerializer.serialize_basic_str("foo").unwrap(),
+            ValueSerializer.serialize_basic_str("foo").unwrap(),
             r#""foo""#
         );
         assert_eq!(
-            InlineSerializer.serialize_basic_str("😎").unwrap(),
+            ValueSerializer.serialize_basic_str("😎").unwrap(),
             r#""😎""#
         );
         assert_eq!(
-            InlineSerializer.serialize_basic_str("abc\ndef\n").unwrap(),
+            ValueSerializer.serialize_basic_str("abc\ndef\n").unwrap(),
             r#""abc\ndef\n""#
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
                 .unwrap(),
             r#""\b\t\n\f\r\"\\""#
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_basic_str(
                     "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
                 )
@@ -1586,7 +1580,7 @@ mod tests {
     #[test]
     fn inline_serializer_serialize_multiline_basic_str() {
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_multiline_basic_str("foo")
                 .unwrap(),
             indoc! {r#"
@@ -1594,15 +1588,13 @@ mod tests {
                 foo""""#}
         );
         assert_eq!(
-            InlineSerializer
-                .serialize_multiline_basic_str("😎")
-                .unwrap(),
+            ValueSerializer.serialize_multiline_basic_str("😎").unwrap(),
             indoc! {r#"
                 """
                 😎""""#}
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_multiline_basic_str("abc\ndef\n")
                 .unwrap(),
             indoc! {r#"
@@ -1612,7 +1604,7 @@ mod tests {
                 """"#}
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_multiline_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
                 .unwrap(),
             indoc! {"
@@ -1621,7 +1613,7 @@ mod tests {
                 \\f\\r\\\"\\\\\"\"\""}
         );
         assert_eq!(
-            InlineSerializer
+            ValueSerializer
                 .serialize_multiline_basic_str(
                     "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
                 )
