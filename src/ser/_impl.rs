@@ -57,17 +57,19 @@ impl ValueKind {
 }
 
 // Adapted from: https://github.com/serde-rs/serde/blob/04ff3e8/serde/src/private/doc.rs#L47
-#[macro_export(local_inner_macros)]
+#[doc(hidden)]
+#[macro_export]
 macro_rules! __serialize_unimplemented {
     ($($func:ident)*) => {
         $(
-            __serialize_unimplemented_helper!($func);
+            $crate::__serialize_unimplemented_helper!($func);
         )*
     };
 }
 pub(crate) use __serialize_unimplemented;
 
-#[macro_export(local_inner_macros)]
+#[doc(hidden)]
+#[macro_export]
 #[allow(edition_2024_expr_fragment_specifier)]
 macro_rules! __serialize_unimplemented_method {
     ($func:ident $(<$t:ident>)* ($($arg:ty),*) -> $ret:ident, $msg:expr) => {
@@ -91,104 +93,105 @@ macro_rules! __serialize_unimplemented_method {
     };
 }
 
-#[macro_export(local_inner_macros)]
+#[doc(hidden)]
+#[macro_export]
 macro_rules! __serialize_unimplemented_helper {
     (bool) => {
-        __serialize_unimplemented_method!(serialize_bool(bool) -> Ok, "bool");
+        $crate::__serialize_unimplemented_method!(serialize_bool(bool) -> Ok, "bool");
     };
     (i8) => {
-        __serialize_unimplemented_method!(serialize_i8(i8) -> Ok, "i8");
+        $crate::__serialize_unimplemented_method!(serialize_i8(i8) -> Ok, "i8");
     };
     (i16) => {
-        __serialize_unimplemented_method!(serialize_i16(i16) -> Ok, "i16");
+        $crate::__serialize_unimplemented_method!(serialize_i16(i16) -> Ok, "i16");
     };
     (i32) => {
-        __serialize_unimplemented_method!(serialize_i32(i32) -> Ok, "i32");
+        $crate::__serialize_unimplemented_method!(serialize_i32(i32) -> Ok, "i32");
     };
     (i64) => {
-        __serialize_unimplemented_method!(serialize_i64(i64) -> Ok, "i64");
+        $crate::__serialize_unimplemented_method!(serialize_i64(i64) -> Ok, "i64");
     };
     (i128) => {
-        __serialize_unimplemented_method!(serialize_i128(i128) -> Ok, "i128");
+        $crate::__serialize_unimplemented_method!(serialize_i128(i128) -> Ok, "i128");
     };
     (u8) => {
-        __serialize_unimplemented_method!(serialize_u8(u8) -> Ok, "u8");
+        $crate::__serialize_unimplemented_method!(serialize_u8(u8) -> Ok, "u8");
     };
     (u16) => {
-        __serialize_unimplemented_method!(serialize_u16(u16) -> Ok, "u16");
+        $crate::__serialize_unimplemented_method!(serialize_u16(u16) -> Ok, "u16");
     };
     (u32) => {
-        __serialize_unimplemented_method!(serialize_u32(u32) -> Ok, "u32");
+        $crate::__serialize_unimplemented_method!(serialize_u32(u32) -> Ok, "u32");
     };
     (u64) => {
-        __serialize_unimplemented_method!(serialize_u64(u64) -> Ok, "u64");
+        $crate::__serialize_unimplemented_method!(serialize_u64(u64) -> Ok, "u64");
     };
     (u128) => {
-        __serialize_unimplemented_method!(serialize_u128(u128) -> Ok, "u128");
+        $crate::__serialize_unimplemented_method!(serialize_u128(u128) -> Ok, "u128");
     };
     (f32) => {
-        __serialize_unimplemented_method!(serialize_f32(f32) -> Ok, "f32");
+        $crate::__serialize_unimplemented_method!(serialize_f32(f32) -> Ok, "f32");
     };
     (f64) => {
-        __serialize_unimplemented_method!(serialize_f64(f64) -> Ok, "f64");
+        $crate::__serialize_unimplemented_method!(serialize_f64(f64) -> Ok, "f64");
     };
     (char) => {
-        __serialize_unimplemented_method!(serialize_char(char) -> Ok, "char");
+        $crate::__serialize_unimplemented_method!(serialize_char(char) -> Ok, "char");
     };
     (str) => {
-        __serialize_unimplemented_method!(serialize_str(&str) -> Ok, "str");
+        $crate::__serialize_unimplemented_method!(serialize_str(&str) -> Ok, "str");
     };
     (bytes) => {
-        __serialize_unimplemented_method!(serialize_bytes(&[u8]) -> Ok, "[u8]");
+        $crate::__serialize_unimplemented_method!(serialize_bytes(&[u8]) -> Ok, "[u8]");
     };
     (none) => {
-        __serialize_unimplemented_method!(serialize_none() -> Ok, "Option");
+        $crate::__serialize_unimplemented_method!(serialize_none() -> Ok, "Option");
     };
     (some) => {
-        __serialize_unimplemented_method!(serialize_some<T>(&T) -> Ok, "Option");
+        $crate::__serialize_unimplemented_method!(serialize_some<T>(&T) -> Ok, "Option");
     };
     (unit) => {
-        __serialize_unimplemented_method!(serialize_unit() -> Ok, "()");
+        $crate::__serialize_unimplemented_method!(serialize_unit() -> Ok, "()");
     };
     (unit_struct) => {
-        __serialize_unimplemented_method!(serialize_unit_struct(name: &'static str) -> Ok);
+        $crate::__serialize_unimplemented_method!(serialize_unit_struct(name: &'static str) -> Ok);
     };
     (unit_variant) => {
-        __serialize_unimplemented_method!(serialize_unit_variant(name: &'static str, u32, &str) -> Ok);
+        $crate::__serialize_unimplemented_method!(serialize_unit_variant(name: &'static str, u32, &str) -> Ok);
     };
     (newtype_struct) => {
-        __serialize_unimplemented_method!(serialize_newtype_struct<T>(name: &'static str, &T) -> Ok);
+        $crate::__serialize_unimplemented_method!(serialize_newtype_struct<T>(name: &'static str, &T) -> Ok);
     };
     (newtype_variant) => {
-        __serialize_unimplemented_method!(serialize_newtype_variant<T>(name: &'static str, u32, &str, &T) -> Ok);
+        $crate::__serialize_unimplemented_method!(serialize_newtype_variant<T>(name: &'static str, u32, &str, &T) -> Ok);
     };
     (seq) => {
         type SerializeSeq = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_seq(Option<usize>) -> SerializeSeq, "slice");
+        $crate::__serialize_unimplemented_method!(serialize_seq(Option<usize>) -> SerializeSeq, "slice");
     };
     (tuple) => {
         type SerializeTuple = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_tuple(usize) -> SerializeTuple, "tuple");
+        $crate::__serialize_unimplemented_method!(serialize_tuple(usize) -> SerializeTuple, "tuple");
     };
     (tuple_struct) => {
         type SerializeTupleStruct = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_tuple_struct(name: &'static str, usize) -> SerializeTupleStruct);
+        $crate::__serialize_unimplemented_method!(serialize_tuple_struct(name: &'static str, usize) -> SerializeTupleStruct);
     };
     (tuple_variant) => {
         type SerializeTupleVariant = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_tuple_variant(name: &'static str, u32, &str, usize) -> SerializeTupleVariant);
+        $crate::__serialize_unimplemented_method!(serialize_tuple_variant(name: &'static str, u32, &str, usize) -> SerializeTupleVariant);
     };
     (map) => {
         type SerializeMap = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_map(Option<usize>) -> SerializeMap, "map");
+        $crate::__serialize_unimplemented_method!(serialize_map(Option<usize>) -> SerializeMap, "map");
     };
     (struct) => {
         type SerializeStruct = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_struct(name: &'static str, usize) -> SerializeStruct);
+        $crate::__serialize_unimplemented_method!(serialize_struct(name: &'static str, usize) -> SerializeStruct);
     };
     (struct_variant) => {
         type SerializeStructVariant = ::serde::ser::Impossible<Self::Ok, Self::Error>;
-        __serialize_unimplemented_method!(serialize_struct_variant(name: &'static str, u32, &str, usize) -> SerializeStructVariant);
+        $crate::__serialize_unimplemented_method!(serialize_struct_variant(name: &'static str, u32, &str, usize) -> SerializeStructVariant);
     };
 }
 
@@ -976,7 +979,7 @@ impl<S> InlineArraySerializer<S> {
 
 impl<S> ser::SerializeSeq for InlineArraySerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1001,7 +1004,7 @@ where
 
 impl<S> ser::SerializeTuple for InlineArraySerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
@@ -1022,7 +1025,7 @@ where
 
 impl<S> ser::SerializeTupleStruct for InlineArraySerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
@@ -1067,7 +1070,7 @@ impl<S> InlineWrappedArraySerializer<S> {
 
 impl<S> ser::SerializeTupleVariant for InlineWrappedArraySerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1115,7 +1118,7 @@ impl<S> InlineTableSerializer<S> {
 
 impl<S> ser::SerializeMap for InlineTableSerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1150,7 +1153,7 @@ where
 
 impl<S> ser::SerializeStruct for InlineTableSerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1195,7 +1198,7 @@ impl<S> InlineTableOrDatetimeSerializer<S> {
 
 impl<S> ser::SerializeStruct for InlineTableOrDatetimeSerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1270,7 +1273,7 @@ impl<S> InlineWrappedTableSerializer<S> {
 
 impl<S> ser::SerializeStructVariant for InlineWrappedTableSerializer<S>
 where
-    S: InlineValueSerializer,
+    S: ValueOrRawSerializer,
 {
     type Ok = String;
     type Error = Error;
@@ -1343,18 +1346,18 @@ impl ser::Serializer for RawStringSerializer {
     }
 }
 
-pub trait InlineValueSerializer: ser::Serializer<Ok = String, Error = Error> {
+pub trait ValueOrRawSerializer: ser::Serializer<Ok = String, Error = Error> {
     fn new() -> Self;
 }
 
-impl InlineValueSerializer for InlineSerializer {
+impl ValueOrRawSerializer for InlineSerializer {
     #[inline]
     fn new() -> Self {
         Self
     }
 }
 
-impl InlineValueSerializer for RawStringSerializer {
+impl ValueOrRawSerializer for RawStringSerializer {
     #[inline]
     fn new() -> Self {
         Self
