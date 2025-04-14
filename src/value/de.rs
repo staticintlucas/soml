@@ -18,6 +18,11 @@ use super::{Type, Value};
 use crate::de::{Error, Result};
 
 impl Value {
+    /// Try to convert the value into type `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be converted to type `T`.
     #[inline]
     pub fn try_into<'de, T>(self) -> Result<T>
     where

@@ -12,10 +12,29 @@ use crate::de::{Error, ErrorKind};
 mod de;
 mod ser;
 
+/// A TOML date-time value.
+///
+/// This struct can represent any of the TOML date-time types, depending on which fields are
+/// [`Some`]:
+///
+/// | `date`   | `time`   | `offset` | type             |
+/// |:---------|:---------|:---------|:-----------------|
+/// | [`Some`] | [`Some`] | [`Some`] | Offset date-time |
+/// | [`Some`] | [`Some`] | [`None`] | Local date-time  |
+/// | [`Some`] | [`None`] | [`None`] | Local date       |
+/// | [`None`] | [`Some`] | [`None`] | Local time       |
+///
+/// All other combinations are considered invalid
+///
+/// When working with a known date-time type, one of the [`OffsetDatetime`], [`LocalDatetime`],
+/// [`LocalDate`], or [`LocalTime`] types can be used instead.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Datetime {
+    /// The date portion of the date-time value.
     pub date: Option<LocalDate>,
+    /// The time portion of the date-time value.
     pub time: Option<LocalTime>,
+    /// The UTC offset of the date-time value.
     pub offset: Option<Offset>,
 }
 
@@ -23,6 +42,11 @@ impl Datetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::Datetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::Datetime::Wrapper::Field>";
 
+    /// Parses a [`Datetime`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML date-time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         if let Some(position) = bytes.iter().position(|b| b"Tt ".contains(b)) {
@@ -100,10 +124,14 @@ impl fmt::Display for Datetime {
     }
 }
 
+/// A TOML offset date-time value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct OffsetDatetime {
+    /// The date portion of the date-time value.
     pub date: LocalDate,
+    /// The time portion of the date-time value.
     pub time: LocalTime,
+    /// The UTC offset of the date-time value.
     pub offset: Offset,
 }
 
@@ -111,6 +139,11 @@ impl OffsetDatetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::OffsetDatetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::OffsetDatetime::Wrapper::Field>";
 
+    /// Parses a [`OffsetDatetime`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML offset date-time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let position = bytes
@@ -185,9 +218,12 @@ impl TryFrom<Datetime> for OffsetDatetime {
     }
 }
 
+/// A TOML local date-time value.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LocalDatetime {
+    /// The date portion of the date-time value.
     pub date: LocalDate,
+    /// The time portion of the date-time value.
     pub time: LocalTime,
 }
 
@@ -195,6 +231,11 @@ impl LocalDatetime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDatetime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDatetime::Wrapper::Field>";
 
+    /// Parses a [`LocalDatetime`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML local date-time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         let position = bytes
@@ -258,11 +299,25 @@ impl TryFrom<Datetime> for LocalDatetime {
     }
 }
 
+/// A TOML local date value.
 #[allow(missing_copy_implementations)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LocalDate {
+    /// The year.
+    ///
+    /// This is always between 0--9999. BCE dates and dates after 9999 CE are not supported by
+    /// [RFC 3339].
+    ///
+    /// [rfc 3339]: https://tools.ietf.org/html/rfc3339
     pub year: u16,
+    /// The month of the year.
+    ///
+    /// This is always between 1--12 (inclusive).
     pub month: u8,
+    /// The day of the month.
+    ///
+    /// This is always between 1--31 (inclusive), and is further restricted by the number of days
+    /// in the given month.
     pub day: u8,
 }
 
@@ -275,6 +330,11 @@ impl LocalDate {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDate::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDate::Wrapper::Field>";
 
+    /// Parses a [`LocalDate`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML date value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()
@@ -374,12 +434,25 @@ impl TryFrom<Datetime> for LocalDate {
     }
 }
 
+/// A TOML local time value.
 #[allow(missing_copy_implementations)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LocalTime {
+    /// The hour in 24-hour format.
+    ///
+    /// This is always between 0--23 (inclusive).
     pub hour: u8,
+    /// The minute portion of the time.
+    ///
+    /// This is always between 0--59 (inclusive).
     pub minute: u8,
+    /// The second portion of the time.
+    ///
+    /// This is always between 0--60 (inclusive), 60 is valid for leap seconds.
     pub second: u8,
+    /// The nanosecond portion of the time.
+    ///
+    /// This is always between 0--999 999 999 (inclusive).
     pub nanosecond: u32,
 }
 
@@ -392,6 +465,11 @@ impl LocalTime {
     pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalTime::Wrapper>";
     pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalTime::Wrapper::Field>";
 
+    /// Parses a [`LocalTime`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()
@@ -528,14 +606,29 @@ impl TryFrom<Datetime> for LocalTime {
     }
 }
 
+/// A TOML UTC offset value.
 #[allow(missing_copy_implementations)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Offset {
+    /// UTC zulu offset.
+    ///
+    /// This is equivalent to `+00:00`.
     Z,
-    Custom { minutes: i16 },
+    /// Numeric UTC offset.
+    Custom {
+        /// The offset in minutes.
+        ///
+        /// This is always between -1440--+1440 (-24:00--+24:00) (inclusive).
+        minutes: i16,
+    },
 }
 
 impl Offset {
+    /// Parses an [`Offset`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid offset portion of a TOML date-time.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
         const FORMAT: u128 = NumberFormatBuilder::new()

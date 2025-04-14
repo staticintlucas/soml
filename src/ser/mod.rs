@@ -1,3 +1,5 @@
+//! TOML serialization functions and trait implementations.
+
 use std::{fmt, io};
 
 use lexical::{NumberFormatBuilder, WriteFloatOptions, WriteIntegerOptions};
@@ -17,6 +19,11 @@ mod _impl;
 mod error;
 mod writer;
 
+/// Serializes a value to a TOML string.
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be serialized to a TOML document.
 #[inline]
 pub fn to_string<T>(value: &T) -> Result<String>
 where
@@ -27,12 +34,14 @@ where
     Ok(dst)
 }
 
+/// A serializer for a TOML document.
 #[derive(Debug)]
 pub struct Serializer<W> {
     writer: W,
 }
 
 impl<'a> Serializer<&'a mut String> {
+    /// Create a new TOML serializer that serializes to the given buffer.
     #[must_use]
     #[inline]
     pub fn new(buf: &'a mut String) -> Self {
@@ -44,6 +53,7 @@ impl<T> Serializer<T>
 where
     T: fmt::Write,
 {
+    /// Create a new TOML serializer that serializes to the given writer.
     #[inline]
     pub fn from_fmt_writer(writer: T) -> Self {
         Self { writer }
@@ -54,6 +64,7 @@ impl<T> Serializer<IoWriter<T>>
 where
     T: io::Write,
 {
+    /// Create a new TOML serializer that serializes to the given writer.
     #[inline]
     pub fn from_io_writer(writer: T) -> Self {
         Self {
@@ -258,6 +269,10 @@ where
     }
 }
 
+/// A serializer for a TOML value.
+///
+/// Unlike [`Serializer`], this serializer serializes to an inline value instead of a full TOML
+/// document.
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
 pub struct InlineSerializer;

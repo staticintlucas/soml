@@ -1,3 +1,5 @@
+//! Generic TOML value (de-)serialization.
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::result::Result as StdResult;
@@ -52,18 +54,31 @@ impl fmt::Display for Type {
     }
 }
 
+/// A generic TOML value type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// A string.
     String(String),
+    /// An integer.
     Integer(i64),
+    /// A float.
     Float(f64),
+    /// A boolean.
     Boolean(bool),
+    /// A datetime.
     Datetime(Datetime),
+    /// An array of values.
     Array(Vec<Self>),
+    /// A table of key-value pairs.
     Table(HashMap<String, Self>),
 }
 
 impl Value {
+    /// Try to construct a [`Value`] from type `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be represented as a [`Value`].
     #[inline]
     pub fn try_from<T>(value: T) -> Result<Self, crate::ser::Error>
     where
@@ -72,11 +87,19 @@ impl Value {
         value.serialize(ToValueSerializer)
     }
 
+    /// Return an element of a TOML array or table, depending on the type of the index.
+    ///
+    /// Returns `None` if the index is a [`usize`] and `self` is not an array, or if the index is
+    /// a string and `self` is not a table.
     #[inline]
     pub fn get(&self, index: impl Index) -> Option<&Self> {
         index.get(self)
     }
 
+    /// Return an element of a TOML array or table, depending on the type of the index.
+    ///
+    /// Returns `None` if the index is a [`usize`] and `self` is not an array, or if the index is
+    /// a string and `self` is not a table.
     #[inline]
     pub fn get_mut(&mut self, index: impl Index) -> Option<&mut Self> {
         index.get_mut(self)
@@ -279,6 +302,7 @@ impl fmt::Display for Value {
     }
 }
 
+/// A trait for indexing into TOML values.
 pub trait Index: private::Sealed {
     #[doc(hidden)]
     fn get<'a>(&self, value: &'a Value) -> Option<&'a Value>;

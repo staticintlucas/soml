@@ -1,3 +1,5 @@
+//! TOML deserialization functions and trait implementations.
+
 use std::borrow::Cow;
 use std::io;
 use std::num::NonZero;
@@ -21,6 +23,11 @@ mod error;
 mod parser;
 mod reader;
 
+/// Deserialize a value of type `T` from a TOML string slice.
+///
+/// # Errors
+///
+/// This function will return an error if the input slice is not valid TOML.
 #[inline]
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
@@ -29,6 +36,11 @@ where
     T::deserialize(Deserializer::from_str(s))
 }
 
+/// Deserialize a value of type `T` from a TOML byte slice.
+///
+/// # Errors
+///
+/// This function will return an error if the input slice is not valid TOML.
 #[inline]
 pub fn from_slice<'a, T>(bytes: &'a [u8]) -> Result<T>
 where
@@ -37,6 +49,11 @@ where
     T::deserialize(Deserializer::from_slice(bytes))
 }
 
+/// Deserialize a value of type `T` from an [`io::Read`] source.
+///
+/// # Errors
+///
+/// This function will return an error if the source is not valid TOML.
 #[inline]
 pub fn from_reader<R, T>(read: R) -> Result<T>
 where
@@ -46,6 +63,7 @@ where
     T::deserialize(Deserializer::from_reader(read))
 }
 
+/// A deserializer for a TOML document.
 #[derive(Debug)]
 pub struct Deserializer<'de, R>
 where
@@ -55,6 +73,7 @@ where
 }
 
 impl<'de> Deserializer<'de, SliceReader<'de>> {
+    /// Create a new deserializer from a string slice.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     #[inline]
@@ -64,6 +83,7 @@ impl<'de> Deserializer<'de, SliceReader<'de>> {
         }
     }
 
+    /// Create a new deserializer from a byte slice.
     #[must_use]
     #[inline]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
@@ -77,6 +97,7 @@ impl<R> Deserializer<'_, IoReader<R>>
 where
     R: io::Read,
 {
+    /// Create a new deserializer from an [`io::Read`] source.
     #[must_use]
     #[inline]
     pub fn from_reader(read: R) -> Self {
