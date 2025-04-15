@@ -59,11 +59,16 @@
 #![cfg_attr(coverage, expect(unstable_features))]
 #![cfg_attr(coverage, feature(coverage_attribute))]
 
+#[doc(inline)]
 pub use self::de::{from_reader, from_slice, from_str, Deserializer};
+#[doc(inline)]
+pub use self::map::Table;
+#[doc(inline)]
 pub use self::ser::{to_string, Serializer};
+#[doc(inline)]
 pub use self::value::Value;
 
-pub mod value;
-
 pub mod de;
+pub mod map;
 pub mod ser;
+pub mod value;
