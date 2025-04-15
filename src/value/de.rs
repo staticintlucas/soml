@@ -1,9 +1,4 @@
 use std::borrow::Cow;
-#[cfg(not(test))]
-use std::collections::hash_map;
-use std::collections::HashMap;
-#[cfg(test)]
-use std::collections::{btree_map, BTreeMap};
 use std::result::Result as StdResult;
 use std::{fmt, slice, vec};
 
@@ -16,6 +11,7 @@ use super::datetime::{
 };
 use super::{Type, Value};
 use crate::de::{Error, Result};
+use crate::{map, Table};
 
 impl Value {
     /// Try to convert the value into type `T`.
@@ -228,7 +224,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 A: de::MapAccess<'de>,
             {
                 let Some(key) = map.next_key::<MapField<'de>>()? else {
-                    return Ok(Self::Value::Table(HashMap::new()));
+                    return Ok(Self::Value::Table(Table::new()));
                 };
 
                 match key {
@@ -285,7 +281,7 @@ impl<'de> de::Deserialize<'de> for Value {
                         }
                     }
                     MapField::Other(key) => {
-                        let mut result = HashMap::with_capacity(map.size_hint().unwrap_or(0));
+                        let mut result = Table::new();
                         result.insert(key.into_owned(), map.next_value()?);
                         while let Some((key, value)) = map.next_entry()? {
                             result.insert(key, value);
@@ -418,24 +414,15 @@ impl<'de> de::SeqAccess<'de> for SeqAccess {
 }
 
 struct MapAccess {
-    #[cfg(test)]
-    kv_pairs: btree_map::IntoIter<String, Value>,
-    #[cfg(not(test))]
-    kv_pairs: hash_map::IntoIter<String, Value>,
+    kv_pairs: map::IntoIter,
     next_value: Option<Value>,
 }
 
 impl MapAccess {
     #[inline]
-    fn new(table: HashMap<String, Value>) -> Self {
-        let kv_pairs = table.into_iter();
-
-        // Use a sorted BTreeMap for deterministic test output
-        #[cfg(test)]
-        let kv_pairs = kv_pairs.collect::<BTreeMap<_, _>>().into_iter();
-
+    fn new(table: Table) -> Self {
         Self {
-            kv_pairs,
+            kv_pairs: table.into_iter(),
             next_value: None,
         }
     }
@@ -500,7 +487,7 @@ struct EnumAccess {
 
 impl EnumAccess {
     #[inline]
-    fn new(table: HashMap<String, Value>) -> Result<Self> {
+    fn new(table: Table) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
             Error::invalid_value(
@@ -690,24 +677,15 @@ impl<'de> de::SeqAccess<'de> for SeqRefAccess<'de> {
 }
 
 struct MapRefAccess<'de> {
-    #[cfg(test)]
-    kv_pairs: btree_map::IntoIter<&'de String, &'de Value>,
-    #[cfg(not(test))]
-    kv_pairs: hash_map::Iter<'de, String, Value>,
+    kv_pairs: map::Iter<'de>,
     next_value: Option<&'de Value>,
 }
 
 impl<'de> MapRefAccess<'de> {
     #[inline]
-    fn new(table: &'de HashMap<String, Value>) -> Self {
-        let kv_pairs = table.iter();
-
-        // Use a sorted BTreeMap for deterministic test output
-        #[cfg(test)]
-        let kv_pairs = kv_pairs.collect::<BTreeMap<_, _>>().into_iter();
-
+    fn new(table: &'de Table) -> Self {
         Self {
-            kv_pairs,
+            kv_pairs: table.iter(),
             next_value: None,
         }
     }
@@ -772,7 +750,7 @@ struct EnumRefAccess<'de> {
 
 impl<'de> EnumRefAccess<'de> {
     #[inline]
-    fn new(table: &'de HashMap<String, Value>) -> Result<Self> {
+    fn new(table: &'de Table) -> Result<Self> {
         let mut table = table.iter();
         let (variant, value) = table.next().ok_or_else(|| {
             Error::invalid_value(
@@ -847,9 +825,10 @@ impl<'de> de::VariantAccess<'de> for EnumRefAccess<'de> {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use std::collections::HashMap;
     use std::marker::PhantomData;
 
-    use maplit::hashmap;
+    use maplit::{btreemap, hashmap};
     use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
     use serde::Deserialize;
 
@@ -1019,7 +998,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             value,
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "one".to_string() => Value::Integer(1),
                 "two".to_string() => Value::Integer(2),
                 "three".to_string() => Value::Integer(3),
@@ -1031,7 +1010,7 @@ mod tests {
             Error,
         >::new(std::iter::empty()))
         .unwrap();
-        assert_eq!(value, Value::Table(hashmap! {}));
+        assert_eq!(value, Value::Table(btreemap! {}));
 
         let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
             std::iter::once((
@@ -1199,7 +1178,7 @@ mod tests {
         ]))
         .unwrap();
 
-        HashMap::<String, i32>::deserialize(Value::Table(hashmap! {
+        HashMap::<String, i32>::deserialize(Value::Table(btreemap! {
             "abc".into() => Value::Integer(123),
             "def".into() => Value::Integer(456),
             "ghi".into() => Value::Integer(789),
@@ -1229,7 +1208,7 @@ mod tests {
         let result = Enum::deserialize(Value::String("A".to_string())).unwrap();
         assert_eq!(result, Enum::A);
 
-        let result = Enum::deserialize(Value::Table(hashmap! {
+        let result = Enum::deserialize(Value::Table(btreemap! {
             "B".into() => Value::Integer(123),
         }))
         .unwrap();
@@ -1349,7 +1328,7 @@ mod tests {
 
     #[test]
     fn map_access() {
-        let mut map_access = MapAccess::new(hashmap! {
+        let mut map_access = MapAccess::new(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1370,7 +1349,7 @@ mod tests {
 
         assert_eq!(map_access.size_hint().unwrap(), 0);
 
-        let mut map_access = MapAccess::new(hashmap! {
+        let mut map_access = MapAccess::new(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1401,15 +1380,15 @@ mod tests {
     #[test]
     #[should_panic = "MapAccess::next_value called without calling MapAccess::next_key first"]
     fn map_access_empty() {
-        let mut map_access = MapAccess::new(hashmap! {});
+        let mut map_access = MapAccess::new(btreemap! {});
 
         map_access.next_value::<i32>().unwrap();
     }
 
     #[test]
     fn enum_access_unit() {
-        let enum_access = EnumAccess::new(hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {}),
+        let enum_access = EnumAccess::new(btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {}),
         })
         .unwrap();
 
@@ -1417,7 +1396,7 @@ mod tests {
         assert_eq!(variant, "variant".to_string());
         assert!(value.unit_variant().is_ok());
 
-        let enum_access = EnumAccess::new(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Integer(42),
         })
         .unwrap();
@@ -1426,8 +1405,8 @@ mod tests {
         assert_eq!(variant, "variant".to_string());
         assert!(value.unit_variant().is_err());
 
-        let enum_access = EnumAccess::new(hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {
                 "foo".to_string() => Value::Integer(42),
             }),
         })
@@ -1440,7 +1419,7 @@ mod tests {
 
     #[test]
     fn enum_access_newtype() {
-        let enum_access = EnumAccess::new(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Integer(42),
         })
         .unwrap();
@@ -1473,7 +1452,7 @@ mod tests {
             }
         }
 
-        let enum_access = EnumAccess::new(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Array(vec![
                 Value::Integer(1),
                 Value::Integer(2),
@@ -1510,8 +1489,8 @@ mod tests {
             }
         }
 
-        let enum_access = EnumAccess::new(hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {
                 "one".to_string() => Value::Integer(1),
                 "two".to_string() => Value::Integer(2),
             }),
@@ -1531,10 +1510,10 @@ mod tests {
 
     #[test]
     fn enum_access_error() {
-        let enum_access = EnumAccess::new(hashmap! {});
+        let enum_access = EnumAccess::new(btreemap! {});
         assert!(enum_access.is_err());
 
-        let enum_access = EnumAccess::new(hashmap! {
+        let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Integer(1),
             "variant2".to_string() => Value::Integer(2),
         });
@@ -1558,7 +1537,7 @@ mod tests {
         ]))
         .unwrap();
 
-        HashMap::<String, i32>::deserialize(&Value::Table(hashmap! {
+        HashMap::<String, i32>::deserialize(&Value::Table(btreemap! {
             "abc".into() => Value::Integer(123),
             "def".into() => Value::Integer(456),
             "ghi".into() => Value::Integer(789),
@@ -1588,7 +1567,7 @@ mod tests {
         let result = Enum::deserialize(&Value::String("A".to_string())).unwrap();
         assert_eq!(result, Enum::A);
 
-        let result = Enum::deserialize(&Value::Table(hashmap! {
+        let result = Enum::deserialize(&Value::Table(btreemap! {
             "B".into() => Value::Integer(123),
         }))
         .unwrap();
@@ -1705,7 +1684,7 @@ mod tests {
 
     #[test]
     fn map_ref_access() {
-        let table = hashmap! {
+        let table = btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1727,7 +1706,7 @@ mod tests {
 
         assert_eq!(map_access.size_hint().unwrap(), 0);
 
-        let table = hashmap! {
+        let table = btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1759,7 +1738,7 @@ mod tests {
     #[test]
     #[should_panic = "MapRefAccess::next_value called without calling MapRefAccess::next_key first"]
     fn map_ref_access_empty() {
-        let table = hashmap! {};
+        let table = btreemap! {};
         let mut map_access = MapRefAccess::new(&table);
 
         map_access.next_value::<i32>().unwrap();
@@ -1767,8 +1746,8 @@ mod tests {
 
     #[test]
     fn enum_ref_access_unit() {
-        let table = hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {}),
+        let table = btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {}),
         };
         let enum_access = EnumRefAccess::new(&table).unwrap();
 
@@ -1776,7 +1755,7 @@ mod tests {
         assert_eq!(variant, "variant".to_string());
         assert!(value.unit_variant().is_ok());
 
-        let table = hashmap! {
+        let table = btreemap! {
             "variant".to_string() => Value::Integer(42),
         };
         let enum_access = EnumRefAccess::new(&table).unwrap();
@@ -1785,8 +1764,8 @@ mod tests {
         assert_eq!(variant, "variant".to_string());
         assert!(value.unit_variant().is_err());
 
-        let table = hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {
+        let table = btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {
                 "foo".to_string() => Value::Integer(42),
             }),
         };
@@ -1799,7 +1778,7 @@ mod tests {
 
     #[test]
     fn enum_ref_access_newtype() {
-        let table = hashmap! {
+        let table = btreemap! {
             "variant".to_string() => Value::Integer(42),
         };
         let enum_access = EnumRefAccess::new(&table).unwrap();
@@ -1832,7 +1811,7 @@ mod tests {
             }
         }
 
-        let table = hashmap! {
+        let table = btreemap! {
             "variant".to_string() => Value::Array(vec![
                 Value::Integer(1),
                 Value::Integer(2),
@@ -1869,8 +1848,8 @@ mod tests {
             }
         }
 
-        let table = hashmap! {
-            "variant".to_string() => Value::Table(hashmap! {
+        let table = btreemap! {
+            "variant".to_string() => Value::Table(btreemap! {
                 "one".to_string() => Value::Integer(1),
                 "two".to_string() => Value::Integer(2),
             }),
@@ -1890,11 +1869,11 @@ mod tests {
 
     #[test]
     fn enum_ref_access_error() {
-        let table = hashmap! {};
+        let table = btreemap! {};
         let enum_access = EnumRefAccess::new(&table);
         assert!(enum_access.is_err());
 
-        let table = hashmap! {
+        let table = btreemap! {
             "variant".to_string() => Value::Integer(1),
             "variant2".to_string() => Value::Integer(2),
         };

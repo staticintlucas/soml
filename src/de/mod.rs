@@ -872,7 +872,7 @@ mod tests {
     use assert_matches::assert_matches;
     use indoc::indoc;
     use isclose::{assert_is_close, IsClose as _};
-    use maplit::hashmap;
+    use maplit::{btreemap, hashmap};
     use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
     use serde_bytes::ByteBuf;
 
@@ -1390,13 +1390,13 @@ mod tests {
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
             Value::Array(vec![
-                Value::Table(hashmap! {
+                Value::Table(btreemap! {
                     "abc".into() => Value::Integer(123),
                 }),
-                Value::Table(hashmap! {
+                Value::Table(btreemap! {
                     "def".into() => Value::Integer(456),
                 }),
-                Value::Table(hashmap! {
+                Value::Table(btreemap! {
                     "ghi".into() => Value::Integer(789),
                 }),
             ])
@@ -1407,7 +1407,7 @@ mod tests {
         }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "abc".into() => Value::Integer(123),
             })
         );
@@ -1417,7 +1417,7 @@ mod tests {
         }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "abc".into() => Value::Integer(123),
             })
         );
@@ -1427,7 +1427,7 @@ mod tests {
         }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "abc".into() => Value::Integer(123),
             })
         );
@@ -1437,7 +1437,7 @@ mod tests {
         }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "abc".into() => Value::Integer(123),
             })
         );

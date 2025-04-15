@@ -12,6 +12,7 @@ pub use self::datetime::{
     Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
 use self::ser::ToValueSerializer;
+use crate::Table;
 
 pub(crate) mod datetime;
 mod de;
@@ -70,7 +71,7 @@ pub enum Value {
     /// An array of values.
     Array(Vec<Self>),
     /// A table of key-value pairs.
-    Table(HashMap<String, Self>),
+    Table(Table),
 }
 
 impl Value {
@@ -232,7 +233,7 @@ impl Value {
         }
     }
 
-    /// If `self` is an array, returns a mutable reference as a [`Vec<Value>`].
+    /// If `self` is an array, returns it as a mutable reference to a [`Vec<Value>`].
     #[must_use]
     #[inline]
     pub fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
@@ -242,20 +243,20 @@ impl Value {
         }
     }
 
-    /// If `self` is a table, returns it as a [`HashMap<String, Self>`].
+    /// If `self` is a table, returns it as a [`Table`].
     #[must_use]
     #[inline]
-    pub fn as_table(&self) -> Option<&HashMap<String, Self>> {
+    pub fn as_table(&self) -> Option<&Table> {
         match *self {
             Self::Table(ref table) => Some(table),
             _ => None,
         }
     }
 
-    /// If `self` is a table, returns a mutable reference as a [`HashMap<String, Self>`].
+    /// If `self` is a table, returns it as a mutable reference to a [`Table`].
     #[must_use]
     #[inline]
-    pub fn as_table_mut(&mut self) -> Option<&mut HashMap<String, Self>> {
+    pub fn as_table_mut(&mut self) -> Option<&mut Table> {
         match *self {
             Self::Table(ref mut table) => Some(table),
             _ => None,
@@ -933,7 +934,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             value,
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "a".to_string() => Value::Integer(1),
                 "b".to_string() => Value::Integer(2),
                 "c".to_string() => Value::Integer(3),
@@ -943,7 +944,7 @@ mod tests {
 
     #[test]
     fn value_get() {
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "a".to_string() => Value::Integer(1),
             "b".to_string() => Value::String("Hello!".to_string()),
         });
@@ -958,7 +959,7 @@ mod tests {
 
     #[test]
     fn value_get_mut() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "a".to_string() => Value::Integer(1),
             "b".to_string() => Value::String("Hello!".to_string()),
         });
@@ -1057,7 +1058,7 @@ mod tests {
         assert!(value.is_array());
         assert!(!value.is_table());
 
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1157,7 +1158,7 @@ mod tests {
         assert!(value.as_table().is_none());
         assert!(value.as_table_mut().is_none());
 
-        let table = hashmap! {
+        let table = btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1200,7 +1201,7 @@ mod tests {
                 Value::Integer(2),
                 Value::Integer(3),
             ]),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "one".to_string() => Value::Integer(1),
                 "two".to_string() => Value::Integer(2),
                 "three".to_string() => Value::Integer(3),
@@ -1227,7 +1228,7 @@ mod tests {
                 Value::Integer(5),
                 Value::Integer(6),
             ]),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "four".to_string() => Value::Integer(4),
                 "five".to_string() => Value::Integer(5),
                 "six".to_string() => Value::Integer(6),
@@ -1282,7 +1283,7 @@ mod tests {
         ]);
         assert_eq!(value.typ(), Type::Array);
 
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1327,7 +1328,7 @@ mod tests {
         ]);
         assert_eq!(value.type_str(), "array");
 
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1372,7 +1373,7 @@ mod tests {
         ]);
         assert_eq!(value.to_string(), "[1, 2, 3]");
 
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1405,7 +1406,7 @@ mod tests {
         assert_eq!(1.index_mut(&mut value), &Value::Integer(2));
         assert_eq!(2.index_mut(&mut value), &Value::Integer(3));
 
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1444,7 +1445,7 @@ mod tests {
     #[test]
     #[should_panic = "cannot index TOML table with `usize`"]
     fn usize_index_type_error() {
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1455,7 +1456,7 @@ mod tests {
     #[test]
     #[should_panic = "cannot index TOML table with `usize`"]
     fn usize_index_mut_type_error() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1465,7 +1466,7 @@ mod tests {
 
     #[test]
     fn str_index() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1514,7 +1515,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn str_index_missing_error() {
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1525,7 +1526,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn str_index_mut_missing_error() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1557,7 +1558,7 @@ mod tests {
 
     #[test]
     fn string_index() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1627,7 +1628,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn string_index_missing_error() {
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1638,7 +1639,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn string_index_mut_missing_error() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1670,7 +1671,7 @@ mod tests {
 
     #[test]
     fn str_ref_index() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1719,7 +1720,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn str_ref_index_missing_error() {
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1730,7 +1731,7 @@ mod tests {
     #[test]
     #[should_panic = r#"key "four" is not present in TOML table"#]
     fn str_ref_index_mut_missing_error() {
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1771,7 +1772,7 @@ mod tests {
         assert_eq!(value.index(&1), &Value::Integer(2));
         assert_eq!(value.index(&2), &Value::Integer(3));
 
-        let value = Value::Table(hashmap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1792,7 +1793,7 @@ mod tests {
         assert_eq!(value.index_mut(&1), &Value::Integer(2));
         assert_eq!(value.index_mut(&2), &Value::Integer(3));
 
-        let mut value = Value::Table(hashmap! {
+        let mut value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -1869,7 +1870,7 @@ mod tests {
                 "b" => 2,
                 "c" => 3,
             }),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "a".to_string() => Value::Integer(1),
                 "b".to_string() => Value::Integer(2),
                 "c".to_string() => Value::Integer(3),
@@ -1881,7 +1882,7 @@ mod tests {
                 "b" => 2,
                 "c" => 3,
             }),
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "a".to_string() => Value::Integer(1),
                 "b".to_string() => Value::Integer(2),
                 "c".to_string() => Value::Integer(3),
@@ -1951,9 +1952,9 @@ mod tests {
 
         assert_eq!(
             result,
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "title".to_string() => Value::String("TOML Example".to_string()),
-                "owner".to_string() => Value::Table(hashmap! {
+                "owner".to_string() => Value::Table(btreemap! {
                     "name".to_string() => Value::String("Tom Preston-Werner".to_string()),
                     "dob".to_string() => Value::Datetime(Datetime {
                         date: Some(LocalDate {
@@ -1970,25 +1971,25 @@ mod tests {
                         offset: Some(Offset::Custom { minutes: -480 }),
                     }),
                 }),
-                "database".to_string() => Value::Table(hashmap! {
+                "database".to_string() => Value::Table(btreemap! {
                     "server".to_string() => Value::String("192.168.1.1".to_string()),
                     "ports".to_string() => Value::Array(vec![Value::Integer(8000), Value::Integer(8001), Value::Integer(8002)]),
                     "connection_max".to_string() => Value::Integer(5000),
                     "enabled".to_string() => Value::Boolean(true),
                 }),
-                "servers".to_string() => Value::Table(hashmap! {
-                    "alpha".to_string() => Value::Table(hashmap! {
+                "servers".to_string() => Value::Table(btreemap! {
+                    "alpha".to_string() => Value::Table(btreemap! {
                         "ip".to_string() => Value::String("10.0.0.1".to_string()),
                         "dc".to_string() => Value::String("eqdc10".to_string()),
                     }),
-                    "beta".to_string() => Value::Table(hashmap! {
+                    "beta".to_string() => Value::Table(btreemap! {
                         "ip".to_string() => Value::String("10.0.0.2".to_string()),
                         "dc".to_string() => Value::String("eqdc10".to_string()),
                     }),
                 }),
-                "clients".to_string() => Value::Table(hashmap! {
+                "clients".to_string() => Value::Table(btreemap! {
                     "hosts".to_string() => Value::Array(vec![Value::String("alpha".to_string()), Value::String("omega".to_string())]),
-                    "data".to_string() => Value::Table(hashmap! {
+                    "data".to_string() => Value::Table(btreemap! {
                         "gamma".to_string() => Value::Integer(1),
                         "delta".to_string() => Value::Integer(2),
                     }),
@@ -2012,7 +2013,7 @@ mod tests {
         let result = Value::from_iter([("one", 1), ("two", 2), ("three", 3)]);
         assert_eq!(
             result,
-            Value::Table(hashmap! {
+            Value::Table(btreemap! {
                 "one".to_string() => Value::Integer(1),
                 "two".to_string() => Value::Integer(2),
                 "three".to_string() => Value::Integer(3),

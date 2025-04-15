@@ -1,13 +1,12 @@
 #[cfg(test)]
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::str::FromStr as _;
 
 use serde::ser;
 
 use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime, Value};
-use crate::__serialize_unimplemented;
 use crate::ser::{Error, ErrorKind};
+use crate::{Table, __serialize_unimplemented};
 
 impl ser::Serialize for Value {
     #[inline]
@@ -331,13 +330,13 @@ impl ser::SerializeTupleVariant for ToValueWrappedArraySerializer {
 
 pub struct ToValueTableSerializer {
     key: Option<String>,
-    table: HashMap<String, Value>,
+    table: Table,
 }
 
 impl ToValueTableSerializer {
     #[allow(clippy::unnecessary_wraps)]
-    fn start(len: Option<usize>) -> Result<Self, Error> {
-        let table = HashMap::with_capacity(len.unwrap_or(0).min(256));
+    fn start(_len: Option<usize>) -> Result<Self, Error> {
+        let table = Table::new(); // BTreeMap has not with_capacity
         Ok(Self { key: None, table })
     }
 }
@@ -523,7 +522,7 @@ impl ser::Serializer for RawStringSerializer {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
-    use maplit::hashmap;
+    use maplit::btreemap;
     use serde::Serializer as _;
 
     use super::*;
@@ -571,7 +570,7 @@ mod tests {
         .unwrap();
         assert_eq!(result, "[1,2,3]");
 
-        let result = serde_json::to_string(&Value::Table(hashmap! {
+        let result = serde_json::to_string(&Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
@@ -671,7 +670,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            Value::Table(hashmap! { "NewtypeVariant".to_string() => Value::Integer(42) })
+            Value::Table(btreemap! { "NewtypeVariant".to_string() => Value::Integer(42) })
         );
 
         // These create a type-specific serializer which is tested below, so just unwrap to test for panics
@@ -759,7 +758,7 @@ mod tests {
         assert_eq!(
             result,
             Value::Table(
-                hashmap! { "TupleVariant".to_string() => Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]) }
+                btreemap! { "TupleVariant".to_string() => Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]) }
             )
         );
     }
@@ -779,7 +778,7 @@ mod tests {
         assert_eq!(
             result,
             Value::Table(
-                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+                btreemap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
             )
         );
     }
@@ -805,7 +804,7 @@ mod tests {
         assert_eq!(
             result,
             Value::Table(
-                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+                btreemap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
             )
         );
     }
@@ -835,7 +834,7 @@ mod tests {
         assert_eq!(
             result,
             Value::Table(
-                hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
+                btreemap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }
             )
         );
 
@@ -959,7 +958,7 @@ mod tests {
         assert_eq!(
             result,
             Value::Table(
-                hashmap! { "StructVariant".to_string() => Value::Table(hashmap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }) }
+                btreemap! { "StructVariant".to_string() => Value::Table(btreemap! { "one".to_string() => Value::Integer(1), "two".to_string() => Value::Integer(2), "three".to_string() => Value::Integer(3) }) }
             )
         );
     }
