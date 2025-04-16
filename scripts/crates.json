@@ -2,6 +2,6 @@
   { "package": "soml", "path": ".", "maintained": true, "toml-ver": "1.0", "url": "https://crates.io/crates/soml" },
   { "package": "toml", "version": "0.8", "maintained": true, "toml-ver": "1.0", "url": "https://crates.io/crates/toml" },
   { "package": "toml", "version": "0.5", "maintained": false, "toml-ver": "0.5", "url": "https://crates.io/crates/toml" },
-  { "package": "basic-toml", "version": "0.1", "maintained": false, "toml-ver": "0.5 †", "url": "https://crates.io/crates/basic-toml" },
+  { "package": "basic-toml", "version": "0.1", "maintained": false, "toml-ver": "0.5 (partial †)", "url": "https://crates.io/crates/basic-toml" },
   { "package": "serde_json", "version": "1.0", "maintained": true, "toml-ver": "N/A", "url": "https://crates.io/crates/serde_json" }
 ]
