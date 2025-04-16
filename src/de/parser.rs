@@ -1,5 +1,6 @@
 use core::{fmt, str};
 use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::io;
 use std::marker::PhantomData;
 
@@ -169,12 +170,12 @@ where
     R: Reader<'de>,
 {
     pub fn parse(&mut self) -> Result<Value<'de>> {
-        let mut root = Table::new();
+        let mut root = Table::with_capacity(10);
 
         // The currently opened table
         let mut table = &mut root;
         // The path to the currently opened table (used for error messages)
-        let mut table_path = Vec::new();
+        let mut table_path = Vec::with_capacity(16);
 
         loop {
             self.skip_comments_and_whitespace()?;
@@ -996,7 +997,7 @@ where
     }
 
     fn parse_inline_table(&mut self) -> Result<Table<'de>> {
-        let mut result = Table::new();
+        let mut result = Table::with_capacity(10);
 
         self.skip_whitespace()?;
 
@@ -1093,40 +1094,60 @@ where
         // Navigate to the parent table, either a subtable with the given name or the last element
         // in an array of tables
         let parent = path.iter().try_fold(parent, |table, key| {
-            let entry = table
-                .entry(key.clone())
-                .or_insert_with(|| Value::UndefinedTable(Table::new()));
-            match *entry {
-                Value::Table(ref mut subtable)
-                | Value::UndefinedTable(ref mut subtable)
-                | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
-                Value::ArrayOfTables(ref mut array) => {
-                    Some(array.last_mut().unwrap_or_else(|| {
-                        unreachable!("we never insert an empty array of tables")
-                    }))
+            match table.entry(key.clone()) {
+                Entry::Vacant(entry) => {
+                    // Create a new UndefinedTable if it doesn't exist
+                    let value = entry.insert(Value::UndefinedTable(Table::with_capacity(10)));
+
+                    // Return a mutable reference to the new table
+                    debug_assert!(matches!(*value, Value::UndefinedTable(_)));
+                    match *value {
+                        Value::UndefinedTable(ref mut subtable) => Some(subtable),
+                        _ => None, // unreachable, we just inserted an UndefinedTable
+                    }
                 }
-                _ => None,
+                Entry::Occupied(entry) => {
+                    match *entry.into_mut() {
+                        Value::Table(ref mut subtable)
+                        | Value::UndefinedTable(ref mut subtable)
+                        | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
+                        Value::ArrayOfTables(ref mut array) => {
+                            // we never insert an empty array of tables, so this should always be some
+                            debug_assert!(!array.is_empty());
+                            array.last_mut()
+                        }
+                        _ => None,
+                    }
+                }
             }
         })?;
 
         // Create the table in the parent, or error if a table already exists
-        match parent.get(key) {
-            None => {
-                parent.insert(key.clone(), Value::Table(Table::new()));
+        let value = match parent.entry(key.clone()) {
+            Entry::Vacant(entry) => {
+                // Create a new Table if it doesn't exist
+                entry.insert(Value::Table(Table::with_capacity(10)))
             }
-            Some(&Value::UndefinedTable(_)) => {
-                // Need to remove the entry to take ownership of the subtable
-                let Some(Value::UndefinedTable(subtable)) = parent.remove(key) else {
-                    unreachable!("we just checked this key")
+            Entry::Occupied(mut entry) => {
+                let Value::UndefinedTable(ref mut subtable) = *entry.get_mut() else {
+                    return None; // Table already exists and is not UndefinedTable
                 };
-                parent.insert(key.clone(), Value::Table(subtable));
+
+                // Pull out the subtable to take ownership of it
+                let subtable = std::mem::take(subtable);
+                // Replace the UndefinedTable with a Table
+                entry.insert(Value::Table(subtable));
+
+                entry.into_mut()
             }
-            Some(_) => return None,
-        }
-        let Some(&mut Value::Table(ref mut subtable)) = parent.get_mut(key) else {
-            unreachable!("we just inserted a Table")
         };
-        Some(subtable)
+
+        // Return a mutable reference to the new table
+        debug_assert!(matches!(*value, Value::Table(_)));
+        match *value {
+            Value::Table(ref mut subtable) => Some(subtable),
+            _ => None, // unreachable, we just inserted an Table
+        }
     }
 
     fn get_array_header<'a>(
@@ -1140,28 +1161,39 @@ where
         // Navigate to the parent table, either a subtable with the given name or the last element
         // in an array of tables
         let parent = path.iter().try_fold(parent, |table, key| {
-            let entry = table
-                .entry(key.clone())
-                .or_insert_with(|| Value::UndefinedTable(Table::new()));
-            match *entry {
-                Value::Table(ref mut subtable)
-                | Value::UndefinedTable(ref mut subtable)
-                | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
-                Value::ArrayOfTables(ref mut array) => {
-                    Some(array.last_mut().unwrap_or_else(|| {
-                        unreachable!("we never insert an empty array of tables")
-                    }))
+            match table.entry(key.clone()) {
+                Entry::Vacant(entry) => {
+                    // Create a new UndefinedTable if it doesn't exist
+                    let value = entry.insert(Value::UndefinedTable(Table::with_capacity(10)));
+
+                    // Return a mutable reference to the new table
+                    debug_assert!(matches!(*value, Value::UndefinedTable(_)));
+                    match *value {
+                        Value::UndefinedTable(ref mut subtable) => Some(subtable),
+                        _ => None, // unreachable, we just inserted an UndefinedTable
+                    }
                 }
-                _ => None,
+                Entry::Occupied(entry) => {
+                    match *entry.into_mut() {
+                        Value::Table(ref mut subtable)
+                        | Value::UndefinedTable(ref mut subtable)
+                        | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
+                        Value::ArrayOfTables(ref mut array) => {
+                            // we never insert an empty array of tables, so this should always be some
+                            debug_assert!(!array.is_empty());
+                            array.last_mut()
+                        }
+                        _ => None,
+                    }
+                }
             }
         })?;
 
-        // Then find the array of tables in the parent, or create a new one if it doesn't exist
-        if let Value::ArrayOfTables(ref mut subarray) = *parent
+        let value = parent
             .entry(key.clone())
-            .or_insert_with(|| Value::ArrayOfTables(Vec::new()))
-        {
-            subarray.push(Table::new());
+            .or_insert_with(|| Value::ArrayOfTables(Vec::with_capacity(16)));
+        if let Value::ArrayOfTables(ref mut subarray) = *value {
+            subarray.push(Table::with_capacity(10));
             subarray.last_mut()
         } else {
             None
@@ -1174,24 +1206,22 @@ where
     ) -> Option<&'a mut Table<'de>> {
         // Navigate to the table, converting any UndefinedTables to DottedKeyTables
         path.iter().try_fold(parent, |table, key| {
-            match table.get(key) {
-                None => {
-                    table.insert(key.clone(), Value::DottedKeyTable(Table::new()));
-                }
-                Some(&Value::UndefinedTable(_)) => {
-                    // Need to remove the entry to take ownership of the subtable
-                    let Some(Value::UndefinedTable(subtable)) = table.remove(key) else {
-                        unreachable!("we just checked this key")
-                    };
-                    table.insert(key.clone(), Value::DottedKeyTable(subtable));
-                }
-                Some(&Value::DottedKeyTable(_)) => {} // Already exists
-                Some(_) => return None,
+            let value = table
+                .entry(key.clone())
+                .or_insert_with(|| Value::DottedKeyTable(Table::with_capacity(10)));
+
+            if let Value::UndefinedTable(ref mut subtable) = *value {
+                // Pull out the subtable to take ownership of it
+                let subtable = std::mem::take(subtable);
+                // Replace the UndefinedTable with a DottedKeyTable
+                *value = Value::DottedKeyTable(subtable);
             }
-            let Some(&mut Value::DottedKeyTable(ref mut subtable)) = table.get_mut(key) else {
-                unreachable!("we just inserted a DottedKeyTable")
-            };
-            Some(subtable)
+
+            // Return a mutable reference to the new table
+            match *value {
+                Value::DottedKeyTable(ref mut subtable) => Some(subtable),
+                _ => None, // Table already exists and is not UndefinedTable
+            }
         })
     }
 
@@ -1203,7 +1233,7 @@ where
         path.iter().try_fold(parent, |table, key| {
             let entry = table
                 .entry(key.clone())
-                .or_insert_with(|| Value::DottedKeyTable(Table::new()));
+                .or_insert_with(|| Value::DottedKeyTable(Table::with_capacity(10)));
             match *entry {
                 Value::DottedKeyTable(ref mut subtable) => Some(subtable),
                 _ => None,
@@ -1390,6 +1420,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn parser_parse() {
         let mut parser = Parser::from_str("a = 1\nb = 2");
