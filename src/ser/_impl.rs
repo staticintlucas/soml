@@ -570,36 +570,38 @@ impl ser::Serializer for ValueKindSerializer {
 }
 
 #[doc(hidden)]
-pub trait Integer: lexical::ToLexicalWithOptions<Options = lexical::WriteIntegerOptions> {}
+pub trait Integer: Sized {
+    fn to_string(self) -> String;
+}
 
 macro_rules! impl_integer {
-    ($($t:ident)*) => ($(impl Integer for $t {})*);
+    ($($t:ident)*) => ($(
+        impl Integer for $t {
+            fn to_string(self) -> String {
+                <Self as std::string::ToString>::to_string(&self)
+            }
+        }
+    )*);
 }
 
 impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
 
 #[doc(hidden)]
-pub trait Float: lexical::ToLexicalWithOptions<Options = lexical::WriteFloatOptions> {
-    fn is_nan(self) -> bool;
-    fn is_finite(self) -> bool;
-    fn is_sign_positive(self) -> bool;
+pub trait Float {
+    fn to_string(self) -> String;
 }
 
 macro_rules! impl_float {
     ($($t:ident)*) => ($(impl Float for $t {
-        #[inline]
-        fn is_nan(self) -> bool {
-            self.is_nan()
-        }
-
-        #[inline]
-        fn is_finite(self) -> bool {
-            self.is_finite()
-        }
-
-        #[inline]
-        fn is_sign_positive(self) -> bool {
-            self.is_sign_positive()
+        fn to_string(self) -> String {
+            if self.is_nan() {
+                // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase and
+                // we want to preserve the sign
+                if self.is_sign_positive() { "nan" } else { "-nan" }.into()
+            } else {
+                let mut buf = ryu::Buffer::new();
+                buf.format(self).to_string()
+            }
         }
     })*);
 }

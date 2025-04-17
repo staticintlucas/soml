@@ -4,7 +4,6 @@ use std::collections::hash_map::Entry;
 use std::io;
 use std::marker::PhantomData;
 
-use lexical::{FromLexicalWithOptions as _, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de;
 
 use super::error::{ErrorKind, Result};
@@ -371,7 +370,7 @@ where
                         {
                             self.parse_datetime()
                         } else {
-                            Err(ErrorKind::InvalidNumber("leading zero".into()).into())
+                            self.parse_number_decimal()
                         }
                     }
                     // Parse just the 0
@@ -580,11 +579,6 @@ where
     }
 
     fn parse_escape_seq(&mut self) -> Result<char> {
-        const HEX_ESCAPE_FORMAT: u128 = NumberFormatBuilder::new()
-            .mantissa_radix(16)
-            .no_positive_mantissa_sign(true)
-            .build();
-
         let Some(char) = self.reader.peek()? else {
             return Err(ErrorKind::UnterminatedString.into());
         };
@@ -603,16 +597,11 @@ where
                     .reader
                     .next_n(4)?
                     .ok_or(ErrorKind::UnterminatedString)?;
-                let options = ParseIntegerOptions::default();
-                u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
+                let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
+                u32::from_str_radix(str, 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .ok_or_else(|| {
-                        str::from_utf8(bytes.as_ref()).map_or_else(
-                            |_| ErrorKind::InvalidEncoding.into(),
-                            |s| ErrorKind::InvalidEscape(format!("\\u{s}").into()).into(),
-                        )
-                    })
+                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()).into())
             }
             b'U' => {
                 self.reader.discard()?;
@@ -620,16 +609,11 @@ where
                     .reader
                     .next_n(8)?
                     .ok_or(ErrorKind::UnterminatedString)?;
-                let options = ParseIntegerOptions::default();
-                u32::from_lexical_with_options::<HEX_ESCAPE_FORMAT>(bytes.as_ref(), &options)
+                let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
+                u32::from_str_radix(str, 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .ok_or_else(|| {
-                        str::from_utf8(bytes.as_ref()).map_or_else(
-                            |_| ErrorKind::InvalidEncoding.into(),
-                            |s| ErrorKind::InvalidEscape(format!("\\u{s}").into()).into(),
-                        )
-                    })
+                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()).into())
             }
             _ => Err(ErrorKind::InvalidEscape(
                 self.reader
@@ -801,43 +785,19 @@ where
 
     fn parse_number_radix(&mut self) -> Result<Value<'de>> {
         if self.reader.eat_str(b"0x")? {
-            Ok(Value::HexInt(
-                self.reader.next_while(is_toml_word).and_then(|bytes| {
-                    bytes
-                        .iter()
-                        .all(|byte| byte.is_ascii_hexdigit() || *byte == b'_')
-                        .then_some(bytes)
-                        .ok_or_else(|| {
-                            ErrorKind::InvalidNumber("invalid hexadecimal digit".into()).into()
-                        })
-                })?,
-            ))
+            self.reader.start_seq();
+            self.parse_number_inner(u8::is_ascii_hexdigit)
+                .map(Value::HexInt)
         } else if self.reader.eat_str(b"0o")? {
-            Ok(Value::OctalInt(
-                self.reader.next_while(is_toml_word).and_then(|bytes| {
-                    bytes
-                        .iter()
-                        .all(|&b| matches!(b, b'0'..=b'7' | b'_'))
-                        .then_some(bytes)
-                        .ok_or_else(|| {
-                            ErrorKind::InvalidNumber("invalid octal digit".into()).into()
-                        })
-                })?,
-            ))
+            self.reader.start_seq();
+            self.parse_number_inner(|b| matches!(*b, b'0'..=b'7'))
+                .map(Value::OctalInt)
         } else if self.reader.eat_str(b"0b")? {
-            Ok(Value::BinaryInt(
-                self.reader.next_while(is_toml_word).and_then(|bytes| {
-                    bytes
-                        .iter()
-                        .all(|&b| matches!(b, b'0' | b'1' | b'_'))
-                        .then_some(bytes)
-                        .ok_or_else(|| {
-                            ErrorKind::InvalidNumber("invalid binary digit".into()).into()
-                        })
-                })?,
-            ))
+            self.reader.start_seq();
+            self.parse_number_inner(|b| matches!(*b, b'0' | b'1'))
+                .map(Value::BinaryInt)
         } else {
-            Err(ErrorKind::ExpectedToken("number with radix".into()).into())
+            Err(ErrorKind::InvalidNumber("invalid radix".into()).into())
         }
     }
 
@@ -874,101 +834,160 @@ where
 
         self.reader.start_seq(); // Start sequence for number parsing
 
-        let _ = self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?; // Optional sign
+        // Optional sign
+        let sign = self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?;
 
         // We need at least one digit
         // Note: leading 0s are not allowed, but that is checked in parse_value
-        if self.reader.next_if(u8::is_ascii_digit)?.is_none() {
+        if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
             return Err(match self.reader.peek()? {
-                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
-                _ => ErrorKind::InvalidNumber("missing digits".into()).into(),
-            });
+                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
+                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
+                None => ErrorKind::UnexpectedEof,
+            }
+            .into());
         }
+        let mut num = self.reader.end_seq()?;
 
         // Remainder of integer digits
-        loop {
-            self.reader.next_while(u8::is_ascii_digit)?;
+        while self.reader.eat_char(b'_')? {
+            let bytes = self.reader.next_while(u8::is_ascii_digit)?;
+            if bytes.is_empty() {
+                return Err(match self.reader.peek()? {
+                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                    Some(b) if is_toml_word(&b) => ErrorKind::InvalidNumber("invalid digit".into()),
+                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
+                    None => ErrorKind::UnexpectedEof,
+                }
+                .into());
+            }
+            num.to_mut().extend_from_slice(&bytes);
+        }
 
-            if self.reader.eat_char(b'_')? {
-                // Need at least one digit after an '_'
-                match self.reader.peek()? {
-                    Some(b'0'..=b'9') => Ok(()),
-                    Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
-                    _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
-                }?;
-            } else {
-                break;
+        // Check for leading 0 - this is much easier after the fact
+        let start = usize::from(sign);
+        if let Some(&[zero, digit]) = num.get(start..start + 2) {
+            if zero == b'0' && digit.is_ascii_digit() {
+                return Err(ErrorKind::InvalidNumber("leading zero".into()).into());
             }
         }
 
         // Check for decimal point
-        if self.reader.eat_char(b'.')? {
+        if self.reader.peek()?.is_some_and(|b| b == b'.') {
             float = true;
 
+            self.reader.start_seq(); // Start sequence for fraction parsing
+            self.reader.discard()?; // Discard the decimal point
+
             // We need at least one digit
-            match self.reader.peek()? {
-                Some(b'0'..=b'9') => Ok(()),
-                Some(b'_') => Err(ErrorKind::InvalidNumber("leading underscore".into())),
-                _ => Err(ErrorKind::InvalidNumber("missing digits".into())),
-            }?;
-            self.reader.next_while(u8::is_ascii_digit)?;
+            if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
+                return Err(match self.reader.peek()? {
+                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
+                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
+                    None => ErrorKind::UnexpectedEof,
+                }
+                .into());
+            }
+            let bytes = self.reader.end_seq()?;
+            num.to_mut().extend_from_slice(&bytes);
 
             // Remainder of integer digits
-            loop {
-                self.reader.next_while(u8::is_ascii_digit)?;
-
-                if self.reader.eat_char(b'_')? {
-                    // Need at least one digit after an '_'
-                    match self.reader.peek()? {
-                        Some(b'0'..=b'9') => Ok(()),
-                        Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
-                        _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
-                    }?;
-                } else {
-                    break;
+            while self.reader.eat_char(b'_')? {
+                let bytes = self.reader.next_while(u8::is_ascii_digit)?;
+                if bytes.is_empty() {
+                    return Err(match self.reader.peek()? {
+                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                        Some(b) if is_toml_word(&b) => {
+                            ErrorKind::InvalidNumber("invalid digit".into())
+                        }
+                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
+                        None => ErrorKind::UnexpectedEof,
+                    }
+                    .into());
                 }
+                num.to_mut().extend_from_slice(&bytes);
             }
         }
 
         // Check for exponent
-        if self.reader.eat_char(b'e')? || self.reader.eat_char(b'E')? {
+        if self.reader.peek()?.is_some_and(|b| b == b'e' || b == b'E') {
             float = true;
+
+            self.reader.start_seq(); // Start sequence for exponent parsing
+            self.reader.discard()?; // Discard the e/E
 
             // Optional sign
             let _ = self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?;
 
             // We need at least one digit
-            match self.reader.peek()? {
-                Some(b'0'..=b'9') => Ok(()),
-                Some(b'_') => Err(ErrorKind::InvalidNumber("leading underscore".into())),
-                _ => Err(ErrorKind::InvalidNumber("missing digits".into())),
-            }?;
-            self.reader.next_while(u8::is_ascii_digit)?;
+            if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
+                return Err(match self.reader.peek()? {
+                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
+                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
+                    None => ErrorKind::UnexpectedEof,
+                }
+                .into());
+            }
+            let bytes = self.reader.end_seq()?;
+            num.to_mut().extend_from_slice(&bytes);
 
             // Remainder of integer digits
-            loop {
-                self.reader.next_while(u8::is_ascii_digit)?;
-
-                if self.reader.eat_char(b'_')? {
-                    // Need at least one digit after an '_'
-                    match self.reader.peek()? {
-                        Some(b'0'..=b'9') => Ok(()),
-                        Some(b'_') => Err(ErrorKind::InvalidNumber("double underscore".into())),
-                        _ => Err(ErrorKind::InvalidNumber("trailing underscore".into())),
-                    }?;
-                } else {
-                    break;
+            while self.reader.eat_char(b'_')? {
+                let bytes = self.reader.next_while(u8::is_ascii_digit)?;
+                if bytes.is_empty() {
+                    return Err(match self.reader.peek()? {
+                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                        Some(b) if is_toml_word(&b) => {
+                            ErrorKind::InvalidNumber("invalid digit".into())
+                        }
+                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
+                        None => ErrorKind::UnexpectedEof,
+                    }
+                    .into());
                 }
+                num.to_mut().extend_from_slice(&bytes);
             }
         }
 
-        let number = self.reader.end_seq()?; // End sequence for number parsing
-
         Ok(if float {
-            Value::Float(number)
+            Value::Float(num)
         } else {
-            Value::Integer(number)
+            Value::Integer(num)
         })
+    }
+
+    // Note: this function requres a sequence to have already been started with reader.start_seq()
+    // This is to allow +/-, etc to be parsed by the parent without copying for simple numbers
+    fn parse_number_inner(&mut self, is_digit: fn(&u8) -> bool) -> Result<Cow<'de, [u8]>> {
+        if self.reader.next_while(is_digit)?.is_empty() {
+            return Err(match self.reader.peek()? {
+                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
+                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
+                None => ErrorKind::UnexpectedEof,
+            }
+            .into());
+        }
+        let mut num = self.reader.end_seq()?;
+
+        while self.reader.eat_char(b'_')? {
+            let bytes = self.reader.next_while(is_digit)?;
+            if bytes.is_empty() {
+                return Err(match self.reader.peek()? {
+                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                    Some(b) if is_toml_word(&b) => ErrorKind::InvalidNumber("invalid digit".into()),
+                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
+                    None => ErrorKind::UnexpectedEof,
+                }
+                .into());
+            }
+            num.to_mut().extend_from_slice(&bytes);
+        }
+
+        if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
+            Err(ErrorKind::InvalidNumber("invalid digit".into()).into())
+        } else {
+            Ok(num)
+        }
     }
 
     fn parse_array(&mut self) -> Result<Vec<Value<'de>>> {
@@ -2355,7 +2374,7 @@ mod tests {
         let mut parser = Parser::from_str("123_456_789");
         assert_eq!(
             parser.parse_number_decimal().unwrap(),
-            Value::Integer(b"123_456_789".into())
+            Value::Integer(b"123456789".into())
         );
 
         let mut parser = Parser::from_str("_123_456");
@@ -2421,13 +2440,13 @@ mod tests {
         let mut parser = Parser::from_str("123_456.123_456");
         assert_eq!(
             parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123_456.123_456".into())
+            Value::Float(b"123456.123456".into())
         );
 
         let mut parser = Parser::from_str("1.23e456_789");
         assert_eq!(
             parser.parse_number_decimal().unwrap(),
-            Value::Float(b"1.23e456_789".into())
+            Value::Float(b"1.23e456789".into())
         );
 
         let mut parser = Parser::from_str("_123.456");

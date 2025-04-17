@@ -2,7 +2,6 @@
 
 use std::{fmt, io};
 
-use lexical::{NumberFormatBuilder, WriteFloatOptions, WriteIntegerOptions};
 use serde::ser;
 
 use self::_impl::{
@@ -494,37 +493,14 @@ impl ser::Serializer for ValueSerializer {
 impl ValueSerializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn serialize_integer<T: Integer>(self, v: T) -> Result<String> {
-        const FORMAT: u128 = NumberFormatBuilder::new().build();
-        const INT_OPTIONS: WriteIntegerOptions = WriteIntegerOptions::new();
-
-        Ok(lexical::to_string_with_options::<T, FORMAT>(
-            v,
-            &INT_OPTIONS,
-        ))
+        Ok(v.to_string())
     }
 }
 
 impl ValueSerializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn serialize_float<T: Float>(self, v: T) -> Result<String> {
-        const FORMAT: u128 = NumberFormatBuilder::new().build();
-        const FLOAT_OPTIONS: WriteFloatOptions = WriteFloatOptions::new();
-
-        Ok(if v.is_nan() {
-            if v.is_sign_positive() {
-                "nan".into()
-            } else {
-                "-nan".into() // We preserve the sign for NaN
-            }
-        } else if !v.is_finite() {
-            if v.is_sign_positive() {
-                "inf".into()
-            } else {
-                "-inf".into()
-            }
-        } else {
-            lexical::to_string_with_options::<T, FORMAT>(v, &FLOAT_OPTIONS)
-        })
+        Ok(v.to_string())
     }
 }
 
@@ -1337,8 +1313,8 @@ mod tests {
     fn inline_serializer_serialize_f32() {
         assert_eq!(ValueSerializer.serialize_f32(42.0).unwrap(), "42.0");
         assert_eq!(ValueSerializer.serialize_f32(-12.0).unwrap(), "-12.0");
-        assert_eq!(ValueSerializer.serialize_f32(1e12).unwrap(), "1.0e12");
-        assert_eq!(ValueSerializer.serialize_f32(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f32(1e28).unwrap(), "1e28");
+        assert_eq!(ValueSerializer.serialize_f32(0.5e-9).unwrap(), "5e-10");
         assert_eq!(ValueSerializer.serialize_f32(f32::INFINITY).unwrap(), "inf");
         assert_eq!(
             ValueSerializer.serialize_f32(f32::NEG_INFINITY).unwrap(),
@@ -1352,8 +1328,8 @@ mod tests {
     fn inline_serializer_serialize_f64() {
         assert_eq!(ValueSerializer.serialize_f64(42.0).unwrap(), "42.0");
         assert_eq!(ValueSerializer.serialize_f64(-12.0).unwrap(), "-12.0");
-        assert_eq!(ValueSerializer.serialize_f64(1e12).unwrap(), "1.0e12");
-        assert_eq!(ValueSerializer.serialize_f64(0.5e-9).unwrap(), "5.0e-10");
+        assert_eq!(ValueSerializer.serialize_f64(1e28).unwrap(), "1e28");
+        assert_eq!(ValueSerializer.serialize_f64(0.5e-9).unwrap(), "5e-10");
         assert_eq!(ValueSerializer.serialize_f64(f64::INFINITY).unwrap(), "inf");
         assert_eq!(
             ValueSerializer.serialize_f64(f64::NEG_INFINITY).unwrap(),

@@ -1,6 +1,6 @@
+use std::str::FromStr as _;
 use std::{fmt, str};
 
-use lexical::{FromLexicalWithOptions as _, NumberFormatBuilder, ParseIntegerOptions};
 use serde::de::{Error as _, Unexpected};
 
 pub use self::de::{
@@ -337,11 +337,6 @@ impl LocalDate {
     /// Returns an error if the slice is not a valid TOML date value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        const FORMAT: u128 = NumberFormatBuilder::new()
-            .no_positive_mantissa_sign(true)
-            .build();
-        const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
         let position = bytes
             .iter()
             .position(|b| *b == b'-')
@@ -358,12 +353,15 @@ impl LocalDate {
             return Err(ErrorKind::InvalidDatetime.into());
         }
 
-        let year = u16::from_lexical_with_options::<FORMAT>(year, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
-        let month = u8::from_lexical_with_options::<FORMAT>(month, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
-        let day = u8::from_lexical_with_options::<FORMAT>(day, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
+        let year = str::from_utf8(year)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let year = u16::from_str(year).map_err(|_| ErrorKind::InvalidDatetime)?;
+        let month = str::from_utf8(month)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let month = u8::from_str(month).map_err(|_| ErrorKind::InvalidDatetime)?;
+        let day = str::from_utf8(day)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let day = u8::from_str(day).map_err(|_| ErrorKind::InvalidDatetime)?;
 
         #[cfg(not(feature = "fast"))]
         {
@@ -472,11 +470,6 @@ impl LocalTime {
     /// Returns an error if the slice is not a valid TOML time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        const FORMAT: u128 = NumberFormatBuilder::new()
-            .no_positive_mantissa_sign(true)
-            .build();
-        const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
         let position = bytes
             .iter()
             .position(|b| *b == b':')
@@ -492,10 +485,13 @@ impl LocalTime {
         if hour.len() != 2 || minute.len() != 2 {
             return Err(ErrorKind::InvalidDatetime.into());
         }
-        let hour = u8::from_lexical_with_options::<FORMAT>(hour, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
-        let minute = u8::from_lexical_with_options::<FORMAT>(minute, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
+
+        let hour = str::from_utf8(hour)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let hour = u8::from_str(hour).map_err(|_| ErrorKind::InvalidDatetime)?;
+        let minute = str::from_utf8(minute)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let minute = u8::from_str(minute).map_err(|_| ErrorKind::InvalidDatetime)?;
 
         let (second, fraction) = second
             .iter()
@@ -507,8 +503,9 @@ impl LocalTime {
         if second.len() != 2 {
             return Err(ErrorKind::InvalidDatetime.into());
         }
-        let second = u8::from_lexical_with_options::<FORMAT>(second, &OPTIONS)
-            .map_err(|_| ErrorKind::InvalidDatetime)?;
+        let second = str::from_utf8(second)
+            .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+        let second = u8::from_str(second).map_err(|_| ErrorKind::InvalidDatetime)?;
 
         let nanosecond = if let Some(fraction) = fraction {
             if fraction.is_empty() {
@@ -519,8 +516,9 @@ impl LocalTime {
             // digits. We support up to nanoseconds (9 digits) here and truncate the rest.
             let fraction = fraction.get(..9).unwrap_or(fraction);
 
-            let nanosecond = u32::from_lexical_with_options::<FORMAT>(fraction, &OPTIONS)
-                .map_err(|_| ErrorKind::InvalidDatetime)?;
+            let fraction = str::from_utf8(fraction)
+                .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+            let nanosecond = u32::from_str(fraction).map_err(|_| ErrorKind::InvalidDatetime)?;
 
             // If we parsed <9 digits, we need to multiply by 10 for each digit we're short
             let extra_zeros = 9 - u32::try_from(fraction.len())
@@ -631,11 +629,6 @@ impl Offset {
     /// Returns an error if the slice is not a valid offset portion of a TOML date-time.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        const FORMAT: u128 = NumberFormatBuilder::new()
-            .no_positive_mantissa_sign(true)
-            .build();
-        const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
         if bytes == b"Z" || bytes == b"z" {
             Ok(Self::Z)
         } else {
@@ -656,10 +649,13 @@ impl Offset {
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            let hours = i16::from_lexical_with_options::<FORMAT>(hours, &OPTIONS)
-                .map_err(|_| ErrorKind::InvalidDatetime)?;
-            let minutes = i16::from_lexical_with_options::<FORMAT>(minutes, &OPTIONS)
-                .map_err(|_| ErrorKind::InvalidDatetime)?;
+            // TODO use int::from_ascii when it's stable
+            let hours = str::from_utf8(hours)
+                .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+            let hours = i16::from_str(hours).map_err(|_| ErrorKind::InvalidDatetime)?;
+            let minutes = str::from_utf8(minutes)
+                .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+            let minutes = i16::from_str(minutes).map_err(|_| ErrorKind::InvalidDatetime)?;
 
             #[cfg(not(feature = "fast"))]
             if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {

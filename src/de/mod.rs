@@ -1,13 +1,10 @@
 //! TOML deserialization functions and trait implementations.
 
+use core::str;
 use std::borrow::Cow;
 use std::io;
-use std::num::NonZero;
 use std::result::Result as StdResult;
 
-use lexical::{
-    FromLexicalWithOptions, NumberFormatBuilder, ParseFloatOptions, ParseIntegerOptions,
-};
 use serde::de::value::StrDeserializer;
 use serde::de::{DeserializeOwned, Error as _, IntoDeserializer as _};
 use serde::{de, Deserialize};
@@ -759,19 +756,42 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
     }
 }
 
-trait Integer: FromLexicalWithOptions<Options = ParseIntegerOptions> {}
+trait Integer: Sized {
+    fn from_str_radix(src: &[u8], radix: u32) -> Result<Self>;
+
+    fn from_str(src: &[u8]) -> Result<Self>;
+}
 
 macro_rules! impl_integer {
-    ($($t:ident)*) => ($(impl Integer for $t {})*);
+    ($($t:ident)*) => ($(
+        impl Integer for $t {
+            #[inline]
+            fn from_str_radix(bytes: &[u8], radix: u32) -> Result<Self> {
+                let str = str::from_utf8(bytes)
+                    .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+                <Self>::from_str_radix(str, radix)
+                    .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+            }
+
+            fn from_str(bytes: &[u8]) -> Result<Self> {
+                let str = str::from_utf8(bytes)
+                    .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+                <Self as std::str::FromStr>::from_str(str)
+                    .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+            }
+        }
+    )*);
 }
 
 impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
 
-trait Float: FromLexicalWithOptions<Options = ParseFloatOptions> {
+trait Float: Sized {
     const INFINITY: Self;
     const NEG_INFINITY: Self;
     const NAN: Self;
     const NEG_NAN: Self;
+
+    fn from_str(src: &[u8]) -> Result<Self>;
 }
 
 macro_rules! impl_float {
@@ -780,6 +800,13 @@ macro_rules! impl_float {
         const NEG_INFINITY: Self = Self::NEG_INFINITY;
         const NAN: Self = Self::NAN;
         const NEG_NAN: Self = -Self::NAN;
+
+        fn from_str(bytes: &[u8]) -> Result<Self> {
+            let str = str::from_utf8(bytes)
+                .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
+            <Self as std::str::FromStr>::from_str(str)
+                .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+        }
     })*);
 }
 
@@ -787,70 +814,27 @@ impl_float!(f32 f64);
 
 #[inline]
 fn parse_integer<T: Integer>(bytes: &[u8]) -> Result<T> {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .digit_separator(NonZero::new(b'_'))
-        .no_integer_leading_zeros(true)
-        .internal_digit_separator(true)
-        .build();
-    const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
-        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+    T::from_str(bytes)
 }
 
 #[inline]
 fn parse_binary<T: Integer>(bytes: &[u8]) -> Result<T> {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .digit_separator(NonZero::new(b'_'))
-        .radix(2)
-        .internal_digit_separator(true)
-        .build();
-    const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
-        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+    T::from_str_radix(bytes, 2)
 }
 
 #[inline]
 fn parse_octal<T: Integer>(bytes: &[u8]) -> Result<T> {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .digit_separator(NonZero::new(b'_'))
-        .radix(8)
-        .internal_digit_separator(true)
-        .build();
-    const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
-        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+    T::from_str_radix(bytes, 8)
 }
 
 #[inline]
 fn parse_hexadecimal<T: Integer>(bytes: &[u8]) -> Result<T> {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .digit_separator(NonZero::new(b'_'))
-        .radix(16)
-        .internal_digit_separator(true)
-        .build();
-    const OPTIONS: ParseIntegerOptions = ParseIntegerOptions::new();
-
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
-        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+    T::from_str_radix(bytes, 16)
 }
 
 #[inline]
 fn parse_float<T: Float>(bytes: &[u8]) -> Result<T> {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .digit_separator(NonZero::new(b'_'))
-        .required_digits(true)
-        .no_special(true) // Handled in deserialize_special_float
-        .no_integer_leading_zeros(true)
-        .no_float_leading_zeros(true)
-        .internal_digit_separator(true)
-        .build();
-    const OPTIONS: ParseFloatOptions = ParseFloatOptions::new();
-
-    T::from_lexical_with_options::<FORMAT>(bytes, &OPTIONS)
-        .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+    T::from_str(bytes)
 }
 
 #[inline]
@@ -2602,16 +2586,10 @@ mod tests {
         let bytes = b"123";
         assert_eq!(parse_integer::<i32>(bytes).unwrap(), 123);
 
-        let bytes = b"1_2_3";
+        let bytes = b"0123"; // Leading zeros are handled in the parser
         assert_eq!(parse_integer::<i32>(bytes).unwrap(), 123);
 
-        let bytes = b"0123";
-        parse_integer::<i32>(bytes).unwrap_err();
-
-        let bytes = b"123_";
-        parse_integer::<i32>(bytes).unwrap_err();
-
-        let bytes = b"_123";
+        let bytes = b"1_2_3"; // Underscores are stripped in the parser
         parse_integer::<i32>(bytes).unwrap_err();
 
         let bytes = b"123.0";
@@ -2623,16 +2601,10 @@ mod tests {
         let bytes = b"1010";
         assert_eq!(parse_binary::<i32>(bytes).unwrap(), 10);
 
-        let bytes = b"1_0_1_0";
-        assert_eq!(parse_binary::<i32>(bytes).unwrap(), 10);
-
         let bytes = b"01010"; // Leading zeros are ok because we already have a leading 0b
         assert_eq!(parse_binary::<i32>(bytes).unwrap(), 10);
 
-        let bytes = b"1010_";
-        parse_binary::<i32>(bytes).unwrap_err();
-
-        let bytes = b"_1010";
+        let bytes = b"1_0_1_0"; // Underscores are stripped in the parser
         parse_binary::<i32>(bytes).unwrap_err();
 
         let bytes = b"1010.0";
@@ -2644,16 +2616,10 @@ mod tests {
         let bytes = b"123";
         assert_eq!(parse_octal::<i32>(bytes).unwrap(), 83);
 
-        let bytes = b"1_2_3";
-        assert_eq!(parse_octal::<i32>(bytes).unwrap(), 83);
-
         let bytes = b"0123"; // Leading zeros are ok because we already have a leading 0o
         assert_eq!(parse_octal::<i32>(bytes).unwrap(), 83);
 
-        let bytes = b"123_";
-        parse_octal::<i32>(bytes).unwrap_err();
-
-        let bytes = b"_123";
+        let bytes = b"1_2_3"; // Underscores are stripped in the parser
         parse_octal::<i32>(bytes).unwrap_err();
 
         let bytes = b"123.0";
@@ -2665,16 +2631,10 @@ mod tests {
         let bytes = b"123";
         assert_eq!(parse_hexadecimal::<i32>(bytes).unwrap(), 291);
 
-        let bytes = b"1_2_3";
-        assert_eq!(parse_hexadecimal::<i32>(bytes).unwrap(), 291);
-
         let bytes = b"0123"; // Leading zeros are ok because we already have a leading 0x
         assert_eq!(parse_hexadecimal::<i32>(bytes).unwrap(), 291);
 
-        let bytes = b"123_";
-        parse_hexadecimal::<i32>(bytes).unwrap_err();
-
-        let bytes = b"_123";
+        let bytes = b"1_2_3"; // Underscores are stripped in the parser
         parse_hexadecimal::<i32>(bytes).unwrap_err();
 
         let bytes = b"123.0";
@@ -2686,9 +2646,6 @@ mod tests {
         let bytes = b"123.456";
         assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456);
 
-        let bytes = b"1_2_3.4_5_6";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456);
-
         let bytes = b"123e0";
         assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.0);
 
@@ -2697,15 +2654,6 @@ mod tests {
 
         let bytes = b"123e-0";
         assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.0);
-
-        let bytes = b"1_2_3e1_2_3";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123e123);
-
-        let bytes = b"1_2_3e+1_2_3";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123e123);
-
-        let bytes = b"1_2_3e-1_2_3";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123e-123);
 
         let bytes = b"123.456e123";
         assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456e123);
@@ -2716,8 +2664,17 @@ mod tests {
         let bytes = b"123.456e-123";
         assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456e-123);
 
-        let bytes = b"0123.0";
-        parse_float::<f32>(bytes).unwrap_err();
+        let bytes = b"1_2_3.4_5_6";
+        parse_float::<f64>(bytes).unwrap_err();
+
+        let bytes = b"1_2_3e1_2_3";
+        parse_float::<f64>(bytes).unwrap_err();
+
+        let bytes = b"1_2_3e+1_2_3";
+        parse_float::<f64>(bytes).unwrap_err();
+
+        let bytes = b"1_2_3e-1_2_3";
+        parse_float::<f64>(bytes).unwrap_err();
 
         let bytes = b"123.0_";
         parse_float::<f32>(bytes).unwrap_err();
@@ -2726,18 +2683,6 @@ mod tests {
         parse_float::<f32>(bytes).unwrap_err();
 
         let bytes = b"123.0.0";
-        parse_float::<f32>(bytes).unwrap_err();
-
-        let bytes = b"inf";
-        parse_float::<f64>(bytes).unwrap_err();
-
-        let bytes = b"nan";
-        parse_float::<f64>(bytes).unwrap_err();
-
-        let bytes = b"+inf";
-        parse_float::<f32>(bytes).unwrap_err();
-
-        let bytes = b"-nan";
         parse_float::<f32>(bytes).unwrap_err();
     }
 
