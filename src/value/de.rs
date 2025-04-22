@@ -72,6 +72,7 @@ impl<'de> de::Deserialize<'de> for Value {
         struct MapFieldVisitor;
 
         impl MapField<'_> {
+            #[inline]
             fn as_str(&self) -> &str {
                 match *self {
                     Self::OffsetDatetime => OffsetDatetime::WRAPPER_FIELD,
@@ -86,10 +87,12 @@ impl<'de> de::Deserialize<'de> for Value {
         impl<'de> de::Visitor<'de> for MapFieldVisitor {
             type Value = MapField<'de>;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a TOML key")
             }
 
+            #[inline]
             fn visit_borrowed_str<E>(self, value: &'de str) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -103,6 +106,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 }
             }
 
+            #[inline]
             fn visit_string<E>(self, value: String) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -116,6 +120,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 }
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -125,6 +130,7 @@ impl<'de> de::Deserialize<'de> for Value {
         }
 
         impl<'de> de::Deserialize<'de> for MapField<'de> {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -138,18 +144,22 @@ impl<'de> de::Deserialize<'de> for Value {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = Value;
 
+            #[inline]
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a TOML value")
             }
 
+            #[inline]
             fn visit_bool<E>(self, value: bool) -> StdResult<Self::Value, E> {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_i64<E>(self, value: i64) -> StdResult<Self::Value, E> {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_i128<E>(self, value: i128) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -161,6 +171,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 )
             }
 
+            #[inline]
             fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -172,6 +183,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 )
             }
 
+            #[inline]
             fn visit_u128<E>(self, value: u128) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -183,18 +195,22 @@ impl<'de> de::Deserialize<'de> for Value {
                 )
             }
 
+            #[inline]
             fn visit_f64<E>(self, value: f64) -> StdResult<Self::Value, E> {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E> {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_string<E>(self, value: String) -> StdResult<Self::Value, E> {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_bytes<E>(self, value: &[u8]) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
@@ -202,6 +218,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 Ok(value.into())
             }
 
+            #[inline]
             fn visit_some<D>(self, deserializer: D) -> StdResult<Self::Value, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -209,6 +226,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 de::Deserialize::deserialize(deserializer)
             }
 
+            #[inline]
             fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -220,6 +238,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 Ok(Self::Value::Array(result))
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> StdResult<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,

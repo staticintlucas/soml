@@ -46,26 +46,32 @@ impl ser::Serializer for ToValueSerializer {
     type SerializeStruct = ToValueTableOrDatetimeSerializer;
     type SerializeStructVariant = ToValueWrappedTableSerializer;
 
+    #[inline]
     fn serialize_bool(self, value: bool) -> Result<Self::Ok, Self::Error> {
         Ok(Self::Ok::Boolean(value))
     }
 
+    #[inline]
     fn serialize_i8(self, value: i8) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_i16(self, value: i16) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_i32(self, value: i32) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_i64(self, value: i64) -> Result<Self::Ok, Self::Error> {
         Ok(Self::Ok::Integer(value))
     }
 
+    #[inline]
     fn serialize_i128(self, value: i128) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(
             value
@@ -74,18 +80,22 @@ impl ser::Serializer for ToValueSerializer {
         )
     }
 
+    #[inline]
     fn serialize_u8(self, value: u8) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_u16(self, value: u16) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_u32(self, value: u32) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(value.into())
     }
 
+    #[inline]
     fn serialize_u64(self, value: u64) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(
             value
@@ -94,6 +104,7 @@ impl ser::Serializer for ToValueSerializer {
         )
     }
 
+    #[inline]
     fn serialize_u128(self, value: u128) -> Result<Self::Ok, Self::Error> {
         self.serialize_i64(
             value
@@ -102,22 +113,27 @@ impl ser::Serializer for ToValueSerializer {
         )
     }
 
+    #[inline]
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         self.serialize_f64(value.into())
     }
 
+    #[inline]
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         Ok(Self::Ok::Float(value))
     }
 
+    #[inline]
     fn serialize_char(self, value: char) -> Result<Self::Ok, Self::Error> {
         self.serialize_str(value.encode_utf8(&mut [0; 4]))
     }
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
         Ok(Self::Ok::String(value.into()))
     }
 
+    #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok, Self::Error> {
         use ser::SerializeSeq as _;
 
@@ -128,10 +144,12 @@ impl ser::Serializer for ToValueSerializer {
         seq.end()
     }
 
+    #[inline]
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
         Err(ErrorKind::UnsupportedValue("None").into())
     }
 
+    #[inline]
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -139,14 +157,17 @@ impl ser::Serializer for ToValueSerializer {
         value.serialize(self)
     }
 
+    #[inline]
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
         Err(ErrorKind::UnsupportedType("()").into())
     }
 
+    #[inline]
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
         self.serialize_unit()
     }
 
+    #[inline]
     fn serialize_unit_variant(
         self,
         _name: &'static str,
@@ -156,6 +177,7 @@ impl ser::Serializer for ToValueSerializer {
         self.serialize_str(variant)
     }
 
+    #[inline]
     fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
@@ -167,6 +189,7 @@ impl ser::Serializer for ToValueSerializer {
         value.serialize(self)
     }
 
+    #[inline]
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -184,14 +207,17 @@ impl ser::Serializer for ToValueSerializer {
         map.end()
     }
 
+    #[inline]
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         Self::SerializeSeq::start(len)
     }
 
+    #[inline]
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
         Self::SerializeTuple::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
@@ -200,6 +226,7 @@ impl ser::Serializer for ToValueSerializer {
         Self::SerializeTupleStruct::start(Some(len))
     }
 
+    #[inline]
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -210,10 +237,12 @@ impl ser::Serializer for ToValueSerializer {
         Self::SerializeTupleVariant::start(len, variant)
     }
 
+    #[inline]
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         Self::SerializeMap::start(len)
     }
 
+    #[inline]
     fn serialize_struct(
         self,
         name: &'static str,
@@ -222,6 +251,7 @@ impl ser::Serializer for ToValueSerializer {
         Self::SerializeStruct::start(Some(len), name)
     }
 
+    #[inline]
     fn serialize_struct_variant(
         self,
         _name: &'static str,
@@ -239,6 +269,7 @@ pub struct ToValueArraySerializer {
 
 impl ToValueArraySerializer {
     #[allow(clippy::unnecessary_wraps)]
+    #[inline]
     fn start(len: Option<usize>) -> Result<Self, Error> {
         let array = Vec::with_capacity(len.unwrap_or(0).min(256));
         Ok(Self { array })
@@ -249,6 +280,7 @@ impl ser::SerializeSeq for ToValueArraySerializer {
     type Ok = Value;
     type Error = Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -257,6 +289,7 @@ impl ser::SerializeSeq for ToValueArraySerializer {
         Ok(())
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         Ok(Value::Array(self.array))
     }
@@ -266,6 +299,7 @@ impl ser::SerializeTuple for ToValueArraySerializer {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -273,6 +307,7 @@ impl ser::SerializeTuple for ToValueArraySerializer {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         ser::SerializeSeq::end(self)
     }
@@ -282,6 +317,7 @@ impl ser::SerializeTupleStruct for ToValueArraySerializer {
     type Ok = <Self as ser::SerializeSeq>::Ok;
     type Error = <Self as ser::SerializeSeq>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -289,6 +325,7 @@ impl ser::SerializeTupleStruct for ToValueArraySerializer {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         ser::SerializeSeq::end(self)
     }
@@ -300,6 +337,7 @@ pub struct ToValueWrappedArraySerializer {
 }
 
 impl ToValueWrappedArraySerializer {
+    #[inline]
     fn start(len: usize, key: &'static str) -> Result<Self, Error> {
         Ok(Self {
             key: key.to_owned(),
@@ -312,6 +350,7 @@ impl ser::SerializeTupleVariant for ToValueWrappedArraySerializer {
     type Ok = Value;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -321,6 +360,7 @@ impl ser::SerializeTupleVariant for ToValueWrappedArraySerializer {
         self.array.serialize_element(value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         use ser::SerializeTuple as _;
 
@@ -335,6 +375,7 @@ pub struct ToValueTableSerializer {
 
 impl ToValueTableSerializer {
     #[allow(clippy::unnecessary_wraps)]
+    #[inline]
     fn start(_len: Option<usize>) -> Result<Self, Error> {
         let table = Table::new(); // BTreeMap has not with_capacity
         Ok(Self { key: None, table })
@@ -345,6 +386,7 @@ impl ser::SerializeMap for ToValueTableSerializer {
     type Ok = Value;
     type Error = Error;
 
+    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -353,6 +395,7 @@ impl ser::SerializeMap for ToValueTableSerializer {
         Ok(())
     }
 
+    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -366,6 +409,7 @@ impl ser::SerializeMap for ToValueTableSerializer {
         Ok(())
     }
 
+    #[inline]
     fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<(), Self::Error>
     where
         K: ?Sized + ser::Serialize,
@@ -378,6 +422,7 @@ impl ser::SerializeMap for ToValueTableSerializer {
         Ok(())
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         Ok(Value::Table(self.table))
     }
@@ -387,6 +432,7 @@ impl ser::SerializeStruct for ToValueTableSerializer {
     type Ok = <Self as ser::SerializeMap>::Ok;
     type Error = <Self as ser::SerializeMap>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -394,6 +440,7 @@ impl ser::SerializeStruct for ToValueTableSerializer {
         ser::SerializeMap::serialize_entry(self, key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         ser::SerializeMap::end(self)
     }
@@ -408,6 +455,7 @@ pub enum ToValueTableOrDatetimeSerializer {
 }
 
 impl ToValueTableOrDatetimeSerializer {
+    #[inline]
     fn start(len: Option<usize>, name: &'static str) -> Result<Self, Error> {
         Ok(match name {
             OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(None),
@@ -423,6 +471,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
     type Ok = <ToValueTableSerializer as ser::SerializeStruct>::Ok;
     type Error = <ToValueTableSerializer as ser::SerializeStruct>::Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -448,6 +497,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
         }
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         match self {
             Self::OffsetDatetime(inner)
@@ -470,6 +520,7 @@ pub struct ToValueWrappedTableSerializer {
 }
 
 impl ToValueWrappedTableSerializer {
+    #[inline]
     fn start(len: usize, key: &'static str) -> Result<Self, Error> {
         Ok(Self {
             key: key.to_owned(),
@@ -482,6 +533,7 @@ impl ser::SerializeStructVariant for ToValueWrappedTableSerializer {
     type Ok = Value;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -491,6 +543,7 @@ impl ser::SerializeStructVariant for ToValueWrappedTableSerializer {
         self.table.serialize_entry(key, value)
     }
 
+    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         use ser::SerializeMap as _;
 
@@ -510,6 +563,7 @@ impl ser::Serializer for RawStringSerializer {
         tuple tuple_struct tuple_variant map struct struct_variant
     );
 
+    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
         Ok(value.to_owned())
     }

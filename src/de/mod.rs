@@ -787,6 +787,7 @@ macro_rules! impl_integer {
                     .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
             }
 
+            #[inline]
             fn from_str(bytes: &[u8]) -> Result<Self> {
                 let str = str::from_utf8(bytes)
                     .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
@@ -815,6 +816,7 @@ macro_rules! impl_float {
         const NAN: Self = Self::NAN;
         const NEG_NAN: Self = -Self::NAN;
 
+        #[inline]
         fn from_str(bytes: &[u8]) -> Result<Self> {
             let str = str::from_utf8(bytes)
                 .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));

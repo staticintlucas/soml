@@ -22,10 +22,12 @@ impl<'de> de::Deserialize<'de> for Datetime {
         impl de::Visitor<'_> for FieldVisitor {
             type Value = Field;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a date-time wrapper field")
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -49,6 +51,7 @@ impl<'de> de::Deserialize<'de> for Datetime {
         }
 
         impl<'de> de::Deserialize<'de> for Field {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -62,10 +65,12 @@ impl<'de> de::Deserialize<'de> for Datetime {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = Datetime;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a date-time wrapper")
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,
@@ -101,10 +106,12 @@ impl<'de> de::Deserialize<'de> for OffsetDatetime {
         impl de::Visitor<'_> for FieldVisitor {
             type Value = Field;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an offset date-time wrapper field")
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -120,6 +127,7 @@ impl<'de> de::Deserialize<'de> for OffsetDatetime {
         }
 
         impl<'de> de::Deserialize<'de> for Field {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -133,10 +141,12 @@ impl<'de> de::Deserialize<'de> for OffsetDatetime {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = OffsetDatetime;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an offset date-time wrapper")
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,
@@ -166,10 +176,12 @@ impl<'de> de::Deserialize<'de> for OffsetDatetimeFromFields {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = OffsetDatetimeFromFields;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a sequence of offset date-time fields")
             }
 
+            #[inline]
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -199,6 +211,7 @@ impl<'de> de::Deserialize<'de> for OffsetDatetimeFromFields {
 pub struct OffsetDatetimeAccess(Option<OffsetDatetime>);
 
 impl From<OffsetDatetime> for OffsetDatetimeAccess {
+    #[inline]
     fn from(datetime: OffsetDatetime) -> Self {
         Self(Some(datetime))
     }
@@ -207,6 +220,7 @@ impl From<OffsetDatetime> for OffsetDatetimeAccess {
 impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
@@ -221,6 +235,7 @@ impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
         }
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -243,6 +258,7 @@ struct OffsetDatetimeInnerAccess {
 }
 
 impl From<OffsetDatetime> for OffsetDatetimeInnerAccess {
+    #[inline]
     fn from(datetime: OffsetDatetime) -> Self {
         let OffsetDatetime { date, time, offset } = datetime;
         Self {
@@ -256,6 +272,7 @@ impl From<OffsetDatetime> for OffsetDatetimeInnerAccess {
 impl<'de> de::SeqAccess<'de> for OffsetDatetimeInnerAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de>,
@@ -293,10 +310,12 @@ impl<'de> de::Deserialize<'de> for LocalDatetime {
         impl de::Visitor<'_> for FieldVisitor {
             type Value = Field;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local date-time wrapper field")
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -312,6 +331,7 @@ impl<'de> de::Deserialize<'de> for LocalDatetime {
         }
 
         impl<'de> de::Deserialize<'de> for Field {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -325,10 +345,12 @@ impl<'de> de::Deserialize<'de> for LocalDatetime {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalDatetime;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local date-time wrapper")
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,
@@ -358,10 +380,12 @@ impl<'de> de::Deserialize<'de> for LocalDatetimeFromFields {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalDatetimeFromFields;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a sequence of local date-time fields")
             }
 
+            #[inline]
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -384,6 +408,7 @@ impl<'de> de::Deserialize<'de> for LocalDatetimeFromFields {
 pub struct LocalDatetimeAccess(Option<LocalDatetime>);
 
 impl From<LocalDatetime> for LocalDatetimeAccess {
+    #[inline]
     fn from(datetime: LocalDatetime) -> Self {
         Self(Some(datetime))
     }
@@ -392,6 +417,7 @@ impl From<LocalDatetime> for LocalDatetimeAccess {
 impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
@@ -406,6 +432,7 @@ impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
         }
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -427,6 +454,7 @@ struct LocalDatetimeInnerAccess {
 }
 
 impl From<LocalDatetime> for LocalDatetimeInnerAccess {
+    #[inline]
     fn from(datetime: LocalDatetime) -> Self {
         let LocalDatetime { date, time } = datetime;
         Self {
@@ -439,6 +467,7 @@ impl From<LocalDatetime> for LocalDatetimeInnerAccess {
 impl<'de> de::SeqAccess<'de> for LocalDatetimeInnerAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de>,
@@ -471,10 +500,12 @@ impl<'de> de::Deserialize<'de> for LocalDate {
         impl de::Visitor<'_> for FieldVisitor {
             type Value = Field;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local date wrapper field")
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -487,6 +518,7 @@ impl<'de> de::Deserialize<'de> for LocalDate {
         }
 
         impl<'de> de::Deserialize<'de> for Field {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -500,10 +532,12 @@ impl<'de> de::Deserialize<'de> for LocalDate {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalDate;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local date wrapper")
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,
@@ -533,10 +567,12 @@ impl<'de> de::Deserialize<'de> for LocalDateFromFields {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalDateFromFields;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a sequence of local date fields")
             }
 
+            #[inline]
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -562,6 +598,7 @@ impl<'de> de::Deserialize<'de> for LocalDateFromFields {
 pub struct LocalDateAccess(Option<LocalDate>);
 
 impl From<LocalDate> for LocalDateAccess {
+    #[inline]
     fn from(date: LocalDate) -> Self {
         Self(Some(date))
     }
@@ -570,6 +607,7 @@ impl From<LocalDate> for LocalDateAccess {
 impl<'de> de::MapAccess<'de> for LocalDateAccess {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
@@ -584,6 +622,7 @@ impl<'de> de::MapAccess<'de> for LocalDateAccess {
         }
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -608,6 +647,7 @@ struct LocalDateInnerAccess {
 }
 
 impl From<LocalDate> for LocalDateInnerAccess {
+    #[inline]
     fn from(date: LocalDate) -> Self {
         let LocalDate { year, month, day } = date;
         Self {
@@ -621,6 +661,7 @@ impl From<LocalDate> for LocalDateInnerAccess {
 impl<'de> de::SeqAccess<'de> for LocalDateInnerAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de>,
@@ -649,10 +690,12 @@ impl<'de> de::Deserialize<'de> for LocalTime {
         impl de::Visitor<'_> for FieldVisitor {
             type Value = Field;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local time wrapper field")
             }
 
+            #[inline]
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -665,6 +708,7 @@ impl<'de> de::Deserialize<'de> for LocalTime {
         }
 
         impl<'de> de::Deserialize<'de> for Field {
+            #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: de::Deserializer<'de>,
@@ -678,10 +722,12 @@ impl<'de> de::Deserialize<'de> for LocalTime {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalTime;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a local time wrapper")
             }
 
+            #[inline]
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: de::MapAccess<'de>,
@@ -711,10 +757,12 @@ impl<'de> de::Deserialize<'de> for LocalTimeFromFields {
         impl<'de> de::Visitor<'de> for Visitor {
             type Value = LocalTimeFromFields;
 
+            #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a sequence of local time fields")
             }
 
+            #[inline]
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -748,6 +796,7 @@ impl<'de> de::Deserialize<'de> for LocalTimeFromFields {
 pub struct LocalTimeAccess(Option<LocalTime>);
 
 impl From<LocalTime> for LocalTimeAccess {
+    #[inline]
     fn from(time: LocalTime) -> Self {
         Self(Some(time))
     }
@@ -756,6 +805,7 @@ impl From<LocalTime> for LocalTimeAccess {
 impl<'de> de::MapAccess<'de> for LocalTimeAccess {
     type Error = Error;
 
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
@@ -770,6 +820,7 @@ impl<'de> de::MapAccess<'de> for LocalTimeAccess {
         }
     }
 
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -795,6 +846,7 @@ struct LocalTimeInnerAccess {
 }
 
 impl From<LocalTime> for LocalTimeInnerAccess {
+    #[inline]
     fn from(time: LocalTime) -> Self {
         let LocalTime {
             hour,
@@ -814,6 +866,7 @@ impl From<LocalTime> for LocalTimeInnerAccess {
 impl<'de> de::SeqAccess<'de> for LocalTimeInnerAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de>,
@@ -869,6 +922,7 @@ impl<'de> de::Deserialize<'de> for OffsetFromFields {
 struct OffsetInnerAccess(Option<Offset>);
 
 impl From<Offset> for OffsetInnerAccess {
+    #[inline]
     fn from(offset: Offset) -> Self {
         Self(Some(offset))
     }
@@ -877,6 +931,7 @@ impl From<Offset> for OffsetInnerAccess {
 impl<'de> de::SeqAccess<'de> for OffsetInnerAccess {
     type Error = Error;
 
+    #[inline]
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de>,

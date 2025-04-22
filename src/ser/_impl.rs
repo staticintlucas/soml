@@ -26,6 +26,7 @@ pub enum TableKind {
 }
 
 impl ValueKind {
+    #[inline]
     fn into_inline_value(self) -> Result<String> {
         use ser::{SerializeMap as _, SerializeSeq as _};
 
@@ -577,6 +578,7 @@ pub trait Integer: Sized {
 macro_rules! impl_integer {
     ($($t:ident)*) => ($(
         impl Integer for $t {
+            #[inline]
             fn to_string(self) -> String {
                 <Self as std::string::ToString>::to_string(&self)
             }
@@ -593,6 +595,7 @@ pub trait Float {
 
 macro_rules! impl_float {
     ($($t:ident)*) => ($(impl Float for $t {
+        #[inline]
         fn to_string(self) -> String {
             if self.is_nan() {
                 // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase and
@@ -644,6 +647,7 @@ impl ser::SerializeSeq for ArrayKindSerializer {
     type Ok = ValueKind;
     type Error = Error;
 
+    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -651,6 +655,7 @@ impl ser::SerializeSeq for ArrayKindSerializer {
         self.arr.push(value.serialize(ValueKindSerializer)?);
         Ok(())
     }
+
     #[inline]
     fn end(self) -> Result<Self::Ok> {
         if !self.arr.is_empty()
@@ -1195,6 +1200,7 @@ where
     type Ok = String;
     type Error = Error;
 
+    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
