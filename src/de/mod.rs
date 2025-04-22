@@ -13,7 +13,9 @@ pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
 use self::parser::{Parser, SpecialFloat, Table as ParsedTable, Value as ParsedValue};
 use self::reader::{IoReader, Reader, SliceReader};
-use crate::value::datetime::DatetimeAccess;
+use crate::value::datetime::{
+    LocalDateAccess, LocalDatetimeAccess, LocalTimeAccess, OffsetDatetimeAccess,
+};
 use crate::value::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
@@ -154,14 +156,14 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             ParsedValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
             ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
             ParsedValue::Boolean(bool) => visitor.visit_bool(bool),
-            ParsedValue::OffsetDatetime(bytes) => {
-                visitor.visit_map(DatetimeAccess::offset_datetime(bytes))
+            ParsedValue::OffsetDatetime(datetime) => {
+                visitor.visit_map(OffsetDatetimeAccess::from(datetime))
             }
-            ParsedValue::LocalDatetime(bytes) => {
-                visitor.visit_map(DatetimeAccess::local_datetime(bytes))
+            ParsedValue::LocalDatetime(datetime) => {
+                visitor.visit_map(LocalDatetimeAccess::from(datetime))
             }
-            ParsedValue::LocalDate(bytes) => visitor.visit_map(DatetimeAccess::local_date(bytes)),
-            ParsedValue::LocalTime(bytes) => visitor.visit_map(DatetimeAccess::local_time(bytes)),
+            ParsedValue::LocalDate(date) => visitor.visit_map(LocalDateAccess::from(date)),
+            ParsedValue::LocalTime(time) => visitor.visit_map(LocalTimeAccess::from(time)),
             ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             ParsedValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
             ParsedValue::Table(table)
@@ -483,36 +485,48 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        match (self.value, name, fields) {
-            (
-                ParsedValue::OffsetDatetime(bytes),
-                OffsetDatetime::WRAPPER_TYPE | Datetime::WRAPPER_TYPE,
-                &[OffsetDatetime::WRAPPER_FIELD | Datetime::WRAPPER_FIELD],
-            ) => visitor.visit_map(DatetimeAccess::offset_datetime(bytes)),
-            (
-                ParsedValue::LocalDatetime(bytes),
-                LocalDatetime::WRAPPER_TYPE | Datetime::WRAPPER_TYPE,
-                &[LocalDatetime::WRAPPER_FIELD | Datetime::WRAPPER_FIELD],
-            ) => visitor.visit_map(DatetimeAccess::local_datetime(bytes)),
-            (
-                ParsedValue::LocalDate(bytes),
-                LocalDate::WRAPPER_TYPE | Datetime::WRAPPER_TYPE,
-                &[LocalDate::WRAPPER_FIELD | Datetime::WRAPPER_FIELD],
-            ) => visitor.visit_map(DatetimeAccess::local_date(bytes)),
-            (
-                ParsedValue::LocalTime(bytes),
-                LocalTime::WRAPPER_TYPE | Datetime::WRAPPER_TYPE,
-                &[LocalTime::WRAPPER_FIELD | Datetime::WRAPPER_FIELD],
-            ) => visitor.visit_map(DatetimeAccess::local_time(bytes)),
-            (
-                ParsedValue::Table(table)
-                | ParsedValue::UndefinedTable(table)
-                | ParsedValue::DottedKeyTable(table)
-                | ParsedValue::InlineTable(table),
-                _,
-                _,
-            ) => visitor.visit_map(MapAccess::new(table)),
-            (value, _, _) => Err(Error::invalid_type(value.typ().into(), &visitor)),
+        match self.value {
+            ParsedValue::OffsetDatetime(datetime)
+                if matches!(name, Datetime::WRAPPER_TYPE | OffsetDatetime::WRAPPER_TYPE)
+                    && matches!(
+                        *fields,
+                        [Datetime::WRAPPER_FIELD | OffsetDatetime::WRAPPER_FIELD]
+                    ) =>
+            {
+                visitor.visit_map(OffsetDatetimeAccess::from(datetime))
+            }
+            ParsedValue::LocalDatetime(datetime)
+                if matches!(name, Datetime::WRAPPER_TYPE | LocalDatetime::WRAPPER_TYPE)
+                    && matches!(
+                        *fields,
+                        [Datetime::WRAPPER_FIELD | LocalDatetime::WRAPPER_FIELD]
+                    ) =>
+            {
+                visitor.visit_map(LocalDatetimeAccess::from(datetime))
+            }
+            ParsedValue::LocalDate(date)
+                if matches!(name, Datetime::WRAPPER_TYPE | LocalDate::WRAPPER_TYPE)
+                    && matches!(
+                        *fields,
+                        [Datetime::WRAPPER_FIELD | LocalDate::WRAPPER_FIELD]
+                    ) =>
+            {
+                visitor.visit_map(LocalDateAccess::from(date))
+            }
+            ParsedValue::LocalTime(time)
+                if matches!(name, Datetime::WRAPPER_TYPE | LocalTime::WRAPPER_TYPE)
+                    && matches!(
+                        *fields,
+                        [Datetime::WRAPPER_FIELD | LocalTime::WRAPPER_FIELD]
+                    ) =>
+            {
+                visitor.visit_map(LocalTimeAccess::from(time))
+            }
+            ParsedValue::Table(table)
+            | ParsedValue::UndefinedTable(table)
+            | ParsedValue::DottedKeyTable(table)
+            | ParsedValue::InlineTable(table) => visitor.visit_map(MapAccess::new(table)),
+            value => Err(Error::invalid_type(value.typ().into(), &visitor)),
         }
     }
 
@@ -1276,9 +1290,20 @@ mod tests {
             Value::Boolean(true)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
-            b"1979-05-27T07:32:00-08:00".into(),
-        ));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+            offset: Offset::Custom { minutes: -480 },
+        }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
             Value::Datetime(Datetime {
@@ -1297,8 +1322,19 @@ mod tests {
             })
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(b"1979-05-27T07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+        }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
             Value::Datetime(Datetime {
@@ -1317,7 +1353,11 @@ mod tests {
             })
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(b"1979-05-27".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
+            year: 1979,
+            month: 5,
+            day: 27,
+        }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
             Value::Datetime(Datetime {
@@ -1331,7 +1371,12 @@ mod tests {
             })
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(b"07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
+            hour: 7,
+            minute: 32,
+            second: 0,
+            nanosecond: 0,
+        }));
         assert_eq!(
             Value::deserialize(deserializer).unwrap(),
             Value::Datetime(Datetime {
@@ -1790,7 +1835,11 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".into()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(b"1979-05-27".into()),
+            ParsedValue::LocalDate(LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            }),
         ]));
         assert_eq!(
             <(i32, String, LocalDate)>::deserialize(deserializer).unwrap(),
@@ -1808,7 +1857,7 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
             hashmap! { "val".into() => ParsedValue::Integer(b"123".into()) },
             hashmap! { "val".into() => ParsedValue::String("hello".into()) },
-            hashmap! { "val".into() => ParsedValue::LocalDate(b"1979-05-27".into()) },
+            hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate { year: 1979, month: 5, day: 27 }) },
         ]));
         assert_eq!(
             <(Struct<i32>, Struct<String>, Struct<LocalDate>)>::deserialize(deserializer).unwrap(),
@@ -1839,7 +1888,11 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".into()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(b"1979-05-27".into()),
+            ParsedValue::LocalDate(LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            }),
         ]));
         assert_eq!(
             TupleStruct::deserialize(deserializer).unwrap(),
@@ -1950,9 +2003,20 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserializer_deserialize_struct_datetime() {
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
-            b"1979-05-27T07:32:00-08:00".into(),
-        ));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+            offset: Offset::Custom { minutes: -480 },
+        }));
         assert_eq!(
             OffsetDatetime::deserialize(deserializer).unwrap(),
             OffsetDatetime {
@@ -1971,8 +2035,19 @@ mod tests {
             }
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(b"1979-05-27T07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+        }));
         assert_eq!(
             LocalDatetime::deserialize(deserializer).unwrap(),
             LocalDatetime {
@@ -1990,7 +2065,11 @@ mod tests {
             }
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(b"1979-05-27".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
+            year: 1979,
+            month: 5,
+            day: 27,
+        }));
         assert_eq!(
             LocalDate::deserialize(deserializer).unwrap(),
             LocalDate {
@@ -2000,7 +2079,12 @@ mod tests {
             }
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(b"07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
+            hour: 7,
+            minute: 32,
+            second: 0,
+            nanosecond: 0,
+        }));
         assert_eq!(
             LocalTime::deserialize(deserializer).unwrap(),
             LocalTime {
@@ -2011,9 +2095,20 @@ mod tests {
             }
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
-            b"1979-05-27T07:32:00-08:00".into(),
-        ));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+            offset: Offset::Custom { minutes: -480 },
+        }));
         assert_eq!(
             Datetime::deserialize(deserializer).unwrap(),
             Datetime {
@@ -2032,8 +2127,19 @@ mod tests {
             }
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(b"1979-05-27T07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
+            date: LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            },
+            time: LocalTime {
+                hour: 7,
+                minute: 32,
+                second: 0,
+                nanosecond: 0,
+            },
+        }));
         assert_eq!(
             Datetime::deserialize(deserializer).unwrap(),
             Datetime {
@@ -2052,7 +2158,11 @@ mod tests {
             }
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(b"1979-05-27".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
+            year: 1979,
+            month: 5,
+            day: 27,
+        }));
         assert_eq!(
             Datetime::deserialize(deserializer).unwrap(),
             Datetime {
@@ -2066,7 +2176,12 @@ mod tests {
             }
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(b"07:32:00".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
+            hour: 7,
+            minute: 32,
+            second: 0,
+            nanosecond: 0,
+        }));
         assert_eq!(
             Datetime::deserialize(deserializer).unwrap(),
             Datetime {

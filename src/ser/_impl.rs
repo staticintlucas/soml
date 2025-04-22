@@ -5,7 +5,7 @@ use serde::{ser, Serialize as _};
 use super::error::{Error, ErrorKind, Result};
 use super::writer::Writer;
 use super::{Serializer, ValueSerializer};
-use crate::value::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+use crate::value::{LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 #[doc(hidden)]
 #[derive(Debug, PartialEq, Eq)]
@@ -841,7 +841,6 @@ impl ser::SerializeStruct for TableKindSerializer {
 
 #[derive(Debug)]
 enum TableOrDatetimeKindSerializer {
-    Datetime(Option<String>),
     OffsetDatetime(Option<String>),
     LocalDatetime(Option<String>),
     LocalDate(Option<String>),
@@ -853,7 +852,6 @@ impl TableOrDatetimeKindSerializer {
     #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
-            Datetime::WRAPPER_TYPE => Self::Datetime(None),
             OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(None),
             LocalDatetime::WRAPPER_TYPE => Self::LocalDatetime(None),
             LocalDate::WRAPPER_TYPE => Self::LocalDate(None),
@@ -873,8 +871,7 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
         T: ?Sized + ser::Serialize,
     {
         match (self, key) {
-            (&mut Self::Datetime(ref mut inner), Datetime::WRAPPER_FIELD)
-            | (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
+            (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDatetime(ref mut inner), LocalDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
             | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
@@ -899,8 +896,7 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
     #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
-            Self::Datetime(inner)
-            | Self::OffsetDatetime(inner)
+            Self::OffsetDatetime(inner)
             | Self::LocalDatetime(inner)
             | Self::LocalDate(inner)
             | Self::LocalTime(inner) => inner.map_or_else(
@@ -1172,7 +1168,6 @@ where
 
 #[derive(Debug)]
 pub enum InlineTableOrDatetimeSerializer<S> {
-    Datetime(Option<String>),
     OffsetDatetime(Option<String>),
     LocalDatetime(Option<String>),
     LocalDate(Option<String>),
@@ -1184,7 +1179,6 @@ impl<S> InlineTableOrDatetimeSerializer<S> {
     #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
-            Datetime::WRAPPER_TYPE => Self::Datetime(None),
             OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(None),
             LocalDatetime::WRAPPER_TYPE => Self::LocalDatetime(None),
             LocalDate::WRAPPER_TYPE => Self::LocalDate(None),
@@ -1208,8 +1202,7 @@ where
         // Datetime here is a struct containing the stringified date. So we use RawStringSerializer
         // to avoid serializing as a quoted TOML string
         match (self, key) {
-            (&mut Self::Datetime(ref mut inner), Datetime::WRAPPER_FIELD)
-            | (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
+            (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDatetime(ref mut inner), LocalDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
             | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
@@ -1233,8 +1226,7 @@ where
     #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
-            Self::Datetime(inner)
-            | Self::OffsetDatetime(inner)
+            Self::OffsetDatetime(inner)
             | Self::LocalDatetime(inner)
             | Self::LocalDate(inner)
             | Self::LocalTime(inner) => {
@@ -1781,15 +1773,6 @@ mod tests {
         assert_matches!(kind, ValueKind::Table(TableKind::Table(_)));
 
         let mut kind_ser =
-            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-        kind_ser
-            .serialize_field(Datetime::WRAPPER_FIELD, "foo")
-            .unwrap();
-        let kind = kind_ser.end().unwrap();
-
-        assert_matches!(kind, ValueKind::InlineValue(_));
-
-        let mut kind_ser =
             TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         kind_ser
             .serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
@@ -1827,22 +1810,22 @@ mod tests {
 
         // Wrong field name
         let mut kind_ser =
-            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+            TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         assert!(kind_ser.serialize_field("foo", "bar").is_err());
 
         // More than one field
         let mut kind_ser =
-            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+            TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         kind_ser
-            .serialize_field(Datetime::WRAPPER_FIELD, "foo")
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
             .unwrap();
         assert!(kind_ser
-            .serialize_field(Datetime::WRAPPER_FIELD, "bar")
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar")
             .is_err());
 
         // No field
         let kind_ser =
-            TableOrDatetimeKindSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+            TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         assert!(kind_ser.end().is_err());
     }
 
@@ -1962,16 +1945,6 @@ mod tests {
 
         let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
-            Datetime::WRAPPER_TYPE,
-        )
-        .unwrap();
-        ser.serialize_field(Datetime::WRAPPER_FIELD, "foo").unwrap();
-        let value = ser.end().unwrap();
-
-        assert_eq!(value, "foo");
-
-        let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
-            Some(0),
             OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
@@ -2017,7 +1990,7 @@ mod tests {
         // Wrong field name
         let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
-            Datetime::WRAPPER_TYPE,
+            OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
         assert!(ser.serialize_field("foo", "bar").is_err());
@@ -2025,16 +1998,19 @@ mod tests {
         // More than one field
         let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
-            Datetime::WRAPPER_TYPE,
+            OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
-        ser.serialize_field(Datetime::WRAPPER_FIELD, "foo").unwrap();
-        assert!(ser.serialize_field(Datetime::WRAPPER_FIELD, "bar").is_err());
+        ser.serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
+            .unwrap();
+        assert!(ser
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar")
+            .is_err());
 
         // No field
         let ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
             Some(0),
-            Datetime::WRAPPER_TYPE,
+            OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
         assert!(ser.end().is_err());

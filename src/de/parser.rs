@@ -9,6 +9,7 @@ use serde::de;
 use super::error::{ErrorKind, Result};
 use super::reader::IoReader;
 use super::{Reader, SliceReader};
+use crate::value::{LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpecialFloat {
@@ -77,13 +78,13 @@ pub(super) enum Value<'de> {
     // Boolean
     Boolean(bool),
     // Offset Datetime
-    OffsetDatetime(Cow<'de, [u8]>),
+    OffsetDatetime(OffsetDatetime),
     // Local Datetime
-    LocalDatetime(Cow<'de, [u8]>),
+    LocalDatetime(LocalDatetime),
     // Local Date
-    LocalDate(Cow<'de, [u8]>),
+    LocalDate(LocalDate),
     // Local Time
-    LocalTime(Cow<'de, [u8]>),
+    LocalTime(LocalTime),
     // Just a regular inline array
     Array(Vec<Self>),
     // Table defined by a table header. This is immutable aside from being able to add subtables
@@ -660,7 +661,7 @@ where
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
-                return self.reader.end_seq().map(Value::LocalDate);
+                return LocalDate::from_slice(&self.reader.end_seq()?).map(Value::LocalDate);
             }
             self.reader.discard()?; // Skip the 'T'/space
 
@@ -674,7 +675,8 @@ where
                     return Err(ErrorKind::InvalidDatetime.into());
                 }
 
-                return self.reader.end_seq().map(Value::LocalDatetime);
+                return LocalDatetime::from_slice(&self.reader.end_seq()?)
+                    .map(Value::LocalDatetime);
             }
 
             self.check_offset()?;
@@ -684,7 +686,7 @@ where
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            self.reader.end_seq().map(Value::OffsetDatetime)
+            OffsetDatetime::from_slice(&self.reader.end_seq()?).map(Value::OffsetDatetime)
         }
         // 2 digits = hour for time
         else if first_num.len() == 2 {
@@ -698,7 +700,7 @@ where
                 return Err(ErrorKind::InvalidDatetime.into());
             }
 
-            self.reader.end_seq().map(Value::LocalTime)
+            LocalTime::from_slice(&self.reader.end_seq()?).map(Value::LocalTime)
         }
         // Any other number of digits is invalid
         else {
@@ -1332,6 +1334,7 @@ mod tests {
     use maplit::hashmap;
 
     use super::*;
+    use crate::value::Offset;
 
     #[test]
     fn type_to_str() {
@@ -1389,21 +1392,41 @@ mod tests {
 
     #[test]
     fn value_type() {
+        let inf = SpecialFloat::Infinity;
+        let date = LocalDate {
+            year: 2023,
+            month: 1,
+            day: 2,
+        };
+        let time = LocalTime {
+            hour: 3,
+            minute: 4,
+            second: 5,
+            nanosecond: 6_000_000,
+        };
+        let offset = Offset::Custom { minutes: 248 };
+        let offset_datetime = OffsetDatetime {
+            date: date.clone(),
+            time: time.clone(),
+            offset,
+        };
+        let local_datetime = LocalDatetime {
+            date: date.clone(),
+            time: time.clone(),
+        };
+
         assert_eq!(Value::String("foo".into()).typ(), Type::String);
         assert_eq!(Value::Integer(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::BinaryInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::OctalInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::HexInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::Float(b"123".into()).typ(), Type::Float);
-        assert_eq!(
-            Value::SpecialFloat(SpecialFloat::Infinity).typ(),
-            Type::Float
-        );
+        assert_eq!(Value::SpecialFloat(inf).typ(), Type::Float);
         assert_eq!(Value::Boolean(true).typ(), Type::Boolean);
-        assert_eq!(Value::OffsetDatetime(b"foo".into()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDatetime(b"foo".into()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDate(b"foo".into()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalTime(b"foo".into()).typ(), Type::Datetime);
+        assert_eq!(Value::OffsetDatetime(offset_datetime).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDatetime(local_datetime).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDate(date).typ(), Type::Datetime);
+        assert_eq!(Value::LocalTime(time).typ(), Type::Datetime);
         assert_eq!(Value::Array(vec![]).typ(), Type::Array);
         assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
         assert_eq!(Value::Table(Table::new()).typ(), Type::Table);
@@ -1507,7 +1530,20 @@ mod tests {
                 "title".into() => Value::String("TOML Example".into()),
                 "owner".into() => Value::Table(hashmap! {
                     "name".into() => Value::String("Tom Preston-Werner".into()),
-                    "dob".into() => Value::OffsetDatetime(b"1979-05-27T07:32:00-08:00".into()),
+                    "dob".into() => Value::OffsetDatetime(OffsetDatetime {
+                        date: LocalDate {
+                            year: 1979,
+                            month: 5,
+                            day: 27,
+                        },
+                        time: LocalTime {
+                            hour: 7,
+                            minute: 32,
+                            second: 0,
+                            nanosecond: 0,
+                        },
+                        offset: Offset::Custom { minutes: -480 },
+                    }),
                 }),
                 "database".into() => Value::Table(hashmap! {
                     "server".into() => Value::String("192.168.1.1".into()),
@@ -1691,6 +1727,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn parser_parse_value() {
         let mut parser = Parser::from_str(r#""hello""#);
         assert_eq!(parser.parse_value().unwrap(), Value::String("hello".into()));
@@ -1710,13 +1747,22 @@ mod tests {
         let mut parser = Parser::from_str("0001-01-01");
         assert_eq!(
             parser.parse_value().unwrap(),
-            Value::LocalDate(b"0001-01-01".into())
+            Value::LocalDate(LocalDate {
+                year: 1,
+                month: 1,
+                day: 1
+            })
         );
 
         let mut parser = Parser::from_str("00:00:00");
         assert_eq!(
             parser.parse_value().unwrap(),
-            Value::LocalTime(b"00:00:00".into())
+            Value::LocalTime(LocalTime {
+                hour: 0,
+                minute: 0,
+                second: 0,
+                nanosecond: 0
+            })
         );
 
         let mut parser = Parser::from_str("0");
@@ -1731,16 +1777,25 @@ mod tests {
             Value::Integer(b"1234".into())
         );
 
-        let mut parser = Parser::from_str("1234-56-78");
+        let mut parser = Parser::from_str("1234-05-06");
         assert_eq!(
             parser.parse_value().unwrap(),
-            Value::LocalDate(b"1234-56-78".into())
+            Value::LocalDate(LocalDate {
+                year: 1234,
+                month: 5,
+                day: 6
+            })
         );
 
         let mut parser = Parser::from_str("12:34:56");
         assert_eq!(
             parser.parse_value().unwrap(),
-            Value::LocalTime(b"12:34:56".into())
+            Value::LocalTime(LocalTime {
+                hour: 12,
+                minute: 34,
+                second: 56,
+                nanosecond: 0
+            })
         );
 
         let mut parser = Parser::from_str("-123");
@@ -2146,12 +2201,6 @@ mod tests {
         let mut parser = Parser::from_str("1980-01-01 12:00:00");
         assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
 
-        let mut parser = Parser::from_str("1980-01-01T12:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
-
-        let mut parser = Parser::from_str("1980-01-01 12:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
-
         let mut parser = Parser::from_str("1980-01-01");
         assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDate(_));
 
@@ -2159,9 +2208,6 @@ mod tests {
         assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
 
         let mut parser = Parser::from_str("12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
-
-        let mut parser = Parser::from_str("12:00");
         assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30abc");
@@ -2179,6 +2225,12 @@ mod tests {
         let mut parser = Parser::from_str("1980-01-01T12:00abc");
         assert!(parser.parse_datetime().is_err());
 
+        let mut parser = Parser::from_str("1980-01-01T12:00");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("1980-01-01 12:00");
+        assert!(parser.parse_datetime().is_err());
+
         let mut parser = Parser::from_str("1980-01-01abc");
         assert!(parser.parse_datetime().is_err());
 
@@ -2189,6 +2241,9 @@ mod tests {
         assert!(parser.parse_datetime().is_err());
 
         let mut parser = Parser::from_str("12:00abc");
+        assert!(parser.parse_datetime().is_err());
+
+        let mut parser = Parser::from_str("12:00");
         assert!(parser.parse_datetime().is_err());
 
         let mut parser = Parser::from_str("abc");

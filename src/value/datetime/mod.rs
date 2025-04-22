@@ -4,8 +4,8 @@ use std::{fmt, str};
 use serde::de::{Error as _, Unexpected};
 
 pub use self::de::{
-    DatetimeAccess, LocalDateFromBytes, LocalDatetimeFromBytes, LocalTimeFromBytes,
-    OffsetDatetimeFromBytes,
+    LocalDateAccess, LocalDateFromFields, LocalDatetimeAccess, LocalDatetimeFromFields,
+    LocalTimeAccess, LocalTimeFromFields, OffsetDatetimeAccess, OffsetDatetimeFromFields,
 };
 use crate::de::{Error, ErrorKind};
 

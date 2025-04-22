@@ -400,7 +400,6 @@ impl ser::SerializeStruct for ToValueTableSerializer {
 }
 
 pub enum ToValueTableOrDatetimeSerializer {
-    Datetime(Option<String>),
     OffsetDatetime(Option<String>),
     LocalDatetime(Option<String>),
     LocalDate(Option<String>),
@@ -411,7 +410,6 @@ pub enum ToValueTableOrDatetimeSerializer {
 impl ToValueTableOrDatetimeSerializer {
     fn start(len: Option<usize>, name: &'static str) -> Result<Self, Error> {
         Ok(match name {
-            Datetime::WRAPPER_TYPE => Self::Datetime(None),
             OffsetDatetime::WRAPPER_TYPE => Self::OffsetDatetime(None),
             LocalDatetime::WRAPPER_TYPE => Self::LocalDatetime(None),
             LocalDate::WRAPPER_TYPE => Self::LocalDate(None),
@@ -430,8 +428,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
         T: ?Sized + ser::Serialize,
     {
         match (self, key) {
-            (&mut Self::Datetime(ref mut inner), Datetime::WRAPPER_FIELD)
-            | (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
+            (&mut Self::OffsetDatetime(ref mut inner), OffsetDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDatetime(ref mut inner), LocalDatetime::WRAPPER_FIELD)
             | (&mut Self::LocalDate(ref mut inner), LocalDate::WRAPPER_FIELD)
             | (&mut Self::LocalTime(ref mut inner), LocalTime::WRAPPER_FIELD) => match *inner {
@@ -453,8 +450,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         match self {
-            Self::Datetime(inner)
-            | Self::OffsetDatetime(inner)
+            Self::OffsetDatetime(inner)
             | Self::LocalDatetime(inner)
             | Self::LocalDate(inner)
             | Self::LocalTime(inner) => Ok(Value::Datetime(
@@ -559,7 +555,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             result,
-            r#"{"<soml::_impl::Datetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
         );
 
         let result = serde_json::to_string(&Value::Array(vec![
@@ -838,20 +834,20 @@ mod tests {
             )
         );
 
-        let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-        serializer
-            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-            .unwrap();
-        let result = serializer.end().unwrap();
-        assert_eq!(
-            result,
-            Value::Datetime(Datetime {
-                date: Some(date()),
-                time: Some(time()),
-                offset: Some(offset()),
-            })
-        );
+        // let mut serializer =
+        //     ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+        // serializer
+        //     .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+        //     .unwrap();
+        // let result = serializer.end().unwrap();
+        // assert_eq!(
+        //     result,
+        //     Value::Datetime(Datetime {
+        //         date: Some(date()),
+        //         time: Some(time()),
+        //         offset: Some(offset()),
+        //     })
+        // );
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
@@ -917,34 +913,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn to_value_table_or_datetime_serializer_error() {
-        use ser::SerializeStruct as _;
+    // #[test]
+    // fn to_value_table_or_datetime_serializer_error() {
+    //     use ser::SerializeStruct as _;
 
-        let serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(0), Datetime::WRAPPER_TYPE).unwrap();
-        assert!(serializer.end().is_err());
+    //     let serializer =
+    //         ToValueTableOrDatetimeSerializer::start(Some(0), Datetime::WRAPPER_TYPE).unwrap();
+    //     assert!(serializer.end().is_err());
 
-        let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-        assert!(serializer.serialize_field("one", &1).is_err());
+    //     let mut serializer =
+    //         ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+    //     assert!(serializer.serialize_field("one", &1).is_err());
 
-        let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(2), Datetime::WRAPPER_TYPE).unwrap();
-        serializer
-            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-            .unwrap();
-        assert!(serializer
-            .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-            .is_err());
+    //     let mut serializer =
+    //         ToValueTableOrDatetimeSerializer::start(Some(2), Datetime::WRAPPER_TYPE).unwrap();
+    //     serializer
+    //         .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+    //         .unwrap();
+    //     assert!(serializer
+    //         .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
+    //         .is_err());
 
-        let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-        serializer
-            .serialize_field(Datetime::WRAPPER_FIELD, &"blah")
-            .unwrap();
-        assert!(serializer.end().is_err());
-    }
+    //     let mut serializer =
+    //         ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
+    //     serializer
+    //         .serialize_field(Datetime::WRAPPER_FIELD, &"blah")
+    //         .unwrap();
+    //     assert!(serializer.end().is_err());
+    // }
 
     #[test]
     fn to_value_wrapped_table_serializer() {
