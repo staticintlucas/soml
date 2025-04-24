@@ -12,6 +12,97 @@ use crate::de::{Error, ErrorKind};
 mod de;
 mod ser;
 
+/// A generic TOML date-time enum.
+///
+/// This struct can represent any of the TOML date-time types, depending on the variant.
+///
+/// If compatibility with the [`toml`] crate is required, use the [`Datetime`] struct instead.
+///
+/// When working with a known date-time type, one of the [`OffsetDatetime`], [`LocalDatetime`],
+/// [`LocalDate`], or [`LocalTime`] types can be used.
+///
+/// [`toml`]: https://crates.io/crates/toml
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum AnyDatetime {
+    /// A TOML offset date-time value.
+    OffsetDatetime(OffsetDatetime),
+    /// A TOML local date-time value.
+    LocalDatetime(LocalDatetime),
+    /// A TOML local date value.
+    LocalDate(LocalDate),
+    /// A TOML local time value.
+    LocalTime(LocalTime),
+}
+
+impl AnyDatetime {
+    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::AnyDatetime::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::AnyDatetime::Wrapper::Field>";
+
+    /// Parses a [`AnyDatetime`] from a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice is not a valid TOML date-time value.
+    #[inline]
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
+        if let Some(position) = bytes.iter().position(|b| b"Tt ".contains(b)) {
+            let (date, rest) = (&bytes[..position], &bytes[position + 1..]);
+
+            let date = LocalDate::from_slice(date)?;
+
+            if let Some(off_pos) = rest.iter().position(|b| b"Zz+-".contains(b)) {
+                let time = LocalTime::from_slice(&rest[..off_pos])?;
+                let offset = Offset::from_slice(&rest[off_pos..])?;
+
+                Ok(Self::OffsetDatetime(OffsetDatetime { date, time, offset }))
+            } else {
+                let time = LocalTime::from_slice(rest)?;
+
+                Ok(Self::LocalDatetime(LocalDatetime { date, time }))
+            }
+        } else if bytes.contains(&b':') {
+            let time = LocalTime::from_slice(bytes)?;
+
+            Ok(Self::LocalTime(time))
+        } else {
+            let date = LocalDate::from_slice(bytes)?;
+
+            Ok(Self::LocalDate(date))
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn type_str(&self) -> &'static str {
+        match *self {
+            Self::OffsetDatetime(_) => "offset date-time",
+            Self::LocalDatetime(_) => "local date-time",
+            Self::LocalDate(_) => "local date",
+            Self::LocalTime(_) => "local time",
+        }
+    }
+}
+
+impl str::FromStr for AnyDatetime {
+    type Err = Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_slice(s.as_bytes())
+    }
+}
+
+impl fmt::Display for AnyDatetime {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::OffsetDatetime(ref datetime) => datetime.fmt(f),
+            Self::LocalDatetime(ref datetime) => datetime.fmt(f),
+            Self::LocalDate(ref date) => date.fmt(f),
+            Self::LocalTime(ref time) => time.fmt(f),
+        }
+    }
+}
+
 /// A TOML date-time value.
 ///
 /// This struct can represent any of the TOML date-time types, depending on which fields are
@@ -26,8 +117,11 @@ mod ser;
 ///
 /// All other combinations are considered invalid
 ///
-/// When working with a known date-time type, one of the [`OffsetDatetime`], [`LocalDatetime`],
-/// [`LocalDate`], or [`LocalTime`] types can be used instead.
+/// If compatibility with the [`toml`] crate is not needed, the [`AnyDatetime`] enum is recommended
+/// instead. Or when working with a known date-time type, one of the [`OffsetDatetime`],
+/// [`LocalDatetime`], [`LocalDate`], or [`LocalTime`] types should be used.
+///
+/// [`toml`]: https://crates.io/crates/toml
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Datetime {
     /// The date portion of the date-time value.
@@ -39,9 +133,6 @@ pub struct Datetime {
 }
 
 impl Datetime {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::Datetime::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::Datetime::Wrapper::Field>";
-
     /// Parses a [`Datetime`] from a byte slice.
     ///
     /// # Errors
@@ -49,40 +140,27 @@ impl Datetime {
     /// Returns an error if the slice is not a valid TOML date-time value.
     #[inline]
     pub fn from_slice(bytes: &[u8]) -> Result<Self, Error> {
-        if let Some(position) = bytes.iter().position(|b| b"Tt ".contains(b)) {
-            let (date, rest) = (&bytes[..position], &bytes[position + 1..]);
-
-            let date = Some(LocalDate::from_slice(date)?);
-
-            let (time, offset) =
-                if let Some(off_pos) = rest.iter().position(|b| b"Zz+-".contains(b)) {
-                    let time = LocalTime::from_slice(&rest[..off_pos])?;
-                    let offset = Offset::from_slice(&rest[off_pos..])?;
-
-                    (Some(time), Some(offset))
-                } else {
-                    let time = LocalTime::from_slice(rest)?;
-
-                    (Some(time), None)
-                };
-
-            Ok(Self { date, time, offset })
-        } else if bytes.contains(&b':') {
-            let time = Some(LocalTime::from_slice(bytes)?);
-
-            Ok(Self {
-                date: None,
-                time,
+        match AnyDatetime::from_slice(bytes)? {
+            AnyDatetime::OffsetDatetime(OffsetDatetime { date, time, offset }) => Ok(Self {
+                date: Some(date),
+                time: Some(time),
+                offset: Some(offset),
+            }),
+            AnyDatetime::LocalDatetime(LocalDatetime { date, time }) => Ok(Self {
+                date: Some(date),
+                time: Some(time),
                 offset: None,
-            })
-        } else {
-            let date = Some(LocalDate::from_slice(bytes)?);
-
-            Ok(Self {
-                date,
+            }),
+            AnyDatetime::LocalDate(date) => Ok(Self {
+                date: Some(date),
                 time: None,
                 offset: None,
-            })
+            }),
+            AnyDatetime::LocalTime(time) => Ok(Self {
+                date: None,
+                time: Some(time),
+                offset: None,
+            }),
         }
     }
 
@@ -120,6 +198,54 @@ impl fmt::Display for Datetime {
             (Some(date), None, None) => write!(f, "{date}"),
             (None, Some(time), None) => write!(f, "{time}"),
             _ => write!(f, "<{}>", self.type_str()),
+        }
+    }
+}
+
+impl From<AnyDatetime> for Datetime {
+    #[inline]
+    fn from(value: AnyDatetime) -> Self {
+        match value {
+            AnyDatetime::OffsetDatetime(OffsetDatetime { date, time, offset }) => Self {
+                date: Some(date),
+                time: Some(time),
+                offset: Some(offset),
+            },
+            AnyDatetime::LocalDatetime(LocalDatetime { date, time }) => Self {
+                date: Some(date),
+                time: Some(time),
+                offset: None,
+            },
+            AnyDatetime::LocalDate(date) => Self {
+                date: Some(date),
+                time: None,
+                offset: None,
+            },
+            AnyDatetime::LocalTime(time) => Self {
+                date: None,
+                time: Some(time),
+                offset: None,
+            },
+        }
+    }
+}
+
+impl TryFrom<Datetime> for AnyDatetime {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: Datetime) -> Result<Self, Self::Error> {
+        match (value.date, value.time, value.offset) {
+            (Some(date), Some(time), Some(offset)) => {
+                Ok(Self::OffsetDatetime(OffsetDatetime { date, time, offset }))
+            }
+            (Some(date), Some(time), None) => Ok(Self::LocalDatetime(LocalDatetime { date, time })),
+            (Some(date), None, None) => Ok(Self::LocalDate(date)),
+            (None, Some(time), None) => Ok(Self::LocalTime(time)),
+            (date, time, offset) => Err(Error::invalid_value(
+                Unexpected::Other(Datetime { date, time, offset }.type_str()),
+                &"a valid date-time",
+            )),
         }
     }
 }
@@ -211,6 +337,29 @@ impl fmt::Display for OffsetDatetime {
     }
 }
 
+impl From<OffsetDatetime> for AnyDatetime {
+    #[inline]
+    fn from(value: OffsetDatetime) -> Self {
+        Self::OffsetDatetime(value)
+    }
+}
+
+impl TryFrom<AnyDatetime> for OffsetDatetime {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: AnyDatetime) -> Result<Self, Self::Error> {
+        if let AnyDatetime::OffsetDatetime(datetime) = value {
+            Ok(datetime)
+        } else {
+            Err(Error::invalid_value(
+                Unexpected::Other(value.type_str()),
+                &"an offset date-time",
+            ))
+        }
+    }
+}
+
 impl From<OffsetDatetime> for Datetime {
     #[inline]
     fn from(value: OffsetDatetime) -> Self {
@@ -235,7 +384,7 @@ impl TryFrom<Datetime> for OffsetDatetime {
         else {
             return Err(Error::invalid_value(
                 Unexpected::Other(value.type_str()),
-                &"a local date-time",
+                &"an offset date-time",
             ));
         };
         Ok(Self { date, time, offset })
@@ -309,6 +458,29 @@ impl fmt::Display for LocalDatetime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { ref date, ref time } = *self;
         write!(f, "{date}T{time}")
+    }
+}
+
+impl From<LocalDatetime> for AnyDatetime {
+    #[inline]
+    fn from(value: LocalDatetime) -> Self {
+        Self::LocalDatetime(value)
+    }
+}
+
+impl TryFrom<AnyDatetime> for LocalDatetime {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: AnyDatetime) -> Result<Self, Self::Error> {
+        if let AnyDatetime::LocalDatetime(datetime) = value {
+            Ok(datetime)
+        } else {
+            Err(Error::invalid_value(
+                Unexpected::Other(value.type_str()),
+                &"a local date-time",
+            ))
+        }
     }
 }
 
@@ -463,6 +635,29 @@ impl fmt::Display for LocalDate {
     }
 }
 
+impl From<LocalDate> for AnyDatetime {
+    #[inline]
+    fn from(value: LocalDate) -> Self {
+        Self::LocalDate(value)
+    }
+}
+
+impl TryFrom<AnyDatetime> for LocalDate {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: AnyDatetime) -> Result<Self, Self::Error> {
+        if let AnyDatetime::LocalDate(date) = value {
+            Ok(date)
+        } else {
+            Err(Error::invalid_value(
+                Unexpected::Other(value.type_str()),
+                &"a local date",
+            ))
+        }
+    }
+}
+
 impl From<LocalDate> for Datetime {
     #[inline]
     fn from(value: LocalDate) -> Self {
@@ -487,7 +682,7 @@ impl TryFrom<Datetime> for LocalDate {
         else {
             return Err(Error::invalid_value(
                 Unexpected::Other(value.type_str()),
-                &"a local date-time",
+                &"a local date",
             ));
         };
         Ok(date)
@@ -661,6 +856,29 @@ impl fmt::Display for LocalTime {
     }
 }
 
+impl From<LocalTime> for AnyDatetime {
+    #[inline]
+    fn from(value: LocalTime) -> Self {
+        Self::LocalTime(value)
+    }
+}
+
+impl TryFrom<AnyDatetime> for LocalTime {
+    type Error = Error;
+
+    #[inline]
+    fn try_from(value: AnyDatetime) -> Result<Self, Self::Error> {
+        if let AnyDatetime::LocalTime(time) = value {
+            Ok(time)
+        } else {
+            Err(Error::invalid_value(
+                Unexpected::Other(value.type_str()),
+                &"a local time",
+            ))
+        }
+    }
+}
+
 impl From<LocalTime> for Datetime {
     #[inline]
     fn from(value: LocalTime) -> Self {
@@ -685,7 +903,7 @@ impl TryFrom<Datetime> for LocalTime {
         else {
             return Err(Error::invalid_value(
                 Unexpected::Other(value.type_str()),
-                &"a local date-time",
+                &"a local time",
             ));
         };
         Ok(time)
@@ -828,6 +1046,94 @@ mod tests {
     };
 
     #[test]
+    fn any_datetime_from_slice() {
+        let result = AnyDatetime::from_slice(b"2023-01-02T03:04:05.006+07:08").unwrap();
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02t03:04:05.006+07:08").unwrap();
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02 03:04:05.006+07:08").unwrap();
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02T03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02t03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02 03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"2023-01-02").unwrap();
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_slice(b"03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(result, datetime);
+
+        AnyDatetime::from_slice(b"invalid string").unwrap_err();
+    }
+
+    #[test]
+    fn any_datetime_type_str() {
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(datetime.type_str(), "offset date-time");
+
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(datetime.type_str(), "local date-time");
+
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(datetime.type_str(), "local date");
+
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(datetime.type_str(), "local time");
+    }
+
+    #[test]
+    fn any_datetime_from_str() {
+        let result = AnyDatetime::from_str("2023-01-02T03:04:05.006+07:08").unwrap();
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_str("2023-01-02T03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_str("2023-01-02").unwrap();
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(result, datetime);
+
+        let result = AnyDatetime::from_str("03:04:05.006").unwrap();
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(result, datetime);
+
+        AnyDatetime::from_str("invalid string").unwrap_err();
+    }
+
+    #[test]
+    fn any_datetime_display() {
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006+07:08");
+
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006");
+
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(datetime.to_string(), "2023-01-02");
+
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(datetime.to_string(), "03:04:05.006");
+    }
+
+    #[test]
     fn datetime_from_slice() {
         let result = Datetime::from_slice(b"2023-01-02T03:04:05.006+07:08").unwrap();
         let datetime = Datetime {
@@ -897,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn datetime_from_type_str() {
+    fn datetime_type_str() {
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
@@ -1078,6 +1384,113 @@ mod tests {
     }
 
     #[test]
+    fn datetime_from_any_datetime() {
+        let result = Datetime::from(AnyDatetime::OffsetDatetime(OFFSET_DATETIME));
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: Some(TIME),
+            offset: Some(OFFSET),
+        };
+        assert_eq!(result, datetime);
+
+        let result = Datetime::from(AnyDatetime::LocalDatetime(LOCAL_DATETIME));
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: Some(TIME),
+            offset: None,
+        };
+        assert_eq!(result, datetime);
+
+        let result = Datetime::from(AnyDatetime::LocalDate(DATE));
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: None,
+            offset: None,
+        };
+        assert_eq!(result, datetime);
+
+        let result = Datetime::from(AnyDatetime::LocalTime(TIME));
+        let datetime = Datetime {
+            date: None,
+            time: Some(TIME),
+            offset: None,
+        };
+        assert_eq!(result, datetime);
+    }
+
+    #[test]
+    fn any_datetime_try_from_datetime() {
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: Some(TIME),
+            offset: Some(OFFSET),
+        };
+        assert_eq!(
+            AnyDatetime::try_from(datetime).unwrap(),
+            AnyDatetime::OffsetDatetime(OFFSET_DATETIME)
+        );
+
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: Some(TIME),
+            offset: None,
+        };
+        assert_eq!(
+            AnyDatetime::try_from(datetime).unwrap(),
+            AnyDatetime::LocalDatetime(LOCAL_DATETIME)
+        );
+
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: None,
+            offset: None,
+        };
+        assert_eq!(
+            AnyDatetime::try_from(datetime).unwrap(),
+            AnyDatetime::LocalDate(DATE)
+        );
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(TIME),
+            offset: None,
+        };
+        assert_eq!(
+            AnyDatetime::try_from(datetime).unwrap(),
+            AnyDatetime::LocalTime(TIME)
+        );
+
+        // Invalid permutations
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: Some(OFFSET),
+        };
+        AnyDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = Datetime {
+            date: Some(DATE),
+            time: None,
+            offset: Some(OFFSET),
+        };
+        AnyDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: Some(TIME),
+            offset: Some(OFFSET),
+        };
+        AnyDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = Datetime {
+            date: None,
+            time: None,
+            offset: None,
+        };
+        AnyDatetime::try_from(datetime).unwrap_err();
+    }
+
+    #[test]
     fn offset_datetime_from_slice() {
         let result = OffsetDatetime::from_slice(b"2023-01-02T03:04:05.006+07:08").unwrap();
         assert_eq!(result, OFFSET_DATETIME);
@@ -1102,6 +1515,28 @@ mod tests {
     #[test]
     fn offset_datetime_display() {
         assert_eq!(OFFSET_DATETIME.to_string(), "2023-01-02T03:04:05.006+07:08");
+    }
+
+    #[test]
+    fn any_datetime_from_offset_datetime() {
+        let result = AnyDatetime::from(OFFSET_DATETIME);
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(result, datetime);
+    }
+
+    #[test]
+    fn offset_datetime_try_from_any_datetime() {
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        assert_eq!(OffsetDatetime::try_from(datetime).unwrap(), OFFSET_DATETIME);
+
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        OffsetDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalDate(DATE);
+        OffsetDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalTime(TIME);
+        OffsetDatetime::try_from(datetime).unwrap_err();
     }
 
     #[test]
@@ -1199,6 +1634,28 @@ mod tests {
     #[test]
     fn local_datetime_display() {
         assert_eq!(LOCAL_DATETIME.to_string(), "2023-01-02T03:04:05.006");
+    }
+
+    #[test]
+    fn any_datetime_from_local_datetime() {
+        let result = AnyDatetime::from(LOCAL_DATETIME);
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(result, datetime);
+    }
+
+    #[test]
+    fn local_datetime_try_from_any_datetime() {
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        assert_eq!(LocalDatetime::try_from(datetime).unwrap(), LOCAL_DATETIME);
+
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        LocalDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalDate(DATE);
+        LocalDatetime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalTime(TIME);
+        LocalDatetime::try_from(datetime).unwrap_err();
     }
 
     #[test]
@@ -1314,6 +1771,28 @@ mod tests {
     #[test]
     fn local_date_display() {
         assert_eq!(DATE.to_string(), "2023-01-02");
+    }
+
+    #[test]
+    fn any_datetime_from_local_date() {
+        let result = AnyDatetime::from(DATE);
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(result, datetime);
+    }
+
+    #[test]
+    fn local_date_try_from_any_datetime() {
+        let datetime = AnyDatetime::LocalDate(DATE);
+        assert_eq!(LocalDate::try_from(datetime).unwrap(), DATE);
+
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        LocalDate::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        LocalDate::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalTime(TIME);
+        LocalDate::try_from(datetime).unwrap_err();
     }
 
     #[test]
@@ -1445,6 +1924,28 @@ mod tests {
             ..TIME
         };
         assert_eq!(time_no_nanos.to_string(), "03:04:05");
+    }
+
+    #[test]
+    fn any_datetime_from_local_time() {
+        let result = AnyDatetime::from(TIME);
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(result, datetime);
+    }
+
+    #[test]
+    fn local_datetime_try_from_any_time() {
+        let datetime = AnyDatetime::LocalTime(TIME);
+        assert_eq!(LocalTime::try_from(datetime).unwrap(), TIME);
+
+        let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
+        LocalTime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
+        LocalTime::try_from(datetime).unwrap_err();
+
+        let datetime = AnyDatetime::LocalDate(DATE);
+        LocalTime::try_from(datetime).unwrap_err();
     }
 
     #[test]

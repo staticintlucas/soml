@@ -2,10 +2,10 @@ use std::{fmt, str};
 
 use serde::de::{self, Error as _};
 
-use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+use super::{AnyDatetime, Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::de::Error;
 
-impl<'de> de::Deserialize<'de> for Datetime {
+impl<'de> de::Deserialize<'de> for AnyDatetime {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -63,7 +63,7 @@ impl<'de> de::Deserialize<'de> for Datetime {
         struct Visitor;
 
         impl<'de> de::Visitor<'de> for Visitor {
-            type Value = Datetime;
+            type Value = AnyDatetime;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -79,18 +79,34 @@ impl<'de> de::Deserialize<'de> for Datetime {
                     return Err(A::Error::invalid_length(0, &self));
                 };
                 let value = match field {
-                    Field::OffsetDatetime => map.next_value::<EncodedOffsetDatetime>()?.0.into(),
-                    Field::LocalDatetime => map.next_value::<EncodedLocalDatetime>()?.0.into(),
-                    Field::LocalDate => map.next_value::<EncodedLocalDate>()?.0.into(),
-                    Field::LocalTime => map.next_value::<EncodedLocalTime>()?.0.into(),
+                    Field::OffsetDatetime => {
+                        Self::Value::OffsetDatetime(map.next_value::<EncodedOffsetDatetime>()?.0)
+                    }
+                    Field::LocalDatetime => {
+                        Self::Value::LocalDatetime(map.next_value::<EncodedLocalDatetime>()?.0)
+                    }
+                    Field::LocalDate => {
+                        Self::Value::LocalDate(map.next_value::<EncodedLocalDate>()?.0)
+                    }
+                    Field::LocalTime => {
+                        Self::Value::LocalTime(map.next_value::<EncodedLocalTime>()?.0)
+                    }
                 };
                 Ok(value)
             }
         }
 
-        // The deserializer should accept any of the *::WRAPPER_TYPE/FIELD values, but we can only
-        // pass one. So we pass Datetime::* to mean we accept any of the others.
         deserializer.deserialize_struct(Self::WRAPPER_TYPE, &[Self::WRAPPER_FIELD], Visitor)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for Datetime {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        AnyDatetime::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -707,10 +723,107 @@ mod tests {
     };
 
     #[test]
+    fn deserialize_any_datetime() {
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&AnyDatetime::from(OFFSET_DATETIME), tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&AnyDatetime::from(LOCAL_DATETIME), tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(b"\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&AnyDatetime::from(DATE), tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&AnyDatetime::from(TIME), tokens);
+
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<AnyDatetime>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::AnyDatetime::Wrapper>", len: 1 }"#,
+        );
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<AnyDatetime>(tokens, "unknown field `bar`, expected one of `<soml::_impl::OffsetDatetime::Wrapper::Field>`, `<soml::_impl::LocalDatetime::Wrapper::Field>`, `<soml::_impl::LocalDate::Wrapper::Field>`, `<soml::_impl::LocalTime::Wrapper::Field>`");
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<AnyDatetime>(
+            tokens,
+            "invalid length 0, expected a date-time wrapper",
+        );
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::Str(LocalDate::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<AnyDatetime>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<AnyDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected a date-time wrapper",
+        );
+    }
+
+    #[test]
     fn deserialize_datetime() {
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
@@ -721,7 +834,7 @@ mod tests {
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
@@ -732,7 +845,7 @@ mod tests {
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
@@ -743,7 +856,7 @@ mod tests {
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
@@ -758,12 +871,12 @@ mod tests {
         }];
         assert_de_tokens_error::<Datetime>(
             tokens,
-            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::Datetime::Wrapper>", len: 1 }"#,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::AnyDatetime::Wrapper>", len: 1 }"#,
         );
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 1,
             },
             Token::Str("bar"),
@@ -772,7 +885,7 @@ mod tests {
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 0,
             },
             Token::StructEnd,
@@ -784,7 +897,7 @@ mod tests {
 
         let tokens = &[
             Token::Struct {
-                name: Datetime::WRAPPER_TYPE,
+                name: AnyDatetime::WRAPPER_TYPE,
                 len: 3,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),

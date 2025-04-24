@@ -6,11 +6,11 @@ use serde::de;
 use serde::de::{Error as _, IntoDeserializer as _};
 
 use super::datetime::{
-    EncodedLocalDate, EncodedLocalDatetime, EncodedLocalTime, EncodedOffsetDatetime, LocalDate,
-    LocalDateAccess, LocalDatetime, LocalDatetimeAccess, LocalTime, LocalTimeAccess,
+    AnyDatetime, EncodedLocalDate, EncodedLocalDatetime, EncodedLocalTime, EncodedOffsetDatetime,
+    LocalDate, LocalDateAccess, LocalDatetime, LocalDatetimeAccess, LocalTime, LocalTimeAccess,
     OffsetDatetime, OffsetDatetimeAccess,
 };
-use super::{Datetime, Type, Value};
+use super::{Type, Value};
 use crate::de::{Error, Result};
 use crate::{map, Table};
 
@@ -329,23 +329,15 @@ impl<'de> de::Deserializer<'de> for Value {
             Self::Integer(int) => visitor.visit_i64(int),
             Self::Float(float) => visitor.visit_f64(float),
             Self::Boolean(bool) => visitor.visit_bool(bool),
-            Self::Datetime(datetime) => match (datetime.date, datetime.time, datetime.offset) {
-                (Some(date), Some(time), Some(offset)) => {
-                    visitor.visit_map(OffsetDatetimeAccess::from(OffsetDatetime {
-                        date,
-                        time,
-                        offset,
-                    }))
+            Self::Datetime(datetime) => match datetime.try_into()? {
+                AnyDatetime::OffsetDatetime(datetime) => {
+                    visitor.visit_map(OffsetDatetimeAccess::from(datetime))
                 }
-                (Some(date), Some(time), None) => {
-                    visitor.visit_map(LocalDatetimeAccess::from(LocalDatetime { date, time }))
+                AnyDatetime::LocalDatetime(datetime) => {
+                    visitor.visit_map(LocalDatetimeAccess::from(datetime))
                 }
-                (Some(date), None, None) => visitor.visit_map(LocalDateAccess::from(date)),
-                (None, Some(time), None) => visitor.visit_map(LocalTimeAccess::from(time)),
-                (date, time, offset) => Err(Error::invalid_value(
-                    de::Unexpected::Other(Datetime { date, time, offset }.type_str()),
-                    &"a valid date-time",
-                )),
+                AnyDatetime::LocalDate(date) => visitor.visit_map(LocalDateAccess::from(date)),
+                AnyDatetime::LocalTime(time) => visitor.visit_map(LocalTimeAccess::from(time)),
             },
             Self::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             Self::Table(table) => visitor.visit_map(MapAccess::new(table)),
@@ -845,7 +837,7 @@ mod tests {
     use serde::Deserialize;
 
     use super::*;
-    use crate::value::Offset;
+    use crate::value::{Datetime, Offset};
 
     struct OptionDeserializer<T, E> {
         value: Option<T>,

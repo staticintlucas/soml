@@ -9,7 +9,7 @@ use std::{fmt, ops};
 use serde::Serialize as _;
 
 pub use self::datetime::{
-    Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
+    AnyDatetime, Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
 use self::ser::ToValueSerializer;
 use crate::Table;

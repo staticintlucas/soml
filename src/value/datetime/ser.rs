@@ -1,7 +1,22 @@
 use serde::ser;
 use serde::ser::Error as _;
 
-use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+use super::{AnyDatetime, Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+
+impl ser::Serialize for AnyDatetime {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        match *self {
+            Self::OffsetDatetime(ref datetime) => datetime.serialize(serializer),
+            Self::LocalDatetime(ref datetime) => datetime.serialize(serializer),
+            Self::LocalDate(ref date) => date.serialize(serializer),
+            Self::LocalTime(ref time) => time.serialize(serializer),
+        }
+    }
+}
 
 impl ser::Serialize for Datetime {
     #[inline]
@@ -9,18 +24,9 @@ impl ser::Serialize for Datetime {
     where
         S: ser::Serializer,
     {
-        match (self.date.clone(), self.time.clone(), self.offset.clone()) {
-            (Some(date), Some(time), Some(offset)) => {
-                OffsetDatetime { date, time, offset }.serialize(serializer)
-            }
-            (Some(date), Some(time), None) => LocalDatetime { date, time }.serialize(serializer),
-            (Some(date), None, None) => date.serialize(serializer),
-            (None, Some(time), None) => time.serialize(serializer),
-            _ => Err(S::Error::custom(format_args!(
-                "invalid value: {}, expected a valid date-time",
-                self.type_str()
-            ))),
-        }
+        AnyDatetime::try_from(self.clone())
+            .map_err(S::Error::custom)
+            .and_then(|dt| dt.serialize(serializer))
     }
 }
 
@@ -108,6 +114,33 @@ mod tests {
         date: DATE,
         time: TIME,
     };
+
+    #[test]
+    fn serialize_any_datetime() {
+        let result = serde_json::to_string(&AnyDatetime::from(OFFSET_DATETIME)).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+        );
+
+        let result = serde_json::to_string(&AnyDatetime::from(LOCAL_DATETIME)).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006"}"#
+        );
+
+        let result = serde_json::to_string(&AnyDatetime::from(DATE)).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalDate::Wrapper::Field>":"2023-01-02"}"#
+        );
+
+        let result = serde_json::to_string(&AnyDatetime::from(TIME)).unwrap();
+        assert_eq!(
+            result,
+            r#"{"<soml::_impl::LocalTime::Wrapper::Field>":"03:04:05.006"}"#
+        );
+    }
 
     #[test]
     fn serialize_datetime() {

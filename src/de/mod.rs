@@ -16,7 +16,7 @@ use self::reader::{IoReader, Reader, SliceReader};
 use crate::value::datetime::{
     LocalDateAccess, LocalDatetimeAccess, LocalTimeAccess, OffsetDatetimeAccess,
 };
-use crate::value::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
 mod parser;
@@ -487,37 +487,41 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     {
         match self.value {
             ParsedValue::OffsetDatetime(datetime)
-                if matches!(name, Datetime::WRAPPER_TYPE | OffsetDatetime::WRAPPER_TYPE)
-                    && matches!(
-                        *fields,
-                        [Datetime::WRAPPER_FIELD | OffsetDatetime::WRAPPER_FIELD]
-                    ) =>
+                if matches!(
+                    name,
+                    AnyDatetime::WRAPPER_TYPE | OffsetDatetime::WRAPPER_TYPE
+                ) && matches!(
+                    *fields,
+                    [AnyDatetime::WRAPPER_FIELD | OffsetDatetime::WRAPPER_FIELD]
+                ) =>
             {
                 visitor.visit_map(OffsetDatetimeAccess::from(datetime))
             }
             ParsedValue::LocalDatetime(datetime)
-                if matches!(name, Datetime::WRAPPER_TYPE | LocalDatetime::WRAPPER_TYPE)
-                    && matches!(
-                        *fields,
-                        [Datetime::WRAPPER_FIELD | LocalDatetime::WRAPPER_FIELD]
-                    ) =>
+                if matches!(
+                    name,
+                    AnyDatetime::WRAPPER_TYPE | LocalDatetime::WRAPPER_TYPE
+                ) && matches!(
+                    *fields,
+                    [AnyDatetime::WRAPPER_FIELD | LocalDatetime::WRAPPER_FIELD]
+                ) =>
             {
                 visitor.visit_map(LocalDatetimeAccess::from(datetime))
             }
             ParsedValue::LocalDate(date)
-                if matches!(name, Datetime::WRAPPER_TYPE | LocalDate::WRAPPER_TYPE)
+                if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalDate::WRAPPER_TYPE)
                     && matches!(
                         *fields,
-                        [Datetime::WRAPPER_FIELD | LocalDate::WRAPPER_FIELD]
+                        [AnyDatetime::WRAPPER_FIELD | LocalDate::WRAPPER_FIELD]
                     ) =>
             {
                 visitor.visit_map(LocalDateAccess::from(date))
             }
             ParsedValue::LocalTime(time)
-                if matches!(name, Datetime::WRAPPER_TYPE | LocalTime::WRAPPER_TYPE)
+                if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalTime::WRAPPER_TYPE)
                     && matches!(
                         *fields,
-                        [Datetime::WRAPPER_FIELD | LocalTime::WRAPPER_FIELD]
+                        [AnyDatetime::WRAPPER_FIELD | LocalTime::WRAPPER_FIELD]
                     ) =>
             {
                 visitor.visit_map(LocalTimeAccess::from(time))
@@ -877,7 +881,7 @@ mod tests {
     use serde_bytes::ByteBuf;
 
     use super::*;
-    use crate::value::Offset;
+    use crate::value::{Datetime, Offset};
     use crate::Value;
 
     mod example {
