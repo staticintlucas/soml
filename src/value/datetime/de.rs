@@ -1,8 +1,8 @@
 use std::{fmt, str};
 
-use serde::de::{self, Error as _, IntoDeserializer as _};
+use serde::de::{self, Error as _};
 
-use super::{Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime};
+use super::{Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::de::Error;
 
 impl<'de> de::Deserialize<'de> for Datetime {
@@ -79,10 +79,10 @@ impl<'de> de::Deserialize<'de> for Datetime {
                     return Err(A::Error::invalid_length(0, &self));
                 };
                 let value = match field {
-                    Field::OffsetDatetime => map.next_value::<OffsetDatetimeFromFields>()?.0.into(),
-                    Field::LocalDatetime => map.next_value::<LocalDatetimeFromFields>()?.0.into(),
-                    Field::LocalDate => map.next_value::<LocalDateFromFields>()?.0.into(),
-                    Field::LocalTime => map.next_value::<LocalTimeFromFields>()?.0.into(),
+                    Field::OffsetDatetime => map.next_value::<EncodedOffsetDatetime>()?.0.into(),
+                    Field::LocalDatetime => map.next_value::<EncodedLocalDatetime>()?.0.into(),
+                    Field::LocalDate => map.next_value::<EncodedLocalDate>()?.0.into(),
+                    Field::LocalTime => map.next_value::<EncodedLocalTime>()?.0.into(),
                 };
                 Ok(value)
             }
@@ -151,7 +151,7 @@ impl<'de> de::Deserialize<'de> for OffsetDatetime {
             where
                 A: de::MapAccess<'de>,
             {
-                let Some((Field, OffsetDatetimeFromFields(value))) = map.next_entry()? else {
+                let Some((Field, EncodedOffsetDatetime(value))) = map.next_entry()? else {
                     return Err(A::Error::missing_field(OffsetDatetime::WRAPPER_FIELD));
                 };
                 Ok(value)
@@ -162,10 +162,10 @@ impl<'de> de::Deserialize<'de> for OffsetDatetime {
     }
 }
 
-#[derive(Debug)]
-pub struct OffsetDatetimeFromFields(pub OffsetDatetime);
+#[derive(Debug, PartialEq, Eq)]
+pub struct EncodedOffsetDatetime(pub OffsetDatetime);
 
-impl<'de> de::Deserialize<'de> for OffsetDatetimeFromFields {
+impl<'de> de::Deserialize<'de> for EncodedOffsetDatetime {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -173,33 +173,23 @@ impl<'de> de::Deserialize<'de> for OffsetDatetimeFromFields {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = OffsetDatetimeFromFields;
+        impl de::Visitor<'_> for Visitor {
+            type Value = EncodedOffsetDatetime;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sequence of offset date-time fields")
+                formatter.write_str("an encoded offset date-time")
             }
 
             #[inline]
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
             where
-                A: de::SeqAccess<'de>,
+                E: de::Error,
             {
-                let Some(LocalDateFromFields(date)) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(0, &self));
-                };
-                let Some(LocalTimeFromFields(time)) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(1, &self));
-                };
-                let Some(OffsetFromFields(offset)) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(2, &self));
-                };
-                Ok(OffsetDatetimeFromFields(OffsetDatetime {
-                    date,
-                    time,
-                    offset,
-                }))
+                let bytes = v
+                    .try_into()
+                    .map_err(|_| E::invalid_length(v.len(), &self))?;
+                Ok(EncodedOffsetDatetime(OffsetDatetime::from_encoded(bytes)))
             }
         }
 
@@ -242,58 +232,10 @@ impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(datetime) => seed.deserialize(de::value::SeqAccessDeserializer::new(OffsetDatetimeInnerAccess::from(datetime))),
+            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime.to_encoded())),
             None => panic!(
                 "OffsetDatetimeAccess::next_value called without calling OffsetDatetimeAccess::next_key first"
             ),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct OffsetDatetimeInnerAccess {
-    date: Option<LocalDate>,
-    time: Option<LocalTime>,
-    offset: Option<Offset>,
-}
-
-impl From<OffsetDatetime> for OffsetDatetimeInnerAccess {
-    #[inline]
-    fn from(datetime: OffsetDatetime) -> Self {
-        let OffsetDatetime { date, time, offset } = datetime;
-        Self {
-            date: Some(date),
-            time: Some(time),
-            offset: Some(offset),
-        }
-    }
-}
-
-impl<'de> de::SeqAccess<'de> for OffsetDatetimeInnerAccess {
-    type Error = Error;
-
-    #[inline]
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(date) = self.date.take() {
-            seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalDateInnerAccess::from(date),
-            ))
-            .map(Some)
-        } else if let Some(time) = self.time.take() {
-            seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalTimeInnerAccess::from(time),
-            ))
-            .map(Some)
-        } else if let Some(offset) = self.offset.take() {
-            seed.deserialize(de::value::SeqAccessDeserializer::new(
-                OffsetInnerAccess::from(offset),
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
         }
     }
 }
@@ -355,7 +297,7 @@ impl<'de> de::Deserialize<'de> for LocalDatetime {
             where
                 A: de::MapAccess<'de>,
             {
-                let Some((Field, LocalDatetimeFromFields(value))) = map.next_entry()? else {
+                let Some((Field, EncodedLocalDatetime(value))) = map.next_entry()? else {
                     return Err(A::Error::missing_field(LocalDatetime::WRAPPER_FIELD));
                 };
                 Ok(value)
@@ -366,10 +308,10 @@ impl<'de> de::Deserialize<'de> for LocalDatetime {
     }
 }
 
-#[derive(Debug)]
-pub struct LocalDatetimeFromFields(pub LocalDatetime);
+#[derive(Debug, PartialEq, Eq)]
+pub struct EncodedLocalDatetime(pub LocalDatetime);
 
-impl<'de> de::Deserialize<'de> for LocalDatetimeFromFields {
+impl<'de> de::Deserialize<'de> for EncodedLocalDatetime {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -377,26 +319,23 @@ impl<'de> de::Deserialize<'de> for LocalDatetimeFromFields {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = LocalDatetimeFromFields;
+        impl de::Visitor<'_> for Visitor {
+            type Value = EncodedLocalDatetime;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sequence of local date-time fields")
+                formatter.write_str("an encoded local date-time")
             }
 
             #[inline]
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
             where
-                A: de::SeqAccess<'de>,
+                E: de::Error,
             {
-                let Some(LocalDateFromFields(date)) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(0, &self));
-                };
-                let Some(LocalTimeFromFields(time)) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(1, &self));
-                };
-                Ok(LocalDatetimeFromFields(LocalDatetime { date, time }))
+                let bytes = v
+                    .try_into()
+                    .map_err(|_| E::invalid_length(v.len(), &self))?;
+                Ok(EncodedLocalDatetime(LocalDatetime::from_encoded(bytes)))
             }
         }
 
@@ -439,51 +378,10 @@ impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(datetime) => seed.deserialize(de::value::SeqAccessDeserializer::new(LocalDatetimeInnerAccess::from(datetime))),
+            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime.to_encoded())),
             None => panic!(
                 "LocalDatetimeAccess::next_value called without calling LocalDatetimeAccess::next_key first"
             ),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct LocalDatetimeInnerAccess {
-    date: Option<LocalDate>,
-    time: Option<LocalTime>,
-}
-
-impl From<LocalDatetime> for LocalDatetimeInnerAccess {
-    #[inline]
-    fn from(datetime: LocalDatetime) -> Self {
-        let LocalDatetime { date, time } = datetime;
-        Self {
-            date: Some(date),
-            time: Some(time),
-        }
-    }
-}
-
-impl<'de> de::SeqAccess<'de> for LocalDatetimeInnerAccess {
-    type Error = Error;
-
-    #[inline]
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(date) = self.date.take() {
-            seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalDateInnerAccess::from(date),
-            ))
-            .map(Some)
-        } else if let Some(time) = self.time.take() {
-            seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalTimeInnerAccess::from(time),
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
         }
     }
 }
@@ -542,7 +440,7 @@ impl<'de> de::Deserialize<'de> for LocalDate {
             where
                 A: de::MapAccess<'de>,
             {
-                let Some((Field, LocalDateFromFields(value))) = map.next_entry()? else {
+                let Some((Field, EncodedLocalDate(value))) = map.next_entry()? else {
                     return Err(A::Error::missing_field(LocalDate::WRAPPER_FIELD));
                 };
                 Ok(value)
@@ -553,10 +451,10 @@ impl<'de> de::Deserialize<'de> for LocalDate {
     }
 }
 
-#[derive(Debug)]
-pub struct LocalDateFromFields(pub LocalDate);
+#[derive(Debug, PartialEq, Eq)]
+pub struct EncodedLocalDate(pub LocalDate);
 
-impl<'de> de::Deserialize<'de> for LocalDateFromFields {
+impl<'de> de::Deserialize<'de> for EncodedLocalDate {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -564,29 +462,23 @@ impl<'de> de::Deserialize<'de> for LocalDateFromFields {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = LocalDateFromFields;
+        impl de::Visitor<'_> for Visitor {
+            type Value = EncodedLocalDate;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sequence of local date fields")
+                formatter.write_str("an encoded local date")
             }
 
             #[inline]
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
             where
-                A: de::SeqAccess<'de>,
+                E: de::Error,
             {
-                let Some(year) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(0, &self));
-                };
-                let Some(month) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(1, &self));
-                };
-                let Some(day) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(2, &self));
-                };
-                Ok(LocalDateFromFields(LocalDate { year, month, day }))
+                let bytes = v
+                    .try_into()
+                    .map_err(|_| E::invalid_length(v.len(), &self))?;
+                Ok(EncodedLocalDate(LocalDate::from_encoded(bytes)))
             }
         }
 
@@ -629,51 +521,10 @@ impl<'de> de::MapAccess<'de> for LocalDateAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(date) => seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalDateInnerAccess::from(date),
-            )),
+            Some(date) => seed.deserialize(de::value::BytesDeserializer::new(&date.to_encoded())),
             None => panic!(
                 "LocalDateAccess::next_value called without calling LocalDateAccess::next_key first"
             ),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct LocalDateInnerAccess {
-    year: Option<u16>,
-    month: Option<u8>,
-    day: Option<u8>,
-}
-
-impl From<LocalDate> for LocalDateInnerAccess {
-    #[inline]
-    fn from(date: LocalDate) -> Self {
-        let LocalDate { year, month, day } = date;
-        Self {
-            year: Some(year),
-            month: Some(month),
-            day: Some(day),
-        }
-    }
-}
-
-impl<'de> de::SeqAccess<'de> for LocalDateInnerAccess {
-    type Error = Error;
-
-    #[inline]
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(year) = self.year.take() {
-            seed.deserialize(year.into_deserializer()).map(Some)
-        } else if let Some(month) = self.month.take() {
-            seed.deserialize(month.into_deserializer()).map(Some)
-        } else if let Some(day) = self.day.take() {
-            seed.deserialize(day.into_deserializer()).map(Some)
-        } else {
-            Ok(None)
         }
     }
 }
@@ -732,7 +583,7 @@ impl<'de> de::Deserialize<'de> for LocalTime {
             where
                 A: de::MapAccess<'de>,
             {
-                let Some((Field, LocalTimeFromFields(value))) = map.next_entry()? else {
+                let Some((Field, EncodedLocalTime(value))) = map.next_entry()? else {
                     return Err(A::Error::missing_field(LocalTime::WRAPPER_FIELD));
                 };
                 Ok(value)
@@ -743,10 +594,10 @@ impl<'de> de::Deserialize<'de> for LocalTime {
     }
 }
 
-#[derive(Debug)]
-pub struct LocalTimeFromFields(pub LocalTime);
+#[derive(Debug, PartialEq, Eq)]
+pub struct EncodedLocalTime(pub LocalTime);
 
-impl<'de> de::Deserialize<'de> for LocalTimeFromFields {
+impl<'de> de::Deserialize<'de> for EncodedLocalTime {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -754,37 +605,23 @@ impl<'de> de::Deserialize<'de> for LocalTimeFromFields {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = LocalTimeFromFields;
+        impl de::Visitor<'_> for Visitor {
+            type Value = EncodedLocalTime;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sequence of local time fields")
+                formatter.write_str("an encoded local time")
             }
 
             #[inline]
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
             where
-                A: de::SeqAccess<'de>,
+                E: de::Error,
             {
-                let Some(hour) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(0, &self));
-                };
-                let Some(minute) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(1, &self));
-                };
-                let Some(second) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(2, &self));
-                };
-                let Some(nanosecond) = seq.next_element()? else {
-                    return Err(A::Error::invalid_length(3, &self));
-                };
-                Ok(LocalTimeFromFields(LocalTime {
-                    hour,
-                    minute,
-                    second,
-                    nanosecond,
-                }))
+                let bytes = v
+                    .try_into()
+                    .map_err(|_| E::invalid_length(v.len(), &self))?;
+                Ok(EncodedLocalTime(LocalTime::from_encoded(bytes)))
             }
         }
 
@@ -827,120 +664,10 @@ impl<'de> de::MapAccess<'de> for LocalTimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(time) => seed.deserialize(de::value::SeqAccessDeserializer::new(
-                LocalTimeInnerAccess::from(time),
-            )),
+            Some(time) => seed.deserialize(de::value::BytesDeserializer::new(&time.to_encoded())),
             None => panic!(
                 "LocalTimeAccess::next_value called without calling LocalTimeAccess::next_key first"
             ),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct LocalTimeInnerAccess {
-    hour: Option<u8>,
-    minute: Option<u8>,
-    second: Option<u8>,
-    nanosecond: Option<u32>,
-}
-
-impl From<LocalTime> for LocalTimeInnerAccess {
-    #[inline]
-    fn from(time: LocalTime) -> Self {
-        let LocalTime {
-            hour,
-            minute,
-            second,
-            nanosecond,
-        } = time;
-        Self {
-            hour: Some(hour),
-            minute: Some(minute),
-            second: Some(second),
-            nanosecond: Some(nanosecond),
-        }
-    }
-}
-
-impl<'de> de::SeqAccess<'de> for LocalTimeInnerAccess {
-    type Error = Error;
-
-    #[inline]
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(hour) = self.hour.take() {
-            seed.deserialize(hour.into_deserializer()).map(Some)
-        } else if let Some(minute) = self.minute.take() {
-            seed.deserialize(minute.into_deserializer()).map(Some)
-        } else if let Some(second) = self.second.take() {
-            seed.deserialize(second.into_deserializer()).map(Some)
-        } else if let Some(nanosecond) = self.nanosecond.take() {
-            seed.deserialize(nanosecond.into_deserializer()).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct OffsetFromFields(pub Offset);
-
-impl<'de> de::Deserialize<'de> for OffsetFromFields {
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct Visitor;
-
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = OffsetFromFields;
-
-            #[inline]
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a sequence of offset fields")
-            }
-
-            #[inline]
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                Ok(OffsetFromFields(
-                    (seq.next_element()?).map_or(Offset::Z, |minutes| Offset::Custom { minutes }),
-                ))
-            }
-        }
-
-        deserializer.deserialize_seq(Visitor)
-    }
-}
-
-struct OffsetInnerAccess(Option<Offset>);
-
-impl From<Offset> for OffsetInnerAccess {
-    #[inline]
-    fn from(offset: Offset) -> Self {
-        Self(Some(offset))
-    }
-}
-
-impl<'de> de::SeqAccess<'de> for OffsetInnerAccess {
-    type Error = Error;
-
-    #[inline]
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        match self.0.take() {
-            Some(Offset::Custom { minutes }) => {
-                seed.deserialize(minutes.into_deserializer()).map(Some)
-            }
-            Some(Offset::Z) | None => Ok(None),
         }
     }
 }
@@ -949,10 +676,12 @@ impl<'de> de::SeqAccess<'de> for OffsetInnerAccess {
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     use assert_matches::assert_matches;
-    use indoc::indoc;
-    use serde::de::{MapAccess as _, SeqAccess as _};
+    use serde::de::MapAccess as _;
+    use serde_bytes::ByteBuf;
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
 
     use super::*;
+    use crate::value::Offset;
 
     const DATE: LocalDate = LocalDate {
         year: 2023,
@@ -979,94 +708,206 @@ mod tests {
 
     #[test]
     fn deserialize_datetime() {
-        let map = indoc! {r#"{
-            "<soml::_impl::OffsetDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"#};
-        let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, Datetime::from(OFFSET_DATETIME));
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&Datetime::from(OFFSET_DATETIME), tokens);
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000]]
-        }"#};
-        let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, Datetime::from(LOCAL_DATETIME));
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&Datetime::from(LOCAL_DATETIME), tokens);
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDate::Wrapper::Field>": [2023, 1, 2]
-        }"#};
-        let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, Datetime::from(DATE));
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(b"\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&Datetime::from(DATE), tokens);
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalTime::Wrapper::Field>": [3, 4, 5, 6000000]
-        }"#};
-        let date: Datetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, Datetime::from(TIME));
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&Datetime::from(TIME), tokens);
 
-        let map = indoc! {r#"{
-            "foo": [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"#};
-        serde_json::from_str::<Datetime>(map).unwrap_err();
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<Datetime>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::Datetime::Wrapper>", len: 1 }"#,
+        );
 
-        let map = indoc! {"{
-            2: [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"};
-        serde_json::from_str::<Datetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<Datetime>(tokens, "unknown field `bar`, expected one of `<soml::_impl::OffsetDatetime::Wrapper::Field>`, `<soml::_impl::LocalDatetime::Wrapper::Field>`, `<soml::_impl::LocalDate::Wrapper::Field>`, `<soml::_impl::LocalTime::Wrapper::Field>`");
 
-        let map = "{}";
-        serde_json::from_str::<Datetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<Datetime>(
+            tokens,
+            "invalid length 0, expected a date-time wrapper",
+        );
 
-        let map = indoc! {r#"{
-            "<soml::_impl::Datetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000], [428]],
-            "<soml::_impl::LocalDate::Wrapper::Field>": [2023, 1, 2],
-            "<soml::_impl::LocalTime::Wrapper::Field>": [3, 4, 5, 6000000]
-        }"#};
-        serde_json::from_str::<Datetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: Datetime::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::Str(LocalDate::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<Datetime>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
 
-        let map = "2";
-        serde_json::from_str::<Datetime>(map).unwrap_err();
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<Datetime>(
+            tokens,
+            "invalid type: integer `2`, expected a date-time wrapper",
+        );
     }
 
     #[test]
     fn deserialize_offset_datetime() {
-        let map = indoc! {r#"{
-            "<soml::_impl::OffsetDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"#};
-        let date: OffsetDatetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, OFFSET_DATETIME);
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&OFFSET_DATETIME, tokens);
 
-        let map = indoc! {r#"{
-            "foo": [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"#};
-        serde_json::from_str::<OffsetDatetime>(map).unwrap_err();
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::OffsetDatetime::Wrapper>", len: 1 }"#,
+        );
 
-        let map = "{}";
-        serde_json::from_str::<OffsetDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            "unknown field `bar`, expected `<soml::_impl::OffsetDatetime::Wrapper::Field>`",
+        );
 
-        let map = indoc! {r#"{
-            "<soml::_impl::OffsetDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000], [428]],
-            "<soml::_impl::OffsetDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000], [428]]
-        }"#};
-        serde_json::from_str::<OffsetDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            "missing field `<soml::_impl::OffsetDatetime::Wrapper::Field>`",
+        );
 
-        let map = "2";
-        serde_json::from_str::<OffsetDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"),
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::OffsetDatetime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected an offset date-time wrapper",
+        );
     }
 
     #[test]
-    fn deserialize_offset_datetime_from_fields() {
-        let date: OffsetDatetimeFromFields =
-            serde_json::from_str("[[2023, 1, 2], [3, 4, 5, 6000000], [428]]").unwrap();
-        assert_eq!(date.0, OFFSET_DATETIME);
+    fn deserialize_encoded_offset_datetime() {
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01",
+        )];
+        assert_de_tokens(&EncodedOffsetDatetime(OFFSET_DATETIME), tokens);
 
-        serde_json::from_str::<OffsetDatetimeFromFields>("[[2023, 1, 2], [3, 4, 5, 6000000]]")
-            .unwrap_err();
-        serde_json::from_str::<OffsetDatetimeFromFields>("[[2023, 1, 2]]").unwrap_err();
-        serde_json::from_str::<OffsetDatetimeFromFields>("[]").unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02",
+        )];
+        assert_de_tokens_error::<EncodedOffsetDatetime>(
+            tokens,
+            "invalid length 12, expected an encoded offset date-time",
+        );
 
-        serde_json::from_str::<OffsetDatetimeFromFields>(r#""invalid string""#).unwrap_err();
+        let tokens = &[Token::Bytes(b"\xE7\x07\x01\x02")];
+        assert_de_tokens_error::<EncodedOffsetDatetime>(
+            tokens,
+            "invalid length 4, expected an encoded offset date-time",
+        );
 
-        serde_json::from_str::<OffsetDatetimeFromFields>("2").unwrap_err();
+        let tokens = &[Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00")];
+        assert_de_tokens_error::<EncodedOffsetDatetime>(
+            tokens,
+            "invalid length 8, expected an encoded offset date-time",
+        );
+
+        let tokens = &[Token::Str("invalid string")];
+        assert_de_tokens_error::<EncodedOffsetDatetime>(
+            tokens,
+            r#"invalid type: string "invalid string", expected an encoded offset date-time"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<EncodedOffsetDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected an encoded offset date-time",
+        );
     }
 
     #[test]
@@ -1079,13 +920,7 @@ mod tests {
             access.next_key().unwrap(),
             Some(OffsetDatetime::WRAPPER_FIELD)
         );
-        assert_eq!(
-            access
-                .next_value::<Vec<Vec<de::IgnoredAny>>>()
-                .unwrap()
-                .len(),
-            3
-        );
+        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 14);
 
         assert!(access.next_key::<&str>().unwrap().is_none());
     }
@@ -1095,76 +930,114 @@ mod tests {
     fn offset_datetime_access_empty() {
         let mut access = OffsetDatetimeAccess(None);
 
-        access.next_value::<Vec<Vec<de::IgnoredAny>>>().unwrap();
-    }
-
-    #[test]
-    fn offset_datetime_inner_access() {
-        let mut access = OffsetDatetimeInnerAccess::from(OFFSET_DATETIME);
-
-        assert_matches!(
-            access,
-            OffsetDatetimeInnerAccess {
-                date: Some(DATE),
-                time: Some(TIME),
-                offset: Some(OFFSET),
-            }
-        );
-
-        assert_matches!(
-            access.next_element::<LocalDateFromFields>().unwrap(),
-            Some(LocalDateFromFields(DATE))
-        );
-        assert_matches!(
-            access.next_element::<LocalTimeFromFields>().unwrap(),
-            Some(LocalTimeFromFields(TIME))
-        );
-        assert_matches!(
-            access.next_element::<OffsetFromFields>().unwrap(),
-            Some(OffsetFromFields(OFFSET))
-        );
-
-        assert!(access.next_element::<de::IgnoredAny>().unwrap().is_none());
+        access.next_value::<ByteBuf>().unwrap();
     }
 
     #[test]
     fn deserialize_local_datetime() {
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000]]
-        }"#};
-        let date: LocalDatetime = serde_json::from_str(map).unwrap();
-        assert_eq!(date, LOCAL_DATETIME);
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&LOCAL_DATETIME, tokens);
 
-        let map = indoc! {r#"{
-            "foo": [[2023, 1, 2], [3, 4, 5, 6000000]]
-        }"#};
-        serde_json::from_str::<LocalDatetime>(map).unwrap_err();
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::LocalDatetime::Wrapper>", len: 1 }"#,
+        );
 
-        let map = "{}";
-        serde_json::from_str::<LocalDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            "unknown field `bar`, expected `<soml::_impl::LocalDatetime::Wrapper::Field>`",
+        );
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000]],
-            "<soml::_impl::LocalDatetime::Wrapper::Field>": [[2023, 1, 2], [3, 4, 5, 6000000]]
-        }"#};
-        serde_json::from_str::<LocalDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            "missing field `<soml::_impl::LocalDatetime::Wrapper::Field>`",
+        );
 
-        let map = "2";
-        serde_json::from_str::<LocalDatetime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"),
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::LocalDatetime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected a local date-time wrapper",
+        );
     }
 
     #[test]
-    fn deserialize_local_datetime_from_fields() {
-        let date: LocalDatetimeFromFields =
-            serde_json::from_str("[[2023, 1, 2], [3, 4, 5, 6000000]]").unwrap();
-        assert_eq!(date.0, LOCAL_DATETIME);
+    fn deserialize_encoded_local_datetime() {
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02",
+        )];
+        assert_de_tokens(&EncodedLocalDatetime(LOCAL_DATETIME), tokens);
 
-        serde_json::from_str::<LocalDatetimeFromFields>("[[2023, 1, 2]]").unwrap_err();
-        serde_json::from_str::<LocalDatetimeFromFields>("[]").unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01",
+        )];
+        assert_de_tokens_error::<EncodedLocalDatetime>(
+            tokens,
+            "invalid length 14, expected an encoded local date-time",
+        );
 
-        serde_json::from_str::<LocalDatetimeFromFields>(r#""invalid string""#).unwrap_err();
+        let tokens = &[Token::Bytes(b"\xE7\x07\x01\x02")];
+        assert_de_tokens_error::<EncodedLocalDatetime>(
+            tokens,
+            "invalid length 4, expected an encoded local date-time",
+        );
 
-        serde_json::from_str::<LocalDatetimeFromFields>("2").unwrap_err();
+        let tokens = &[Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00")];
+        assert_de_tokens_error::<EncodedLocalDatetime>(
+            tokens,
+            "invalid length 8, expected an encoded local date-time",
+        );
+
+        let tokens = &[Token::Str("invalid string")];
+        assert_de_tokens_error::<EncodedLocalDatetime>(
+            tokens,
+            r#"invalid type: string "invalid string", expected an encoded local date-time"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<EncodedLocalDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected an encoded local date-time",
+        );
     }
 
     #[test]
@@ -1177,13 +1050,7 @@ mod tests {
             access.next_key().unwrap(),
             Some(LocalDatetime::WRAPPER_FIELD)
         );
-        assert_eq!(
-            access
-                .next_value::<Vec<Vec<de::IgnoredAny>>>()
-                .unwrap()
-                .len(),
-            2
-        );
+        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 12);
 
         assert!(access.next_key::<&str>().unwrap().is_none());
     }
@@ -1193,71 +1060,114 @@ mod tests {
     fn local_datetime_access_empty() {
         let mut access = LocalDatetimeAccess(None);
 
-        access.next_value::<Vec<Vec<de::IgnoredAny>>>().unwrap();
-    }
-
-    #[test]
-    fn local_datetime_inner_access() {
-        let mut access = LocalDatetimeInnerAccess::from(LOCAL_DATETIME);
-
-        assert_matches!(
-            access,
-            LocalDatetimeInnerAccess {
-                date: Some(DATE),
-                time: Some(TIME),
-            }
-        );
-
-        assert_matches!(
-            access.next_element::<LocalDateFromFields>().unwrap(),
-            Some(LocalDateFromFields(DATE))
-        );
-        assert_matches!(
-            access.next_element::<LocalTimeFromFields>().unwrap(),
-            Some(LocalTimeFromFields(TIME))
-        );
-
-        assert!(access.next_element::<de::IgnoredAny>().unwrap().is_none());
+        access.next_value::<ByteBuf>().unwrap();
     }
 
     #[test]
     fn deserialize_local_date() {
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDate::Wrapper::Field>": [2023, 1, 2]
-        }"#};
-        let date: LocalDate = serde_json::from_str(map).unwrap();
-        assert_eq!(date, DATE);
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(b"\xE7\x07\x01\x02"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&DATE, tokens);
 
-        let map = indoc! {r#"{
-            "foo": [2023, 1, 2]
-        }"#};
-        serde_json::from_str::<LocalDate>(map).unwrap_err();
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::LocalDate::Wrapper>", len: 1 }"#,
+        );
 
-        let map = "{}";
-        serde_json::from_str::<LocalDate>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            "unknown field `bar`, expected `<soml::_impl::LocalDate::Wrapper::Field>`",
+        );
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalDate::Wrapper::Field>": [2023, 1, 2],
-            "<soml::_impl::LocalDate::Wrapper::Field>": [2023, 1, 2]
-        }"#};
-        serde_json::from_str::<LocalDate>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            "missing field `<soml::_impl::LocalDate::Wrapper::Field>`",
+        );
 
-        let map = "2";
-        serde_json::from_str::<LocalDate>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(b"\xE7\x07\x01\x02"),
+            Token::Str(LocalDate::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            "invalid type: integer `2`, expected a local date wrapper",
+        );
     }
 
     #[test]
-    fn deserialize_local_date_from_fields() {
-        let date: LocalDateFromFields = serde_json::from_str("[2023, 1, 2]").unwrap();
-        assert_eq!(date.0, DATE);
+    fn deserialize_encoded_local_date() {
+        let tokens = &[Token::Bytes(b"\xE7\x07\x01\x02")];
+        assert_de_tokens(&EncodedLocalDate(DATE), tokens);
 
-        serde_json::from_str::<LocalDateFromFields>("[2023, 1]").unwrap_err();
-        serde_json::from_str::<LocalDateFromFields>("[2023]").unwrap_err();
-        serde_json::from_str::<LocalDateFromFields>("[]").unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01",
+        )];
+        assert_de_tokens_error::<EncodedLocalDate>(
+            tokens,
+            "invalid length 14, expected an encoded local date",
+        );
 
-        serde_json::from_str::<LocalDateFromFields>(r#""invalid string""#).unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02",
+        )];
+        assert_de_tokens_error::<EncodedLocalDate>(
+            tokens,
+            "invalid length 12, expected an encoded local date",
+        );
 
-        serde_json::from_str::<LocalDateFromFields>("2").unwrap_err();
+        let tokens = &[Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00")];
+        assert_de_tokens_error::<EncodedLocalDate>(
+            tokens,
+            "invalid length 8, expected an encoded local date",
+        );
+
+        let tokens = &[Token::Str("invalid string")];
+        assert_de_tokens_error::<EncodedLocalDate>(
+            tokens,
+            r#"invalid type: string "invalid string", expected an encoded local date"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<EncodedLocalDate>(
+            tokens,
+            "invalid type: integer `2`, expected an encoded local date",
+        );
     }
 
     #[test]
@@ -1267,7 +1177,7 @@ mod tests {
         assert_matches!(access, LocalDateAccess(Some(DATE)));
 
         assert_eq!(access.next_key().unwrap(), Some(LocalDate::WRAPPER_FIELD));
-        assert_eq!(access.next_value::<Vec<de::IgnoredAny>>().unwrap().len(), 3);
+        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 4);
 
         assert!(access.next_key::<&str>().unwrap().is_none());
     }
@@ -1277,63 +1187,114 @@ mod tests {
     fn local_date_access_empty() {
         let mut access = LocalDateAccess(None);
 
-        access.next_value::<Vec<Vec<de::IgnoredAny>>>().unwrap();
-    }
-
-    #[test]
-    fn local_date_inner_access() {
-        let mut access = LocalDateInnerAccess::from(DATE);
-
-        assert_eq!(access.year, Some(DATE.year));
-        assert_eq!(access.month, Some(DATE.month));
-        assert_eq!(access.day, Some(DATE.day));
-
-        assert_eq!(access.next_element::<u16>().unwrap(), Some(DATE.year));
-        assert_eq!(access.next_element::<u8>().unwrap(), Some(DATE.month));
-        assert_eq!(access.next_element::<u8>().unwrap(), Some(DATE.day));
-
-        assert!(access.next_element::<de::IgnoredAny>().unwrap().is_none());
+        access.next_value::<ByteBuf>().unwrap();
     }
 
     #[test]
     fn deserialize_local_time() {
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalTime::Wrapper::Field>": [3, 4, 5, 6000000]
-        }"#};
-        let time: LocalTime = serde_json::from_str(map).unwrap();
-        assert_eq!(time, TIME);
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00"),
+            Token::StructEnd,
+        ];
+        assert_de_tokens(&TIME, tokens);
 
-        let map = indoc! {r#"{
-            "foo": [3, 4, 5, 6000000]
-        }"#};
-        serde_json::from_str::<LocalTime>(map).unwrap_err();
+        let tokens = &[Token::Struct {
+            name: "foo",
+            len: 1,
+        }];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            r#"expected Token::Struct { name: "foo", len: 1 } but deserialization wants Token::Struct { name: "<soml::_impl::LocalTime::Wrapper>", len: 1 }"#,
+        );
 
-        let map = "{}";
-        serde_json::from_str::<LocalTime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str("bar"),
+        ];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            "unknown field `bar`, expected `<soml::_impl::LocalTime::Wrapper::Field>`",
+        );
 
-        let map = indoc! {r#"{
-            "<soml::_impl::LocalTime::Wrapper::Field>": [3, 4, 5, 6000000],
-            "<soml::_impl::LocalTime::Wrapper::Field>": [3, 4, 5, 6000000]
-        }"#};
-        serde_json::from_str::<LocalTime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 0,
+            },
+            Token::StructEnd,
+        ];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            "missing field `<soml::_impl::LocalTime::Wrapper::Field>`",
+        );
 
-        let map = "2";
-        serde_json::from_str::<LocalTime>(map).unwrap_err();
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 3,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00"),
+            Token::Str(LocalTime::WRAPPER_FIELD),
+        ];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            r#"expected Token::Str("<soml::_impl::LocalTime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            "invalid type: integer `2`, expected a local time wrapper",
+        );
     }
 
     #[test]
-    fn deserialize_local_time_from_fields() {
-        let time: LocalTimeFromFields = serde_json::from_str("[3, 4, 5, 6000000]").unwrap();
-        assert_eq!(time.0, TIME);
+    fn deserialize_encoded_local_time() {
+        let tokens = &[Token::Bytes(b"\x80\x8D\x5B\x00\x03\x04\x05\x00")];
+        assert_de_tokens(&EncodedLocalTime(TIME), tokens);
 
-        serde_json::from_str::<LocalTimeFromFields>("[3, 4, 5]").unwrap_err();
-        serde_json::from_str::<LocalTimeFromFields>("[3, 4]").unwrap_err();
-        serde_json::from_str::<LocalTimeFromFields>("[3]").unwrap_err();
-        serde_json::from_str::<LocalTimeFromFields>("[]").unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01",
+        )];
+        assert_de_tokens_error::<EncodedLocalTime>(
+            tokens,
+            "invalid length 14, expected an encoded local time",
+        );
 
-        serde_json::from_str::<LocalTimeFromFields>(r#""invalid string""#).unwrap_err();
+        let tokens = &[Token::Bytes(
+            b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02",
+        )];
+        assert_de_tokens_error::<EncodedLocalTime>(
+            tokens,
+            "invalid length 12, expected an encoded local time",
+        );
 
-        serde_json::from_str::<LocalTimeFromFields>("2").unwrap_err();
+        let tokens = &[Token::Bytes(b"\xE7\x07\x01\x02")];
+        assert_de_tokens_error::<EncodedLocalTime>(
+            tokens,
+            "invalid length 4, expected an encoded local time",
+        );
+
+        let tokens = &[Token::Str("invalid string")];
+        assert_de_tokens_error::<EncodedLocalTime>(
+            tokens,
+            r#"invalid type: string "invalid string", expected an encoded local time"#,
+        );
+
+        let tokens = &[Token::I32(2)];
+        assert_de_tokens_error::<EncodedLocalTime>(
+            tokens,
+            "invalid type: integer `2`, expected an encoded local time",
+        );
     }
 
     #[test]
@@ -1343,7 +1304,7 @@ mod tests {
         assert_matches!(access, LocalTimeAccess(Some(TIME)));
 
         assert_eq!(access.next_key().unwrap(), Some(LocalTime::WRAPPER_FIELD));
-        assert_eq!(access.next_value::<Vec<de::IgnoredAny>>().unwrap().len(), 4);
+        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 8);
 
         assert!(access.next_key::<&str>().unwrap().is_none());
     }
@@ -1353,23 +1314,6 @@ mod tests {
     fn local_time_access_empty() {
         let mut access = LocalTimeAccess(None);
 
-        access.next_value::<Vec<Vec<de::IgnoredAny>>>().unwrap();
-    }
-
-    #[test]
-    fn local_time_inner_access() {
-        let mut access = LocalTimeInnerAccess::from(TIME);
-
-        assert_eq!(access.hour, Some(TIME.hour));
-        assert_eq!(access.minute, Some(TIME.minute));
-        assert_eq!(access.second, Some(TIME.second));
-        assert_eq!(access.nanosecond, Some(TIME.nanosecond));
-
-        assert_eq!(access.next_element::<u8>().unwrap(), Some(TIME.hour));
-        assert_eq!(access.next_element::<u8>().unwrap(), Some(TIME.minute));
-        assert_eq!(access.next_element::<u8>().unwrap(), Some(TIME.second));
-        assert_eq!(access.next_element::<u32>().unwrap(), Some(TIME.nanosecond));
-
-        assert!(access.next_element::<de::IgnoredAny>().unwrap().is_none());
+        access.next_value::<ByteBuf>().unwrap();
     }
 }

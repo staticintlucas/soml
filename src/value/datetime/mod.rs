@@ -4,8 +4,8 @@ use std::{fmt, str};
 use serde::de::{Error as _, Unexpected};
 
 pub use self::de::{
-    LocalDateAccess, LocalDateFromFields, LocalDatetimeAccess, LocalDatetimeFromFields,
-    LocalTimeAccess, LocalTimeFromFields, OffsetDatetimeAccess, OffsetDatetimeFromFields,
+    EncodedLocalDate, EncodedLocalDatetime, EncodedLocalTime, EncodedOffsetDatetime,
+    LocalDateAccess, LocalDatetimeAccess, LocalTimeAccess, OffsetDatetimeAccess,
 };
 use crate::de::{Error, ErrorKind};
 
@@ -164,6 +164,30 @@ impl OffsetDatetime {
 
         Ok(Self { date, time, offset })
     }
+
+    #[inline]
+    pub(crate) fn from_encoded(bytes: [u8; 14]) -> Self {
+        Self {
+            time: LocalTime::from_encoded(
+                bytes[0..8].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+            date: LocalDate::from_encoded(
+                bytes[8..12].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+            offset: Offset::from_encoded(
+                bytes[12..14].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn to_encoded(&self) -> [u8; 14] {
+        let mut bytes = [0; 14];
+        bytes[0..8].copy_from_slice(&self.time.to_encoded());
+        bytes[8..12].copy_from_slice(&self.date.to_encoded());
+        bytes[12..14].copy_from_slice(&self.offset.to_encoded());
+        bytes
+    }
 }
 
 impl str::FromStr for OffsetDatetime {
@@ -248,6 +272,26 @@ impl LocalDatetime {
         let time = LocalTime::from_slice(time)?;
 
         Ok(Self { date, time })
+    }
+
+    #[inline]
+    pub(crate) fn from_encoded(bytes: [u8; 12]) -> Self {
+        Self {
+            time: LocalTime::from_encoded(
+                bytes[0..8].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+            date: LocalDate::from_encoded(
+                bytes[8..12].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn to_encoded(&self) -> [u8; 12] {
+        let mut bytes = [0; 12];
+        bytes[0..8].copy_from_slice(&self.time.to_encoded());
+        bytes[8..12].copy_from_slice(&self.date.to_encoded());
+        bytes
     }
 }
 
@@ -381,6 +425,24 @@ impl LocalDate {
         }
 
         Ok(Self { year, month, day })
+    }
+
+    #[inline]
+    pub(crate) fn from_encoded(bytes: [u8; 4]) -> Self {
+        Self {
+            year: u16::from_ne_bytes(bytes[0..2].try_into().unwrap_or_else(|_| unreachable!())),
+            month: u8::from_ne_bytes(bytes[2..3].try_into().unwrap_or_else(|_| unreachable!())),
+            day: u8::from_ne_bytes(bytes[3..4].try_into().unwrap_or_else(|_| unreachable!())),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn to_encoded(&self) -> [u8; 4] {
+        let mut bytes = [0; 4];
+        bytes[0..2].copy_from_slice(&self.year.to_ne_bytes());
+        bytes[2..3].copy_from_slice(&self.month.to_ne_bytes());
+        bytes[3..4].copy_from_slice(&self.day.to_ne_bytes());
+        bytes
     }
 }
 
@@ -541,6 +603,32 @@ impl LocalTime {
             nanosecond,
         })
     }
+
+    #[inline]
+    pub(crate) fn from_encoded(bytes: [u8; 8]) -> Self {
+        // Note: we put nanosecond first so the field order matches what rustc does. This field
+        // order is not guaranteed, but if it does match we get more efficient code here.
+        Self {
+            nanosecond: u32::from_ne_bytes(
+                bytes[0..4].try_into().unwrap_or_else(|_| unreachable!()),
+            ),
+            hour: u8::from_ne_bytes(bytes[4..5].try_into().unwrap_or_else(|_| unreachable!())),
+            minute: u8::from_ne_bytes(bytes[5..6].try_into().unwrap_or_else(|_| unreachable!())),
+            second: u8::from_ne_bytes(bytes[6..7].try_into().unwrap_or_else(|_| unreachable!())),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn to_encoded(&self) -> [u8; 8] {
+        // Note: we put nanosecond first so the field order matches what rustc does. This field
+        // order is not guaranteed, but if it does match we get more efficient code here.
+        let mut bytes = [0; 8];
+        bytes[0..4].copy_from_slice(&self.nanosecond.to_ne_bytes());
+        bytes[4..5].copy_from_slice(&self.hour.to_ne_bytes());
+        bytes[5..6].copy_from_slice(&self.minute.to_ne_bytes());
+        bytes[6..7].copy_from_slice(&self.second.to_ne_bytes());
+        bytes
+    }
 }
 
 impl str::FromStr for LocalTime {
@@ -664,6 +752,24 @@ impl Offset {
 
             let minutes = sign * (hours * 60 + minutes);
             Ok(Self::Custom { minutes })
+        }
+    }
+
+    #[inline]
+    pub(crate) fn from_encoded(bytes: [u8; 2]) -> Self {
+        let minutes = i16::from_ne_bytes(bytes);
+        if minutes == 0 {
+            Self::Z
+        } else {
+            Self::Custom { minutes }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn to_encoded(&self) -> [u8; 2] {
+        match *self {
+            Self::Z => [0, 0],
+            Self::Custom { minutes } => minutes.to_ne_bytes(),
         }
     }
 }

@@ -6,9 +6,9 @@ use serde::de;
 use serde::de::{Error as _, IntoDeserializer as _};
 
 use super::datetime::{
-    LocalDate, LocalDateAccess, LocalDateFromFields, LocalDatetime, LocalDatetimeAccess,
-    LocalDatetimeFromFields, LocalTime, LocalTimeAccess, LocalTimeFromFields, OffsetDatetime,
-    OffsetDatetimeAccess, OffsetDatetimeFromFields,
+    EncodedLocalDate, EncodedLocalDatetime, EncodedLocalTime, EncodedOffsetDatetime, LocalDate,
+    LocalDateAccess, LocalDatetime, LocalDatetimeAccess, LocalTime, LocalTimeAccess,
+    OffsetDatetime, OffsetDatetimeAccess,
 };
 use super::{Datetime, Type, Value};
 use crate::de::{Error, Result};
@@ -249,7 +249,7 @@ impl<'de> de::Deserialize<'de> for Value {
 
                 match key {
                     MapField::OffsetDatetime => {
-                        let result = map.next_value::<OffsetDatetimeFromFields>()?.0.into();
+                        let result = map.next_value::<EncodedOffsetDatetime>()?.0.into();
                         match map.next_key::<MapField<'de>>()? {
                             Some(MapField::OffsetDatetime) => {
                                 Err(de::Error::duplicate_field(OffsetDatetime::WRAPPER_FIELD))
@@ -262,7 +262,7 @@ impl<'de> de::Deserialize<'de> for Value {
                         }
                     }
                     MapField::LocalDatetime => {
-                        let result = map.next_value::<LocalDatetimeFromFields>()?.0.into();
+                        let result = map.next_value::<EncodedLocalDatetime>()?.0.into();
                         match map.next_key::<MapField<'de>>()? {
                             Some(MapField::LocalDatetime) => {
                                 Err(de::Error::duplicate_field(LocalDatetime::WRAPPER_FIELD))
@@ -275,7 +275,7 @@ impl<'de> de::Deserialize<'de> for Value {
                         }
                     }
                     MapField::LocalDate => {
-                        let result = map.next_value::<LocalDateFromFields>()?.0.into();
+                        let result = map.next_value::<EncodedLocalDate>()?.0.into();
                         match map.next_key::<MapField<'de>>()? {
                             Some(MapField::LocalDate) => {
                                 Err(de::Error::duplicate_field(LocalDate::WRAPPER_FIELD))
@@ -288,7 +288,7 @@ impl<'de> de::Deserialize<'de> for Value {
                         }
                     }
                     MapField::LocalTime => {
-                        let result = map.next_value::<LocalTimeFromFields>()?.0.into();
+                        let result = map.next_value::<EncodedLocalTime>()?.0.into();
                         match map.next_key::<MapField<'de>>()? {
                             Some(MapField::LocalTime) => {
                                 Err(de::Error::duplicate_field(LocalTime::WRAPPER_FIELD))
@@ -1053,19 +1053,6 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserialize_datetime() {
-        struct IntoDeserializer<D>(D);
-        impl<'de, D, E> de::IntoDeserializer<'de, E> for IntoDeserializer<D>
-        where
-            D: de::Deserializer<'de, Error = E>,
-            E: de::Error,
-        {
-            type Deserializer = D;
-
-            fn into_deserializer(self) -> Self::Deserializer {
-                self.0
-            }
-        }
-
         let date = || LocalDate {
             year: 2023,
             month: 1,
@@ -1082,7 +1069,7 @@ mod tests {
         let tests = [
             (
                 OffsetDatetime::WRAPPER_FIELD,
-                &b"[[2023, 1, 2], [3, 4, 5, 6000000], [428]]"[..],
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"[..],
                 Datetime {
                     date: Some(date()),
                     time: Some(time()),
@@ -1091,7 +1078,7 @@ mod tests {
             ),
             (
                 LocalDatetime::WRAPPER_FIELD,
-                &b"[[2023, 1, 2], [3, 4, 5, 6000000]]"[..],
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"[..],
                 Datetime {
                     date: Some(date()),
                     time: Some(time()),
@@ -1100,7 +1087,7 @@ mod tests {
             ),
             (
                 LocalDate::WRAPPER_FIELD,
-                &b"[2023, 1, 2]"[..],
+                &b"\xE7\x07\x01\x02"[..],
                 Datetime {
                     date: Some(date()),
                     time: None,
@@ -1109,7 +1096,7 @@ mod tests {
             ),
             (
                 LocalTime::WRAPPER_FIELD,
-                &b"[3, 4, 5, 6000000]"[..],
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00"[..],
                 Datetime {
                     date: None,
                     time: Some(time()),
@@ -1119,74 +1106,79 @@ mod tests {
         ];
 
         for (field, bytes, expected) in tests {
-            let value = Value::deserialize(de::value::MapDeserializer::new(iter::once((
-                de::value::StrDeserializer::new(field),
-                IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
-            ))))
-            .unwrap();
+            let value =
+                Value::deserialize(de::value::MapDeserializer::<_, Error>::new(iter::once((
+                    de::value::StrDeserializer::new(field),
+                    de::value::BytesDeserializer::new(bytes),
+                ))))
+                .unwrap();
             assert_eq!(value, expected);
 
-            let value = Value::deserialize(de::value::MapDeserializer::new(iter::once((
-                de::value::BorrowedStrDeserializer::new(field),
-                IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
-            ))))
-            .unwrap();
+            let value =
+                Value::deserialize(de::value::MapDeserializer::<_, Error>::new(iter::once((
+                    de::value::BorrowedStrDeserializer::new(field),
+                    de::value::BytesDeserializer::new(bytes),
+                ))))
+                .unwrap();
             assert_eq!(value, expected);
         }
 
         let tests = [
             (
                 OffsetDatetime::WRAPPER_FIELD,
-                &b"[[2023, 1, 2], [3, 4, 5, 6000000], [428]]"[..],
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"[..],
             ),
             (
                 LocalDatetime::WRAPPER_FIELD,
-                &b"[[2023, 1, 2], [3, 4, 5, 6000000]]"[..],
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"[..],
             ),
-            (LocalDate::WRAPPER_FIELD, &b"[2023, 1, 2]"[..]),
-            (LocalTime::WRAPPER_FIELD, &b"[3, 4, 5, 6000000]"[..]),
+            (LocalDate::WRAPPER_FIELD, &b"\xE7\x07\x01\x02"[..]),
+            (
+                LocalTime::WRAPPER_FIELD,
+                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00"[..],
+            ),
         ];
 
         for (i, (field, bytes)) in tests.into_iter().enumerate() {
-            let result = Value::deserialize(de::value::MapDeserializer::new(
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
                     (
                         de::value::BorrowedStrDeserializer::new(field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
+                        de::value::BytesDeserializer::new(bytes),
                     ),
                     (
                         de::value::BorrowedStrDeserializer::new(field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
+                        de::value::BytesDeserializer::new(bytes),
                     ),
                 ]
                 .into_iter(),
             ));
             assert!(result.is_err());
 
-            let result = Value::deserialize(de::value::MapDeserializer::new(
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
                     (
                         de::value::StrDeserializer::new(field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
+                        de::value::BytesDeserializer::new(bytes),
                     ),
                     (
                         de::value::StrDeserializer::new("foo"),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(b"bar")),
+                        de::value::BytesDeserializer::new(b"bar"),
                     ),
                 ]
                 .into_iter(),
             ));
             assert!(result.is_err());
 
-            let result = Value::deserialize(de::value::MapDeserializer::new(
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
                     (
                         de::value::BorrowedStrDeserializer::new(field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
+                        de::value::BytesDeserializer::new(bytes),
                     ),
                     (
                         de::value::BorrowedStrDeserializer::new("foo"),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(b"bar")),
+                        de::value::BytesDeserializer::new(b"bar"),
                     ),
                 ]
                 .into_iter(),
@@ -1194,15 +1186,15 @@ mod tests {
             assert!(result.is_err());
 
             let other_field = tests[(i + 1) % tests.len()].0;
-            let result = Value::deserialize(de::value::MapDeserializer::new(
+            let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
                     (
                         de::value::StrDeserializer::new(field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(bytes)),
+                        de::value::BytesDeserializer::new(bytes),
                     ),
                     (
                         de::value::StrDeserializer::new(other_field),
-                        IntoDeserializer(&mut serde_json::Deserializer::from_slice(b"bar")),
+                        de::value::BytesDeserializer::new(b"bar"),
                     ),
                 ]
                 .into_iter(),

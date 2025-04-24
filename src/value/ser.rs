@@ -1,5 +1,3 @@
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 use serde::ser;
@@ -21,12 +19,6 @@ impl ser::Serialize for Value {
             Self::Boolean(bool) => bool.serialize(serializer),
             Self::Datetime(ref datetime) => datetime.serialize(serializer),
             Self::Array(ref array) => array.serialize(serializer),
-            #[cfg(test)]
-            Self::Table(ref table) => table
-                .iter()
-                .collect::<BTreeMap<_, _>>()
-                .serialize(serializer),
-            #[cfg(not(test))]
             Self::Table(ref table) => table.serialize(serializer),
         }
     }
@@ -888,21 +880,6 @@ mod tests {
             )
         );
 
-        // let mut serializer =
-        //     ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-        // serializer
-        //     .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-        //     .unwrap();
-        // let result = serializer.end().unwrap();
-        // assert_eq!(
-        //     result,
-        //     Value::Datetime(Datetime {
-        //         date: Some(date()),
-        //         time: Some(time()),
-        //         offset: Some(offset()),
-        //     })
-        // );
-
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         serializer
@@ -967,34 +944,40 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn to_value_table_or_datetime_serializer_error() {
-    //     use ser::SerializeStruct as _;
+    #[test]
+    fn to_value_table_or_datetime_serializer_error() {
+        use ser::SerializeStruct as _;
 
-    //     let serializer =
-    //         ToValueTableOrDatetimeSerializer::start(Some(0), Datetime::WRAPPER_TYPE).unwrap();
-    //     assert!(serializer.end().is_err());
+        let serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(0), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        assert!(serializer.end().is_err());
 
-    //     let mut serializer =
-    //         ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-    //     assert!(serializer.serialize_field("one", &1).is_err());
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        assert!(serializer.serialize_field("one", &1).is_err());
 
-    //     let mut serializer =
-    //         ToValueTableOrDatetimeSerializer::start(Some(2), Datetime::WRAPPER_TYPE).unwrap();
-    //     serializer
-    //         .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-    //         .unwrap();
-    //     assert!(serializer
-    //         .serialize_field(Datetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006+07:08")
-    //         .is_err());
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(2), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                &"2023-01-02T03:04:05.006+07:08",
+            )
+            .unwrap();
+        assert!(serializer
+            .serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                &"2023-01-02T03:04:05.006+07:08"
+            )
+            .is_err());
 
-    //     let mut serializer =
-    //         ToValueTableOrDatetimeSerializer::start(Some(1), Datetime::WRAPPER_TYPE).unwrap();
-    //     serializer
-    //         .serialize_field(Datetime::WRAPPER_FIELD, &"blah")
-    //         .unwrap();
-    //     assert!(serializer.end().is_err());
-    // }
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, &"blah")
+            .unwrap();
+        assert!(serializer.end().is_err());
+    }
 
     #[test]
     fn to_value_wrapped_table_serializer() {
