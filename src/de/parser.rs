@@ -234,11 +234,10 @@ where
             // Anything else is unexpected
             else if let Some(ch) = self.reader.next()? {
                 return Err(if is_toml_legal(&ch) {
-                    ErrorKind::ExpectedToken("table header or key/value pair".into())
+                    ErrorKind::ExpectedToken("table header or key/value pair".into()).into()
                 } else {
-                    ErrorKind::IllegalChar(ch)
-                }
-                .into());
+                    ErrorKind::IllegalChar(ch).into()
+                });
             }
             // Or if there was no more input we break for EOF
             else {
@@ -257,11 +256,10 @@ where
                 }
                 Some(ch) => {
                     return Err(if is_toml_legal(&ch) {
-                        ErrorKind::ExpectedToken("end of line".into())
+                        ErrorKind::ExpectedToken("end of line".into()).into()
                     } else {
-                        ErrorKind::IllegalChar(ch)
-                    }
-                    .into());
+                        ErrorKind::IllegalChar(ch).into()
+                    });
                 }
                 None => break,
             }
@@ -415,11 +413,10 @@ where
                 self.parse_inline_table().map(Value::InlineTable)
             }
             Some(ch) => Err(if is_toml_legal(&ch) {
-                ErrorKind::ExpectedToken("a value".into())
+                ErrorKind::ExpectedToken("a value".into()).into()
             } else {
-                ErrorKind::IllegalChar(ch)
-            }
-            .into()),
+                ErrorKind::IllegalChar(ch).into()
+            }),
             None => Err(ErrorKind::UnexpectedEof.into()),
         }
     }
@@ -843,11 +840,10 @@ where
         // Note: leading 0s are not allowed, but that is checked in parse_value
         if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
             return Err(match self.reader.peek()? {
-                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
-                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
-                None => ErrorKind::UnexpectedEof,
-            }
-            .into());
+                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
+                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
+                None => ErrorKind::UnexpectedEof.into(),
+            });
         }
         let mut num = self.reader.end_seq()?;
 
@@ -856,12 +852,13 @@ where
             let bytes = self.reader.next_while(u8::is_ascii_digit)?;
             if bytes.is_empty() {
                 return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
-                    Some(b) if is_toml_word(&b) => ErrorKind::InvalidNumber("invalid digit".into()),
-                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
-                    None => ErrorKind::UnexpectedEof,
-                }
-                .into());
+                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
+                    Some(b) if is_toml_word(&b) => {
+                        ErrorKind::InvalidNumber("invalid digit".into()).into()
+                    }
+                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
+                    None => ErrorKind::UnexpectedEof.into(),
+                });
             }
             num.to_mut().extend_from_slice(&bytes);
         }
@@ -884,11 +881,10 @@ where
             // We need at least one digit
             if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
                 return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
-                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
-                    None => ErrorKind::UnexpectedEof,
-                }
-                .into());
+                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
+                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
+                    None => ErrorKind::UnexpectedEof.into(),
+                });
             }
             let bytes = self.reader.end_seq()?;
             num.to_mut().extend_from_slice(&bytes);
@@ -898,14 +894,13 @@ where
                 let bytes = self.reader.next_while(u8::is_ascii_digit)?;
                 if bytes.is_empty() {
                     return Err(match self.reader.peek()? {
-                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
                         Some(b) if is_toml_word(&b) => {
-                            ErrorKind::InvalidNumber("invalid digit".into())
+                            ErrorKind::InvalidNumber("invalid digit".into()).into()
                         }
-                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
-                        None => ErrorKind::UnexpectedEof,
-                    }
-                    .into());
+                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
+                        None => ErrorKind::UnexpectedEof.into(),
+                    });
                 }
                 num.to_mut().extend_from_slice(&bytes);
             }
@@ -924,11 +919,10 @@ where
             // We need at least one digit
             if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
                 return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
-                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
-                    None => ErrorKind::UnexpectedEof,
-                }
-                .into());
+                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
+                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
+                    None => ErrorKind::UnexpectedEof.into(),
+                });
             }
             let bytes = self.reader.end_seq()?;
             num.to_mut().extend_from_slice(&bytes);
@@ -938,14 +932,13 @@ where
                 let bytes = self.reader.next_while(u8::is_ascii_digit)?;
                 if bytes.is_empty() {
                     return Err(match self.reader.peek()? {
-                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
+                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
                         Some(b) if is_toml_word(&b) => {
-                            ErrorKind::InvalidNumber("invalid digit".into())
+                            ErrorKind::InvalidNumber("invalid digit".into()).into()
                         }
-                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
-                        None => ErrorKind::UnexpectedEof,
-                    }
-                    .into());
+                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
+                        None => ErrorKind::UnexpectedEof.into(),
+                    });
                 }
                 num.to_mut().extend_from_slice(&bytes);
             }
@@ -963,11 +956,10 @@ where
     fn parse_number_inner(&mut self, is_digit: fn(&u8) -> bool) -> Result<Cow<'de, [u8]>> {
         if self.reader.next_while(is_digit)?.is_empty() {
             return Err(match self.reader.peek()? {
-                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()),
-                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()),
-                None => ErrorKind::UnexpectedEof,
-            }
-            .into());
+                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
+                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
+                None => ErrorKind::UnexpectedEof.into(),
+            });
         }
         let mut num = self.reader.end_seq()?;
 
@@ -975,12 +967,13 @@ where
             let bytes = self.reader.next_while(is_digit)?;
             if bytes.is_empty() {
                 return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()),
-                    Some(b) if is_toml_word(&b) => ErrorKind::InvalidNumber("invalid digit".into()),
-                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()),
-                    None => ErrorKind::UnexpectedEof,
-                }
-                .into());
+                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
+                    Some(b) if is_toml_word(&b) => {
+                        ErrorKind::InvalidNumber("invalid digit".into()).into()
+                    }
+                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
+                    None => ErrorKind::UnexpectedEof.into(),
+                });
             }
             num.to_mut().extend_from_slice(&bytes);
         }
@@ -1057,10 +1050,10 @@ where
             } else {
                 return Err(if self.reader.next()?.is_some() {
                     ErrorKind::ExpectedToken(", or } after key/value pair in inline table".into())
+                        .into()
                 } else {
-                    ErrorKind::UnexpectedEof
-                }
-                .into());
+                    ErrorKind::UnexpectedEof.into()
+                });
             }
         }
 

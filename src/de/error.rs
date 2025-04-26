@@ -1,7 +1,7 @@
 //! Deserialization error types
 
 use std::sync::Arc;
-use std::{fmt, io};
+use std::{fmt, io, num};
 
 use serde::de;
 
@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
 #[derive(Clone)]
-pub struct Error(Box<ErrorImpl>);
+pub struct Error(ErrorKind);
 
 impl fmt::Display for Error {
     #[inline]
@@ -23,7 +23,7 @@ impl fmt::Debug for Error {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
-            .field("type", &self.0.kind)
+            .field("type", &self.0)
             .finish_non_exhaustive()
     }
 }
@@ -31,7 +31,9 @@ impl fmt::Debug for Error {
 impl std::error::Error for Error {
     #[inline]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self.0.kind {
+        match self.0 {
+            ErrorKind::InvalidInteger(ref error) => Some(error),
+            ErrorKind::InvalidFloat(ref error) => Some(error),
             ErrorKind::Io(ref io_error) => Some(&**io_error),
             _ => None,
         }
@@ -72,26 +74,12 @@ impl de::Error for Error {
 
     #[inline]
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
-        let expected = match *expected {
-            [] => "no variant".into(),
-            [variant] => variant.into(),
-            [first, last] => format!("{first} or {last}").into(),
-            [ref rest @ .., last] => format!("{rest}, or {last}", rest = rest.join(", ")).into(),
-        };
-
-        ErrorKind::UnknownVariant(variant.into(), expected).into()
+        ErrorKind::UnknownVariant(variant.into(), OneOf(expected)).into()
     }
 
     #[inline]
     fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
-        let expected = match *expected {
-            [] => "no field".into(),
-            [variant] => variant.into(),
-            [first, last] => format!("{first} or {last}").into(),
-            [ref rest @ .., last] => format!("{rest}, or {last}", rest = rest.join(", ")).into(),
-        };
-
-        ErrorKind::UnknownField(field.into(), expected).into()
+        ErrorKind::UnknownField(field.into(), OneOf(expected)).into()
     }
 
     #[inline]
@@ -105,40 +93,18 @@ impl de::Error for Error {
     }
 }
 
-// Convenience impl to box the error
-impl From<ErrorImpl> for Error {
-    #[inline]
-    fn from(value: ErrorImpl) -> Self {
-        Self(Box::new(value))
-    }
-}
-
+// Convenience impl to create the error
 impl From<ErrorKind> for Error {
     #[inline]
     fn from(kind: ErrorKind) -> Self {
-        ErrorImpl { kind }.into()
+        Self(kind)
     }
 }
 
 impl From<io::Error> for Error {
     #[inline]
     fn from(value: io::Error) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Io(Arc::new(value)),
-        }
-        .into()
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ErrorImpl {
-    pub kind: ErrorKind,
-}
-
-impl fmt::Display for ErrorImpl {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.kind, f)
+        Self(ErrorKind::Io(Arc::new(value)))
     }
 }
 
@@ -155,8 +121,12 @@ pub enum ErrorKind {
     UnterminatedString,
     /// Invalid escape sequence
     InvalidEscape(Box<str>),
-    /// Invalid number
+    /// Invalid number (rejected by parser)
     InvalidNumber(Box<str>),
+    /// Invalid integer (rejected by str->int conversion)
+    InvalidInteger(num::ParseIntError),
+    /// Invalid float (rejected by str->float conversion)
+    InvalidFloat(num::ParseFloatError),
     /// Invalid datetime
     InvalidDatetime,
     /// Unexpected token
@@ -176,9 +146,9 @@ pub enum ErrorKind {
     /// Invalid length (length, expected)
     InvalidLength(usize, Box<str>),
     /// Unknown variant (variant, expected)
-    UnknownVariant(Box<str>, Box<str>),
+    UnknownVariant(Box<str>, OneOf),
     /// Unknown field (field, expected)
-    UnknownField(Box<str>, Box<str>),
+    UnknownField(Box<str>, OneOf),
     /// Missing field (field)
     MissingField(&'static str),
     /// Duplicate field (field)
@@ -204,6 +174,8 @@ impl fmt::Display for ErrorKind {
             UnterminatedString => write!(f, "unterminated string"),
             InvalidEscape(ref seq) => write!(f, "invalid escape sequence: {seq}"),
             InvalidNumber(ref error) => write!(f, "invalid number: {error}"),
+            InvalidInteger(ref error) => write!(f, "invalid integer: {error}"),
+            InvalidFloat(ref error) => write!(f, "invalid float: {error}"),
             InvalidDatetime => write!(f, "invalid datetime"),
             ExpectedToken(ref token) => write!(f, "expected {token}"),
             DuplicateKey(ref key, ref table) => write!(f, "duplicate key: {key} in {table}"),
@@ -222,10 +194,26 @@ impl fmt::Display for ErrorKind {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OneOf(&'static [&'static str]);
+
+impl fmt::Display for OneOf {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self.0 {
+            [] => f.write_str("no variant"),
+            [variant] => write!(f, "{variant}"),
+            [first, last] => write!(f, "{first} or {last}"),
+            [ref rest @ .., last] => write!(f, "{rest}, or {last}", rest = rest.join(", ")),
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     use std::error::Error as _;
+    use std::str::FromStr as _;
 
     use assert_matches::assert_matches;
     use serde::de::Error as _;
@@ -234,17 +222,13 @@ mod tests {
 
     #[test]
     fn error_display() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::InvalidType("foo".into(), "bar".into()),
-        }));
-        assert_eq!(format!("{error}"), "invalid type: foo, expected bar");
+        let error = Error(ErrorKind::InvalidType("foo".into(), "bar".into()));
+        assert_eq!(error.to_string(), "invalid type: foo, expected bar");
     }
 
     #[test]
     fn error_debug() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::InvalidType("foo".into(), "bar".into()),
-        }));
+        let error = Error(ErrorKind::InvalidType("foo".into(), "bar".into()));
         assert_eq!(
             format!("{error:?}"),
             r#"Error { type: InvalidType("foo", "bar"), .. }"#
@@ -253,177 +237,197 @@ mod tests {
 
     #[test]
     fn error_source() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::InvalidType("foo".into(), "bar".into()),
-        }));
+        let error = Error(ErrorKind::InvalidType("foo".into(), "bar".into()));
         assert!(error.source().is_none());
 
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::Io(Arc::new(io::Error::new(io::ErrorKind::NotFound, "foo"))),
-        }));
+        let error = Error(ErrorKind::InvalidInteger(i32::from_str("foo").unwrap_err()));
+        let source = error.source().unwrap();
+        let source = source.downcast_ref::<num::ParseIntError>().unwrap();
+        assert_eq!(source.kind(), &num::IntErrorKind::InvalidDigit);
+        assert_eq!(source.to_string(), "invalid digit found in string");
+
+        let error = Error(ErrorKind::InvalidFloat(f32::from_str("foo").unwrap_err()));
+        let source = error.source().unwrap();
+        let source = source.downcast_ref::<num::ParseFloatError>().unwrap();
+        assert_eq!(source.to_string(), "invalid float literal");
+
+        let error = Error(ErrorKind::Io(Arc::new(io::Error::new(
+            io::ErrorKind::NotFound,
+            "foo",
+        ))));
         let source = error.source().unwrap();
         let source = source.downcast_ref::<io::Error>().unwrap();
         assert_eq!(source.kind(), io::ErrorKind::NotFound);
-        assert_eq!(format!("{source}"), "foo");
+        assert_eq!(source.to_string(), "foo");
     }
 
     #[test]
     fn error_custom() {
         let error = Error::custom("foo");
-        assert_matches!(error.0.kind, ErrorKind::Custom(msg) if &*msg == "foo");
+        assert_matches!(error.0, ErrorKind::Custom(msg) if &*msg == "foo");
     }
 
     #[test]
     fn error_invalid_type() {
         let error = Error::invalid_type(de::Unexpected::Str("foo"), &"bar");
-        assert_matches!(error.0.kind, ErrorKind::InvalidType(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
+        assert_matches!(error.0, ErrorKind::InvalidType(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
     }
 
     #[test]
     fn error_invalid_value() {
         let error = Error::invalid_value(de::Unexpected::Str("foo"), &"bar");
-        assert_matches!(error.0.kind, ErrorKind::InvalidValue(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
+        assert_matches!(error.0, ErrorKind::InvalidValue(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
     }
 
     #[test]
     fn error_invalid_length() {
         let error = Error::invalid_length(1, &"bar");
-        assert_matches!(error.0.kind, ErrorKind::InvalidLength(1, exp) if &*exp == "bar");
+        assert_matches!(error.0, ErrorKind::InvalidLength(1, exp) if &*exp == "bar");
     }
 
     #[test]
     fn error_unknown_variant() {
         let error = Error::unknown_variant("foo", &[]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && &*exp == "no variant");
+        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &[]));
 
         let error = Error::unknown_variant("foo", &["bar"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && &*exp == "bar");
+        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar"]));
 
         let error = Error::unknown_variant("foo", &["bar", "baz"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && &*exp == "bar or baz");
+        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz"]));
 
         let error = Error::unknown_variant("foo", &["bar", "baz", "qux"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && &*exp == "bar, baz, or qux");
+        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz", "qux"]));
     }
 
     #[test]
     fn error_unknown_field() {
         let error = Error::unknown_field("foo", &[]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && &*exp == "no field");
+        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &[]));
 
         let error = Error::unknown_field("foo", &["bar"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && &*exp == "bar");
+        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar"]));
 
         let error = Error::unknown_field("foo", &["bar", "baz"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && &*exp == "bar or baz");
+        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz"]));
 
         let error = Error::unknown_field("foo", &["bar", "baz", "qux"]);
-        assert_matches!(error.0.kind, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && &*exp == "bar, baz, or qux");
+        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz", "qux"]));
     }
 
     #[test]
     fn error_missing_field() {
         let error = Error::missing_field("foo");
-        assert_matches!(error.0.kind, ErrorKind::MissingField(fld) if fld == "foo");
+        assert_matches!(error.0, ErrorKind::MissingField(fld) if fld == "foo");
     }
 
     #[test]
     fn error_duplicate_field() {
         let error = Error::duplicate_field("foo");
-        assert_matches!(error.0.kind, ErrorKind::DuplicateField(fld) if fld == "foo");
-    }
-
-    #[test]
-    fn error_from_error_impl() {
-        let err_impl = ErrorImpl {
-            kind: ErrorKind::InvalidType("foo".into(), "bar".into()),
-        };
-        let err = Error::from(err_impl);
-        assert_matches!(err.0.kind, ErrorKind::InvalidType(..));
+        assert_matches!(error.0, ErrorKind::DuplicateField(fld) if fld == "foo");
     }
 
     #[test]
     fn error_from_error_kind() {
         let kind = ErrorKind::InvalidType("foo".into(), "bar".into());
         let err = Error::from(kind);
-        assert_matches!(err.0.kind, ErrorKind::InvalidType(..));
+        assert_matches!(err.0, ErrorKind::InvalidType(..));
     }
 
     #[test]
     fn error_from_io_error() {
         let io_err = io::Error::new(io::ErrorKind::NotFound, "foo");
         let err = Error::from(io_err);
-        assert_matches!(err.0.kind, ErrorKind::Io(..));
-    }
-
-    #[test]
-    fn error_impl_display() {
-        let err_impl = ErrorImpl {
-            kind: ErrorKind::InvalidType("foo".into(), "bar".into()),
-        };
-        assert_eq!(format!("{err_impl}"), "invalid type: foo, expected bar");
+        assert_matches!(err.0, ErrorKind::Io(..));
     }
 
     #[test]
     fn error_kind_display() {
         let kind = ErrorKind::InvalidEncoding;
-        assert_eq!(format!("{kind}"), "file contains invalid UTF-8 bytes");
+        assert_eq!(kind.to_string(), "file contains invalid UTF-8 bytes");
 
         let kind = ErrorKind::UnexpectedEof;
-        assert_eq!(format!("{kind}"), "unexpected end of file");
+        assert_eq!(kind.to_string(), "unexpected end of file");
 
         let kind = ErrorKind::IllegalChar(b'a');
-        assert_eq!(format!("{kind}"), "illegal character: 'a'");
+        assert_eq!(kind.to_string(), "illegal character: 'a'");
 
         let kind = ErrorKind::UnterminatedString;
-        assert_eq!(format!("{kind}"), "unterminated string");
+        assert_eq!(kind.to_string(), "unterminated string");
 
         let kind = ErrorKind::InvalidEscape("foo".into());
-        assert_eq!(format!("{kind}"), "invalid escape sequence: foo");
+        assert_eq!(kind.to_string(), "invalid escape sequence: foo");
 
         let kind = ErrorKind::InvalidNumber("foo".into());
-        assert_eq!(format!("{kind}"), "invalid number: foo");
+        assert_eq!(kind.to_string(), "invalid number: foo");
+
+        let kind = ErrorKind::InvalidInteger(i32::from_str("foo").unwrap_err());
+        assert_eq!(
+            kind.to_string(),
+            "invalid integer: invalid digit found in string"
+        );
+
+        let kind = ErrorKind::InvalidFloat(f32::from_str("foo").unwrap_err());
+        assert_eq!(kind.to_string(), "invalid float: invalid float literal");
 
         let kind = ErrorKind::InvalidDatetime;
-        assert_eq!(format!("{kind}"), "invalid datetime");
+        assert_eq!(kind.to_string(), "invalid datetime");
 
         let kind = ErrorKind::ExpectedToken("foo".into());
-        assert_eq!(format!("{kind}"), "expected foo");
+        assert_eq!(kind.to_string(), "expected foo");
 
         let kind = ErrorKind::DuplicateKey("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "duplicate key: foo in bar");
+        assert_eq!(kind.to_string(), "duplicate key: foo in bar");
 
         let kind = ErrorKind::InvalidTableHeader("foo".into());
-        assert_eq!(format!("{kind}"), "invalid table header: foo");
+        assert_eq!(kind.to_string(), "invalid table header: foo");
 
         let kind = ErrorKind::InvalidKeyPath("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "invalid key: foo in bar");
+        assert_eq!(kind.to_string(), "invalid key: foo in bar");
 
         let kind = ErrorKind::InvalidType("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "invalid type: foo, expected bar");
+        assert_eq!(kind.to_string(), "invalid type: foo, expected bar");
 
         let kind = ErrorKind::InvalidValue("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "invalid value: foo, expected bar");
+        assert_eq!(kind.to_string(), "invalid value: foo, expected bar");
 
         let kind = ErrorKind::InvalidLength(1, "bar".into());
-        assert_eq!(format!("{kind}"), "invalid length: 1, expected bar");
+        assert_eq!(kind.to_string(), "invalid length: 1, expected bar");
 
-        let kind = ErrorKind::UnknownVariant("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "unknown variant: foo, expected bar");
+        let kind = ErrorKind::UnknownVariant("foo".into(), OneOf(&["bar"]));
+        assert_eq!(kind.to_string(), "unknown variant: foo, expected bar");
 
-        let kind = ErrorKind::UnknownField("foo".into(), "bar".into());
-        assert_eq!(format!("{kind}"), "unknown field: foo, expected bar");
+        let kind = ErrorKind::UnknownField("foo".into(), OneOf(&["bar"]));
+        assert_eq!(kind.to_string(), "unknown field: foo, expected bar");
 
         let kind = ErrorKind::MissingField("foo");
-        assert_eq!(format!("{kind}"), "missing field: foo");
+        assert_eq!(kind.to_string(), "missing field: foo");
 
         let kind = ErrorKind::DuplicateField("foo");
-        assert_eq!(format!("{kind}"), "duplicate field: foo");
+        assert_eq!(kind.to_string(), "duplicate field: foo");
 
         let kind = ErrorKind::Io(Arc::new(io::Error::new(io::ErrorKind::NotFound, "foo")));
-        assert_eq!(format!("{kind}"), "IO error: foo");
+        assert_eq!(kind.to_string(), "IO error: foo");
 
         let kind = ErrorKind::Custom("foo".into());
-        assert_eq!(format!("{kind}"), "foo");
+        assert_eq!(kind.to_string(), "foo");
+    }
+
+    #[test]
+    fn one_of_display() {
+        let oneof = OneOf(&[]);
+        assert_eq!(oneof.to_string(), "no variant");
+
+        let oneof = OneOf(&["foo"]);
+        assert_eq!(oneof.to_string(), "foo");
+
+        let oneof = OneOf(&["foo", "bar"]);
+        assert_eq!(oneof.to_string(), "foo or bar");
+
+        let oneof = OneOf(&["foo", "bar", "baz"]);
+        assert_eq!(oneof.to_string(), "foo, bar, or baz");
+
+        let oneof = OneOf(&["foo", "bar", "baz", "qux"]);
+        assert_eq!(oneof.to_string(), "foo, bar, baz, or qux");
     }
 }

@@ -79,7 +79,7 @@ macro_rules! __serialize_unimplemented_method {
         where
             $($t: ?Sized + ::serde::Serialize,)*
         {
-            Err(ErrorKind::UnsupportedType($msg).into())
+            Err($crate::ser::ErrorKind::UnsupportedType($msg).into())
         }
     };
 
@@ -89,7 +89,7 @@ macro_rules! __serialize_unimplemented_method {
         where
             $($t: ?Sized + ::serde::Serialize,)*
         {
-            Err(ErrorKind::UnsupportedType(name).into())
+            Err($crate::ser::ErrorKind::UnsupportedType(name).into())
         }
     };
 }

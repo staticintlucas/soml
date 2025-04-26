@@ -788,7 +788,7 @@ macro_rules! impl_integer {
                 let str = str::from_utf8(bytes)
                     .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
                 <Self>::from_str_radix(str, radix)
-                    .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+                    .map_err(|err| $crate::de::ErrorKind::InvalidInteger(err).into())
             }
 
             #[inline]
@@ -796,7 +796,7 @@ macro_rules! impl_integer {
                 let str = str::from_utf8(bytes)
                     .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
                 <Self as std::str::FromStr>::from_str(str)
-                    .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+                    .map_err(|err| $crate::de::ErrorKind::InvalidInteger(err).into())
             }
         }
     )*);
@@ -825,7 +825,7 @@ macro_rules! impl_float {
             let str = str::from_utf8(bytes)
                 .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
             <Self as std::str::FromStr>::from_str(str)
-                .map_err(|err| ErrorKind::InvalidNumber(err.to_string().into()).into())
+                .map_err(|err| $crate::de::ErrorKind::InvalidFloat(err).into())
         }
     })*);
 }

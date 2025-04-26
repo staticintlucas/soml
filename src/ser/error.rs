@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
 #[derive(Clone)]
-pub struct Error(Box<ErrorImpl>);
+pub struct Error(ErrorKind);
 
 impl fmt::Display for Error {
     #[inline]
@@ -23,7 +23,7 @@ impl fmt::Debug for Error {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
-            .field("type", &self.0.kind)
+            .field("type", &self.0)
             .finish_non_exhaustive()
     }
 }
@@ -31,7 +31,7 @@ impl fmt::Debug for Error {
 impl std::error::Error for Error {
     #[inline]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self.0.kind {
+        match self.0 {
             ErrorKind::Io(ref io_error) => Some(&**io_error),
             ErrorKind::Fmt(ref fmt_error) => Some(fmt_error),
             _ => None,
@@ -49,50 +49,25 @@ impl ser::Error for Error {
     }
 }
 
-// Convenience impl to box the error
-impl From<ErrorImpl> for Error {
-    #[inline]
-    fn from(value: ErrorImpl) -> Self {
-        Self(Box::new(value))
-    }
-}
-
+// Convenience impl to create the error
 impl From<ErrorKind> for Error {
     #[inline]
     fn from(kind: ErrorKind) -> Self {
-        ErrorImpl { kind }.into()
+        Self(kind)
     }
 }
 
 impl From<io::Error> for Error {
     #[inline]
     fn from(value: io::Error) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Io(Arc::new(value)),
-        }
-        .into()
+        Self(ErrorKind::Io(Arc::new(value)))
     }
 }
 
 impl From<fmt::Error> for Error {
     #[inline]
     fn from(value: fmt::Error) -> Self {
-        ErrorImpl {
-            kind: ErrorKind::Fmt(value),
-        }
-        .into()
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ErrorImpl {
-    pub kind: ErrorKind,
-}
-
-impl fmt::Display for ErrorImpl {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.kind, f)
+        Self(ErrorKind::Fmt(value))
     }
 }
 
@@ -141,17 +116,13 @@ mod tests {
 
     #[test]
     fn error_display() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::UnsupportedValue("foo"),
-        }));
-        assert_eq!(format!("{error}",), "unsupported value: foo");
+        let error = Error(ErrorKind::UnsupportedValue("foo"));
+        assert_eq!(error.to_string(), "unsupported value: foo");
     }
 
     #[test]
     fn error_debug() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::UnsupportedValue("foo"),
-        }));
+        let error = Error(ErrorKind::UnsupportedValue("foo"));
         assert_eq!(
             format!("{error:?}"),
             r#"Error { type: UnsupportedValue("foo"), .. }"#
@@ -160,26 +131,23 @@ mod tests {
 
     #[test]
     fn error_source() {
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::UnsupportedValue("foo"),
-        }));
+        let error = Error(ErrorKind::UnsupportedValue("foo"));
         assert!(error.source().is_none());
 
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::Io(Arc::new(io::Error::new(io::ErrorKind::NotFound, "foo"))),
-        }));
+        let error = Error(ErrorKind::Io(Arc::new(io::Error::new(
+            io::ErrorKind::NotFound,
+            "foo",
+        ))));
         let source = error.source().unwrap();
         let source = source.downcast_ref::<io::Error>().unwrap();
         assert_eq!(source.kind(), io::ErrorKind::NotFound);
-        assert_eq!(format!("{source}"), "foo");
+        assert_eq!(source.to_string(), "foo");
 
-        let error = Error(Box::new(ErrorImpl {
-            kind: ErrorKind::Fmt(fmt::Error),
-        }));
+        let error = Error(ErrorKind::Fmt(fmt::Error));
         let source = error.source().unwrap();
         source.downcast_ref::<fmt::Error>().unwrap();
         assert_eq!(
-            format!("{source}"),
+            source.to_string(),
             "an error occurred when formatting an argument"
         );
     }
@@ -187,65 +155,48 @@ mod tests {
     #[test]
     fn error_custom() {
         let error = Error::custom("foo");
-        assert_matches!(error.0.kind, ErrorKind::Custom(msg) if &*msg == "foo");
-    }
-
-    #[test]
-    fn error_from_error_impl() {
-        let err_impl = ErrorImpl {
-            kind: ErrorKind::UnsupportedValue("foo"),
-        };
-        let err = Error::from(err_impl);
-        assert_matches!(err.0.kind, ErrorKind::UnsupportedValue(..));
+        assert_matches!(error.0, ErrorKind::Custom(msg) if &*msg == "foo");
     }
 
     #[test]
     fn error_from_error_kind() {
         let kind = ErrorKind::UnsupportedValue("foo");
         let err = Error::from(kind);
-        assert_matches!(err.0.kind, ErrorKind::UnsupportedValue(..));
+        assert_matches!(err.0, ErrorKind::UnsupportedValue(..));
     }
 
     #[test]
     fn error_from_io_error() {
         let io_err = io::Error::new(io::ErrorKind::NotFound, "foo");
         let err = Error::from(io_err);
-        assert_matches!(err.0.kind, ErrorKind::Io(..));
+        assert_matches!(err.0, ErrorKind::Io(..));
     }
 
     #[test]
     fn error_from_fmt_error() {
         let fmt_err = fmt::Error;
         let err = Error::from(fmt_err);
-        assert_matches!(err.0.kind, ErrorKind::Fmt(..));
-    }
-
-    #[test]
-    fn error_impl_display() {
-        let err_impl = ErrorImpl {
-            kind: ErrorKind::UnsupportedValue("foo"),
-        };
-        assert_eq!(format!("{err_impl}"), "unsupported value: foo");
+        assert_matches!(err.0, ErrorKind::Fmt(..));
     }
 
     #[test]
     fn error_kind_display() {
         let kind = ErrorKind::UnsupportedValue("foo");
-        assert_eq!(format!("{kind}"), "unsupported value: foo");
+        assert_eq!(kind.to_string(), "unsupported value: foo");
 
         let kind = ErrorKind::UnsupportedType("foo");
-        assert_eq!(format!("{kind}"), "unsupported type: foo");
+        assert_eq!(kind.to_string(), "unsupported type: foo");
 
         let kind = ErrorKind::Io(Arc::new(io::Error::new(io::ErrorKind::NotFound, "foo")));
-        assert_eq!(format!("{kind}"), "IO error: foo");
+        assert_eq!(kind.to_string(), "IO error: foo");
 
         let kind = ErrorKind::Fmt(fmt::Error);
         assert_eq!(
-            format!("{kind}"),
+            kind.to_string(),
             "formatting error: an error occurred when formatting an argument"
         );
 
         let kind = ErrorKind::Custom("foo".into());
-        assert_eq!(format!("{kind}"), "foo");
+        assert_eq!(kind.to_string(), "foo");
     }
 }
