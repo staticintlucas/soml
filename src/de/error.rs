@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
 #[derive(Clone)]
-pub struct Error(ErrorKind);
+pub struct Error(pub(crate) ErrorKind);
 
 impl fmt::Display for Error {
     #[inline]
@@ -270,13 +270,19 @@ mod tests {
     #[test]
     fn error_invalid_type() {
         let error = Error::invalid_type(de::Unexpected::Str("foo"), &"bar");
-        assert_matches!(error.0, ErrorKind::InvalidType(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
+        assert_matches!(
+            error.0,
+            ErrorKind::InvalidType(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar"
+        );
     }
 
     #[test]
     fn error_invalid_value() {
         let error = Error::invalid_value(de::Unexpected::Str("foo"), &"bar");
-        assert_matches!(error.0, ErrorKind::InvalidValue(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar");
+        assert_matches!(
+            error.0,
+            ErrorKind::InvalidValue(unexp, exp) if &*unexp == r#"string "foo""# && &*exp == "bar"
+        );
     }
 
     #[test]
@@ -288,31 +294,55 @@ mod tests {
     #[test]
     fn error_unknown_variant() {
         let error = Error::unknown_variant("foo", &[]);
-        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &[]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &[])
+        );
 
         let error = Error::unknown_variant("foo", &["bar"]);
-        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar"])
+        );
 
         let error = Error::unknown_variant("foo", &["bar", "baz"]);
-        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz"])
+        );
 
         let error = Error::unknown_variant("foo", &["bar", "baz", "qux"]);
-        assert_matches!(error.0, ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz", "qux"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownVariant(var, exp) if &*var == "foo" && matches!(exp.0, &["bar", "baz", "qux"])
+        );
     }
 
     #[test]
     fn error_unknown_field() {
         let error = Error::unknown_field("foo", &[]);
-        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &[]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &[])
+        );
 
         let error = Error::unknown_field("foo", &["bar"]);
-        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar"])
+        );
 
         let error = Error::unknown_field("foo", &["bar", "baz"]);
-        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz"])
+        );
 
         let error = Error::unknown_field("foo", &["bar", "baz", "qux"]);
-        assert_matches!(error.0, ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz", "qux"]));
+        assert_matches!(
+            error.0,
+            ErrorKind::UnknownField(fld, exp) if &*fld == "foo" && matches!(exp.0, &["bar", "baz", "qux"])
+        );
     }
 
     #[test]

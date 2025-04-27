@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// A TOML Deserialization error
 #[derive(Clone)]
-pub struct Error(ErrorKind);
+pub struct Error(pub(crate) ErrorKind);
 
 impl fmt::Display for Error {
     #[inline]
@@ -78,6 +78,8 @@ pub enum ErrorKind {
     UnsupportedValue(&'static str),
     /// Unsupported Rust type
     UnsupportedType(&'static str),
+    /// Duplicate key in table
+    DuplicateKey(Box<str>),
 
     // Misc
     /// IO Error
@@ -97,6 +99,7 @@ impl fmt::Display for ErrorKind {
         match *self {
             UnsupportedValue(msg) => write!(f, "unsupported value: {msg}"),
             UnsupportedType(msg) => write!(f, "unsupported type: {msg}"),
+            DuplicateKey(ref key) => write!(f, r#"duplicate key "{key}" in table"#),
             Io(ref io_error) => write!(f, "IO error: {io_error}"),
             Fmt(ref fmt_error) => write!(f, "formatting error: {fmt_error}"),
             Custom(ref msg) => write!(f, "{msg}"),
@@ -145,7 +148,7 @@ mod tests {
 
         let error = Error(ErrorKind::Fmt(fmt::Error));
         let source = error.source().unwrap();
-        source.downcast_ref::<fmt::Error>().unwrap();
+        assert!(source.downcast_ref::<fmt::Error>().is_some());
         assert_eq!(
             source.to_string(),
             "an error occurred when formatting an argument"
@@ -186,6 +189,9 @@ mod tests {
 
         let kind = ErrorKind::UnsupportedType("foo");
         assert_eq!(kind.to_string(), "unsupported type: foo");
+
+        let kind = ErrorKind::DuplicateKey("foo".into());
+        assert_eq!(format!("{kind}"), r#"duplicate key "foo" in table"#);
 
         let kind = ErrorKind::Io(Arc::new(io::Error::new(io::ErrorKind::NotFound, "foo")));
         assert_eq!(kind.to_string(), "IO error: foo");

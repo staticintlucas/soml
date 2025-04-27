@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::result::Result as StdResult;
 use std::{fmt, slice, vec};
 
@@ -62,16 +61,16 @@ impl<'de> de::Deserialize<'de> for Value {
         D: de::Deserializer<'de>,
     {
         #[derive(Debug)]
-        enum MapField<'de> {
+        enum MapField {
             OffsetDatetime,
             LocalDatetime,
             LocalDate,
             LocalTime,
-            Other(Cow<'de, str>),
+            Other(String),
         }
         struct MapFieldVisitor;
 
-        impl MapField<'_> {
+        impl MapField {
             #[inline]
             fn as_str(&self) -> &str {
                 match *self {
@@ -79,31 +78,17 @@ impl<'de> de::Deserialize<'de> for Value {
                     Self::LocalDatetime => LocalDatetime::WRAPPER_FIELD,
                     Self::LocalDate => LocalDate::WRAPPER_FIELD,
                     Self::LocalTime => LocalTime::WRAPPER_FIELD,
-                    Self::Other(ref field) => field.as_ref(),
+                    Self::Other(ref field) => field.as_str(),
                 }
             }
         }
 
-        impl<'de> de::Visitor<'de> for MapFieldVisitor {
-            type Value = MapField<'de>;
+        impl de::Visitor<'_> for MapFieldVisitor {
+            type Value = MapField;
 
             #[inline]
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a TOML key")
-            }
-
-            #[inline]
-            fn visit_borrowed_str<E>(self, value: &'de str) -> StdResult<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    OffsetDatetime::WRAPPER_FIELD => Ok(Self::Value::OffsetDatetime),
-                    LocalDatetime::WRAPPER_FIELD => Ok(Self::Value::LocalDatetime),
-                    LocalDate::WRAPPER_FIELD => Ok(Self::Value::LocalDate),
-                    LocalTime::WRAPPER_FIELD => Ok(Self::Value::LocalTime),
-                    _ => Ok(Self::Value::Other(Cow::Borrowed(value))),
-                }
             }
 
             #[inline]
@@ -116,7 +101,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     LocalDatetime::WRAPPER_FIELD => Ok(Self::Value::LocalDatetime),
                     LocalDate::WRAPPER_FIELD => Ok(Self::Value::LocalDate),
                     LocalTime::WRAPPER_FIELD => Ok(Self::Value::LocalTime),
-                    _ => Ok(Self::Value::Other(Cow::Owned(value))),
+                    _ => Ok(Self::Value::Other(value)),
                 }
             }
 
@@ -129,7 +114,7 @@ impl<'de> de::Deserialize<'de> for Value {
             }
         }
 
-        impl<'de> de::Deserialize<'de> for MapField<'de> {
+        impl<'de> de::Deserialize<'de> for MapField {
             #[inline]
             fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
             where
@@ -243,14 +228,14 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 A: de::MapAccess<'de>,
             {
-                let Some(key) = map.next_key::<MapField<'de>>()? else {
+                let Some(key) = map.next_key::<MapField>()? else {
                     return Ok(Self::Value::Table(Table::new()));
                 };
 
                 match key {
                     MapField::OffsetDatetime => {
                         let result = map.next_value::<EncodedOffsetDatetime>()?.0.into();
-                        match map.next_key::<MapField<'de>>()? {
+                        match map.next_key::<MapField>()? {
                             Some(MapField::OffsetDatetime) => {
                                 Err(de::Error::duplicate_field(OffsetDatetime::WRAPPER_FIELD))
                             }
@@ -263,7 +248,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     }
                     MapField::LocalDatetime => {
                         let result = map.next_value::<EncodedLocalDatetime>()?.0.into();
-                        match map.next_key::<MapField<'de>>()? {
+                        match map.next_key::<MapField>()? {
                             Some(MapField::LocalDatetime) => {
                                 Err(de::Error::duplicate_field(LocalDatetime::WRAPPER_FIELD))
                             }
@@ -276,7 +261,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     }
                     MapField::LocalDate => {
                         let result = map.next_value::<EncodedLocalDate>()?.0.into();
-                        match map.next_key::<MapField<'de>>()? {
+                        match map.next_key::<MapField>()? {
                             Some(MapField::LocalDate) => {
                                 Err(de::Error::duplicate_field(LocalDate::WRAPPER_FIELD))
                             }
@@ -289,7 +274,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     }
                     MapField::LocalTime => {
                         let result = map.next_value::<EncodedLocalTime>()?.0.into();
-                        match map.next_key::<MapField<'de>>()? {
+                        match map.next_key::<MapField>()? {
                             Some(MapField::LocalTime) => {
                                 Err(de::Error::duplicate_field(LocalTime::WRAPPER_FIELD))
                             }
@@ -302,7 +287,7 @@ impl<'de> de::Deserialize<'de> for Value {
                     }
                     MapField::Other(key) => {
                         let mut result = Table::new();
-                        result.insert(key.into_owned(), map.next_value()?);
+                        result.insert(key, map.next_value()?);
                         while let Some((key, value)) = map.next_entry()? {
                             result.insert(key, value);
                         }
@@ -383,6 +368,7 @@ impl<'de> de::Deserializer<'de> for Value {
     }
 }
 
+#[derive(Debug)]
 struct SeqAccess {
     values: vec::IntoIter<Value>,
 }
@@ -416,6 +402,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess {
     }
 }
 
+#[derive(Debug)]
 struct MapAccess {
     kv_pairs: map::IntoIter,
     next_value: Option<Value>,
@@ -483,6 +470,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
     }
 }
 
+#[derive(Debug)]
 struct EnumAccess {
     variant: String,
     value: Value,
@@ -646,6 +634,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
     }
 }
 
+#[derive(Debug)]
 struct SeqRefAccess<'de> {
     values: slice::Iter<'de, Value>,
 }
@@ -679,6 +668,7 @@ impl<'de> de::SeqAccess<'de> for SeqRefAccess<'de> {
     }
 }
 
+#[derive(Debug)]
 struct MapRefAccess<'de> {
     kv_pairs: map::Iter<'de>,
     next_value: Option<&'de Value>,
@@ -746,6 +736,7 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
     }
 }
 
+#[derive(Debug)]
 struct EnumRefAccess<'de> {
     variant: &'de str,
     value: &'de Value,
@@ -832,11 +823,13 @@ mod tests {
     use std::iter;
     use std::marker::PhantomData;
 
+    use assert_matches::assert_matches;
     use maplit::{btreemap, hashmap};
     use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
     use serde::Deserialize;
 
     use super::*;
+    use crate::de::ErrorKind;
     use crate::value::{Datetime, Offset};
 
     struct OptionDeserializer<T, E> {
@@ -920,17 +913,17 @@ mod tests {
         let value = Value::deserialize(de::value::I128Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::I128Deserializer::<Error>::new(i128::MIN));
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
 
         let value = Value::deserialize(de::value::U64Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::U64Deserializer::<Error>::new(u64::MAX));
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
 
         let value = Value::deserialize(de::value::U128Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::U128Deserializer::<Error>::new(u128::MAX));
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
 
         let value = Value::deserialize(de::value::F64Deserializer::<Error>::new(123.0)).unwrap();
         assert_eq!(value, Value::Float(123.0));
@@ -954,10 +947,10 @@ mod tests {
         assert_eq!(value, Value::Integer(123));
 
         let result = Value::deserialize(OptionDeserializer::<i32, Error>::new(None));
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::InvalidType(..))));
 
         let result = Value::deserialize(de::value::UnitDeserializer::<Error>::new());
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::InvalidType(..))));
     }
 
     #[test]
@@ -1039,7 +1032,7 @@ mod tests {
             de::value::I64Deserializer::new(123),
             de::value::StrDeserializer::new("foo"),
         ))));
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::InvalidType(..))));
     }
 
     #[test]
@@ -1145,7 +1138,7 @@ mod tests {
                 ]
                 .into_iter(),
             ));
-            assert!(result.is_err());
+            assert_matches!(result, Err(Error(ErrorKind::DuplicateField(..))));
 
             let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
@@ -1160,7 +1153,7 @@ mod tests {
                 ]
                 .into_iter(),
             ));
-            assert!(result.is_err());
+            assert_matches!(result, Err(Error(ErrorKind::UnknownField(..))));
 
             let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
                 [
@@ -1175,7 +1168,7 @@ mod tests {
                 ]
                 .into_iter(),
             ));
-            assert!(result.is_err());
+            assert_matches!(result, Err(Error(ErrorKind::UnknownField(..))));
 
             let other_field = tests[(i + 1) % tests.len()].0;
             let result = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
@@ -1191,35 +1184,43 @@ mod tests {
                 ]
                 .into_iter(),
             ));
-            assert!(result.is_err());
+            assert_matches!(result, Err(Error(ErrorKind::UnknownField(..))));
         }
     }
 
     #[test]
+    #[allow(clippy::bool_assert_comparison)]
     fn value_deserializer() {
-        String::deserialize(Value::String("Hello".to_string())).unwrap();
+        assert_matches!(String::deserialize(Value::String("Hello".to_string())), Ok(s) if s == "Hello");
 
-        i32::deserialize(Value::Integer(42)).unwrap();
+        assert_matches!(i32::deserialize(Value::Integer(42)), Ok(42));
 
-        f64::deserialize(Value::Float(42.0)).unwrap();
+        assert_matches!(f64::deserialize(Value::Float(42.0)), Ok(42.0));
 
-        bool::deserialize(Value::Boolean(true)).unwrap();
+        assert_matches!(bool::deserialize(Value::Boolean(true)), Ok(true));
 
-        Vec::<i32>::deserialize(Value::Array(vec![
-            Value::Integer(123),
-            Value::Integer(456),
-            Value::Integer(789),
-        ]))
-        .unwrap();
+        assert_matches!(
+            Vec::<i32>::deserialize(Value::Array(vec![
+                Value::Integer(123),
+                Value::Integer(456),
+                Value::Integer(789),
+            ])),
+            Ok(a) if a == [123, 456, 789]
+        );
 
-        HashMap::<String, i32>::deserialize(Value::Table(btreemap! {
-            "abc".into() => Value::Integer(123),
-            "def".into() => Value::Integer(456),
-            "ghi".into() => Value::Integer(789),
-        }))
-        .unwrap();
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(Value::Table(btreemap! {
+                "abc".into() => Value::Integer(123),
+                "def".into() => Value::Integer(456),
+                "ghi".into() => Value::Integer(789),
+            })),
+            Ok(t) if t == hashmap! { "abc".into() => 123, "def".into() => 456, "ghi".into() => 789 }
+        );
 
-        Option::<i32>::deserialize(Value::Integer(123)).unwrap();
+        assert_matches!(
+            Option::<i32>::deserialize(Value::Integer(123)),
+            Ok(Some(123))
+        );
     }
 
     #[test]
@@ -1248,7 +1249,10 @@ mod tests {
         .unwrap();
         assert_eq!(result, Enum::B(123));
 
-        Enum::deserialize(Value::Integer(123)).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(Value::Integer(123)),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1315,28 +1319,40 @@ mod tests {
             time: None,
             offset: Some(offset()),
         };
-        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(time()),
             offset: Some(offset()),
         };
-        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(date()),
             time: None,
             offset: Some(offset()),
         };
-        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        Datetime::deserialize(Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1349,13 +1365,13 @@ mod tests {
 
         assert_eq!(seq_access.size_hint(), Some(3));
 
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(1));
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(2));
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(3));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(1)));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(2)));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(3)));
 
         assert_eq!(seq_access.size_hint(), Some(0));
 
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), None);
+        assert_matches!(seq_access.next_element::<i32>(), Ok(None));
 
         assert_eq!(seq_access.size_hint(), Some(0));
     }
@@ -1368,20 +1384,20 @@ mod tests {
             "three".to_string() => Value::Integer(3),
         });
 
-        assert_eq!(map_access.size_hint().unwrap(), 3);
+        assert_eq!(map_access.size_hint(), Some(3));
 
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "one");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 1);
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "three");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 3);
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "two");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 2);
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "one");
+        assert_matches!(map_access.next_value::<i32>(), Ok(1));
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "three");
+        assert_matches!(map_access.next_value::<i32>(), Ok(3));
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "two");
+        assert_matches!(map_access.next_value::<i32>(), Ok(2));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
-        assert!(map_access.next_key::<String>().unwrap().is_none());
+        assert_matches!(map_access.next_key::<String>(), Ok(None));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
         let mut map_access = MapAccess::new(btreemap! {
             "one".to_string() => Value::Integer(1),
@@ -1389,26 +1405,26 @@ mod tests {
             "three".to_string() => Value::Integer(3),
         });
 
-        assert_eq!(map_access.size_hint().unwrap(), 3);
+        assert_eq!(map_access.size_hint(), Some(3));
 
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("one".to_string(), 1)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "one" && v == 1
         );
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("three".to_string(), 3)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "three" && v == 3
         );
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("two".to_string(), 2)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "two" && v == 2
         );
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
-        assert!(map_access.next_entry::<String, i32>().unwrap().is_none());
+        assert_matches!(map_access.next_entry::<String, i32>(), Ok(None));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
     }
 
     #[test]
@@ -1416,7 +1432,7 @@ mod tests {
     fn map_access_empty() {
         let mut map_access = MapAccess::new(btreemap! {});
 
-        map_access.next_value::<i32>().unwrap();
+        let _result = map_access.next_value::<i32>();
     }
 
     #[test]
@@ -1437,7 +1453,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert!(value.unit_variant().is_err());
+        assert_matches!(value.unit_variant(), Err(Error(ErrorKind::InvalidType(..))));
 
         let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Table(btreemap! {
@@ -1448,7 +1464,10 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert!(value.unit_variant().is_err());
+        assert_matches!(
+            value.unit_variant(),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1460,7 +1479,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert_eq!(value.newtype_variant::<i32>().unwrap(), 42);
+        assert_matches!(value.newtype_variant::<i32>(), Ok(42));
     }
 
     #[test]
@@ -1497,7 +1516,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert_eq!(value.tuple_variant(3, Visitor).unwrap(), vec![1, 2, 3]);
+        assert_matches!(value.tuple_variant(3, Visitor), Ok(s) if s == [1, 2, 3]);
     }
 
     #[test]
@@ -1533,9 +1552,9 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert_eq!(
-            value.struct_variant(&["one", "two"], Visitor).unwrap(),
-            hashmap! {
+        assert_matches!(
+            value.struct_variant(&["one", "two"], Visitor),
+            Ok(t) if t == hashmap! {
                 "one".to_string() => 1,
                 "two".to_string() => 2,
             }
@@ -1545,40 +1564,48 @@ mod tests {
     #[test]
     fn enum_access_error() {
         let enum_access = EnumAccess::new(btreemap! {});
-        assert!(enum_access.is_err());
+        assert_matches!(enum_access, Err(Error(ErrorKind::InvalidValue(..))));
 
         let enum_access = EnumAccess::new(btreemap! {
             "variant".to_string() => Value::Integer(1),
             "variant2".to_string() => Value::Integer(2),
         });
-        assert!(enum_access.is_err());
+        assert_matches!(enum_access, Err(Error(ErrorKind::InvalidValue(..))));
     }
 
     #[test]
+    #[allow(clippy::bool_assert_comparison)]
     fn value_ref_deserializer() {
-        String::deserialize(&Value::String("Hello".to_string())).unwrap();
+        assert_matches!(String::deserialize(&Value::String("Hello".to_string())), Ok(s) if s == "Hello");
 
-        i32::deserialize(&Value::Integer(42)).unwrap();
+        assert_matches!(i32::deserialize(&Value::Integer(42)), Ok(42));
 
-        f64::deserialize(&Value::Float(42.0)).unwrap();
+        assert_matches!(f64::deserialize(&Value::Float(42.0)), Ok(42.0));
 
-        bool::deserialize(&Value::Boolean(true)).unwrap();
+        assert_matches!(bool::deserialize(&Value::Boolean(true)), Ok(true));
 
-        Vec::<i32>::deserialize(&Value::Array(vec![
-            Value::Integer(123),
-            Value::Integer(456),
-            Value::Integer(789),
-        ]))
-        .unwrap();
+        assert_matches!(
+            Vec::<i32>::deserialize(&Value::Array(vec![
+                Value::Integer(123),
+                Value::Integer(456),
+                Value::Integer(789),
+            ])),
+            Ok(a) if a == [123, 456, 789]
+        );
 
-        HashMap::<String, i32>::deserialize(&Value::Table(btreemap! {
-            "abc".into() => Value::Integer(123),
-            "def".into() => Value::Integer(456),
-            "ghi".into() => Value::Integer(789),
-        }))
-        .unwrap();
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(&Value::Table(btreemap! {
+                "abc".into() => Value::Integer(123),
+                "def".into() => Value::Integer(456),
+                "ghi".into() => Value::Integer(789),
+            })),
+            Ok(a) if a == hashmap! { "abc".into() => 123, "def".into() => 456, "ghi".into() => 789 }
+        );
 
-        Option::<i32>::deserialize(&Value::Integer(123)).unwrap();
+        assert_matches!(
+            Option::<i32>::deserialize(&Value::Integer(123)),
+            Ok(Some(123))
+        );
     }
 
     #[test]
@@ -1607,7 +1634,10 @@ mod tests {
         .unwrap();
         assert_eq!(result, Enum::B(123));
 
-        Enum::deserialize(&Value::Integer(123)).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(&Value::Integer(123)),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1674,28 +1704,40 @@ mod tests {
             time: None,
             offset: Some(offset()),
         };
-        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(&Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(time()),
             offset: Some(offset()),
         };
-        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(&Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(date()),
             time: None,
             offset: Some(offset()),
         };
-        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(&Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        Datetime::deserialize(&Value::Datetime(datetime)).unwrap_err();
+        assert_matches!(
+            Datetime::deserialize(&Value::Datetime(datetime)),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1705,13 +1747,13 @@ mod tests {
 
         assert_eq!(seq_access.size_hint(), Some(3));
 
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(1));
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(2));
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), Some(3));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(1)));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(2)));
+        assert_matches!(seq_access.next_element::<i32>(), Ok(Some(3)));
 
         assert_eq!(seq_access.size_hint(), Some(0));
 
-        assert_eq!(seq_access.next_element::<i32>().unwrap(), None);
+        assert_matches!(seq_access.next_element::<i32>(), Ok(None));
 
         assert_eq!(seq_access.size_hint(), Some(0));
     }
@@ -1725,20 +1767,20 @@ mod tests {
         };
         let mut map_access = MapRefAccess::new(&table);
 
-        assert_eq!(map_access.size_hint().unwrap(), 3);
+        assert_eq!(map_access.size_hint(), Some(3));
 
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "one");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 1);
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "three");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 3);
-        assert_eq!(map_access.next_key::<String>().unwrap().unwrap(), "two");
-        assert_eq!(map_access.next_value::<i32>().unwrap(), 2);
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "one");
+        assert_matches!(map_access.next_value::<i32>(), Ok(1));
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "three");
+        assert_matches!(map_access.next_value::<i32>(), Ok(3));
+        assert_matches!(map_access.next_key::<String>(), Ok(Some(k)) if k == "two");
+        assert_matches!(map_access.next_value::<i32>(), Ok(2));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
-        assert!(map_access.next_key::<String>().unwrap().is_none());
+        assert_matches!(map_access.next_key::<String>(), Ok(None));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
         let table = btreemap! {
             "one".to_string() => Value::Integer(1),
@@ -1747,26 +1789,26 @@ mod tests {
         };
         let mut map_access = MapRefAccess::new(&table);
 
-        assert_eq!(map_access.size_hint().unwrap(), 3);
+        assert_eq!(map_access.size_hint(), Some(3));
 
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("one".to_string(), 1)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "one" && v == 1
         );
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("three".to_string(), 3)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "three" && v == 3
         );
-        assert_eq!(
-            map_access.next_entry::<String, i32>().unwrap().unwrap(),
-            ("two".to_string(), 2)
+        assert_matches!(
+            map_access.next_entry::<String, i32>(),
+            Ok(Some((k, v))) if k == "two" && v == 2
         );
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
 
-        assert!(map_access.next_entry::<String, i32>().unwrap().is_none());
+        assert_matches!(map_access.next_entry::<String, i32>(), Ok(None));
 
-        assert_eq!(map_access.size_hint().unwrap(), 0);
+        assert_eq!(map_access.size_hint(), Some(0));
     }
 
     #[test]
@@ -1775,7 +1817,7 @@ mod tests {
         let table = btreemap! {};
         let mut map_access = MapRefAccess::new(&table);
 
-        map_access.next_value::<i32>().unwrap();
+        let _result = map_access.next_value::<i32>();
     }
 
     #[test]
@@ -1796,7 +1838,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert!(value.unit_variant().is_err());
+        assert_matches!(value.unit_variant(), Err(Error(ErrorKind::InvalidType(..))));
 
         let table = btreemap! {
             "variant".to_string() => Value::Table(btreemap! {
@@ -1807,7 +1849,10 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert!(value.unit_variant().is_err());
+        assert_matches!(
+            value.unit_variant(),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1819,7 +1864,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert_eq!(value.newtype_variant::<i32>().unwrap(), 42);
+        assert_matches!(value.newtype_variant::<i32>(), Ok(42));
     }
 
     #[test]
@@ -1856,7 +1901,7 @@ mod tests {
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
         assert_eq!(variant, "variant".to_string());
-        assert_eq!(value.tuple_variant(3, Visitor).unwrap(), vec![1, 2, 3]);
+        assert_matches!(value.tuple_variant(3, Visitor), Ok(s) if s == [1, 2, 3]);
     }
 
     #[test]
@@ -1891,10 +1936,10 @@ mod tests {
         let enum_access = EnumRefAccess::new(&table).unwrap();
 
         let (variant, value) = enum_access.variant::<String>().unwrap();
-        assert_eq!(variant, "variant".to_string());
-        assert_eq!(
-            value.struct_variant(&["one", "two"], Visitor).unwrap(),
-            hashmap! {
+        assert_eq!(variant, "variant");
+        assert_matches!(
+            value.struct_variant(&["one", "two"], Visitor),
+            Ok(t) if t == hashmap! {
                 "one".to_string() => 1,
                 "two".to_string() => 2,
             }
@@ -1905,13 +1950,13 @@ mod tests {
     fn enum_ref_access_error() {
         let table = btreemap! {};
         let enum_access = EnumRefAccess::new(&table);
-        assert!(enum_access.is_err());
+        assert_matches!(enum_access, Err(Error(ErrorKind::InvalidValue(..))));
 
         let table = btreemap! {
             "variant".to_string() => Value::Integer(1),
             "variant2".to_string() => Value::Integer(2),
         };
         let enum_access = EnumRefAccess::new(&table);
-        assert!(enum_access.is_err());
+        assert_matches!(enum_access, Err(Error(ErrorKind::InvalidValue(..))));
     }
 }

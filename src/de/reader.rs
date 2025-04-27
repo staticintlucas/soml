@@ -495,7 +495,10 @@ const fn utf8_len(byte: u8) -> Option<usize> {
 mod tests {
     use std::io::Read as _;
 
+    use assert_matches::assert_matches;
+
     use super::*;
+    use crate::de::Error;
 
     #[test]
     fn slice_reader_from_str() {
@@ -535,19 +538,19 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.next().unwrap(), Some(b'f'));
+        assert_matches!(reader.next(), Ok(Some(b'f')));
         assert_eq!(reader.offset, 1);
 
-        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_matches!(reader.next(), Ok(Some(b'o')));
         assert_eq!(reader.offset, 2);
 
-        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_matches!(reader.next(), Ok(Some(b'o')));
         assert_eq!(reader.offset, 3);
 
-        assert_eq!(reader.next().unwrap(), None);
+        assert_matches!(reader.next(), Ok(None));
         assert_eq!(reader.offset, 3);
 
-        assert_eq!(reader.next().unwrap(), None);
+        assert_matches!(reader.next(), Ok(None));
         assert_eq!(reader.offset, 3);
     }
 
@@ -559,16 +562,16 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.next_n(2).unwrap(), Some(b"fo".into()));
+        assert_matches!(reader.next_n(2), Ok(Some(b)) if &*b == b"fo");
         assert_eq!(reader.offset, 2);
 
-        assert_eq!(reader.next_n(5).unwrap(), Some(b"o bar".into()));
+        assert_matches!(reader.next_n(5), Ok(Some(b)) if &*b == b"o bar");
         assert_eq!(reader.offset, 7);
 
-        assert_eq!(reader.next_n(5).unwrap(), None);
+        assert_matches!(reader.next_n(5), Ok(None));
         assert_eq!(reader.offset, 7);
 
-        assert_eq!(reader.next_n(4).unwrap(), Some(b" baz".into()));
+        assert_matches!(reader.next_n(4), Ok(Some(b)) if &*b == b" baz");
         assert_eq!(reader.offset, 11);
     }
 
@@ -580,32 +583,29 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.next_char().unwrap(), Some('f'));
-        assert_eq!(reader.next_char().unwrap(), None);
+        assert_matches!(reader.next_char(), Ok(Some('f')));
+        assert_matches!(reader.next_char(), Ok(None));
 
         let mut reader = SliceReader {
             bytes: b"\xff",
             offset: 0,
             seq_start: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = SliceReader {
             bytes: b"\xcf\xff",
             offset: 0,
             seq_start: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = SliceReader {
             bytes: b"\xcf",
             offset: 0,
             seq_start: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
@@ -616,10 +616,10 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_matches!(reader.peek(), Ok(Some(b'f')));
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_matches!(reader.peek(), Ok(Some(b'f')));
         assert_eq!(reader.offset, 0);
     }
 
@@ -631,13 +631,13 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.peek_n(2).unwrap(), Some(b"fo".into()));
+        assert_matches!(reader.peek_n(2), Ok(Some(b)) if &*b == b"fo");
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek_n(4).unwrap(), None);
+        assert_matches!(reader.peek_n(4), Ok(None));
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
+        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"foo");
         assert_eq!(reader.offset, 0);
     }
 
@@ -649,7 +649,7 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.peek_char().unwrap(), Some('f'));
+        assert_matches!(reader.peek_char(), Ok(Some('f')));
         assert_eq!(reader.offset, 0);
 
         let mut reader = SliceReader {
@@ -658,31 +658,28 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.peek_char().unwrap(), None);
+        assert_matches!(reader.peek_char(), Ok(None));
 
         let mut reader = SliceReader {
             bytes: b"\xff",
             offset: 0,
             seq_start: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = SliceReader {
             bytes: b"\xcf\xff",
             offset: 0,
             seq_start: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = SliceReader {
             bytes: b"\xcf",
             offset: 0,
             seq_start: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
@@ -693,13 +690,13 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.peek_at(1).unwrap(), Some(b'a'));
+        assert_matches!(reader.peek_at(1), Ok(Some(b'a')));
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek_at(3).unwrap(), None);
+        assert_matches!(reader.peek_at(3), Ok(None));
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek_at(2).unwrap(), Some(b'r'));
+        assert_matches!(reader.peek_at(2), Ok(Some(b'r')));
         assert_eq!(reader.offset, 0);
     }
 
@@ -753,23 +750,24 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), Some(b'f'));
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(Some(b'f')));
         assert_eq!(reader.offset, 1);
 
-        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), None);
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(None));
         assert_eq!(reader.offset, 1);
 
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
         assert_eq!(reader.offset, 2);
 
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
         assert_eq!(reader.offset, 3);
 
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), None);
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(None));
         assert_eq!(reader.offset, 3);
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn slice_reader_next_while() {
         let mut reader = SliceReader {
             bytes: b"bbbbaaaaaaararrrrrrr",
@@ -777,50 +775,36 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'b').unwrap(),
-            b"bbbb".as_slice()
-        );
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if &*b == b"bbbb");
         assert_eq!(reader.offset, 4);
 
-        assert_eq!(reader.next_while(|&ch| ch == b'b').unwrap(), b"".as_slice());
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if b.is_empty());
         assert_eq!(reader.offset, 4);
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'a').unwrap(),
-            b"aaaaaaa".as_slice()
-        );
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"aaaaaaa");
         assert_eq!(reader.offset, 11);
 
-        assert_eq!(reader.next_while(|&ch| ch == b'a').unwrap(), b"".as_slice());
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if b.is_empty());
         assert_eq!(reader.offset, 11);
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'r').unwrap(),
-            b"r".as_slice()
-        );
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"r");
         assert_eq!(reader.offset, 12);
 
-        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
         assert_eq!(reader.offset, 12);
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'a').unwrap(),
-            b"a".as_slice()
-        );
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"a");
         assert_eq!(reader.offset, 13);
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'r').unwrap(),
-            b"rrrrrrr".as_slice()
-        );
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"rrrrrrr");
         assert_eq!(reader.offset, 20);
 
-        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
         assert_eq!(reader.offset, 20);
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn slice_reader_next_str_while() {
         let mut reader = SliceReader {
             bytes: b"bbbbaaaaaaararrrrrrr",
@@ -828,31 +812,31 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "bbbb");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s == "bbbb");
         assert_eq!(reader.offset, 4);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s.is_empty());
         assert_eq!(reader.offset, 4);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "aaaaaaa");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "aaaaaaa");
         assert_eq!(reader.offset, 11);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s.is_empty());
         assert_eq!(reader.offset, 11);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "r");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "r");
         assert_eq!(reader.offset, 12);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
         assert_eq!(reader.offset, 12);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "a");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "a");
         assert_eq!(reader.offset, 13);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "rrrrrrr");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "rrrrrrr");
         assert_eq!(reader.offset, 20);
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
         assert_eq!(reader.offset, 20);
 
         let mut reader = SliceReader {
@@ -860,8 +844,10 @@ mod tests {
             offset: 0,
             seq_start: None,
         };
-
-        reader.next_str_while(|&ch| ch == b'\xff').unwrap_err();
+        assert_matches!(
+            reader.next_str_while(|&ch| ch == b'\xff'),
+            Err(Error(ErrorKind::InvalidEncoding))
+        );
     }
 
     #[test]
@@ -872,25 +858,16 @@ mod tests {
             seq_start: None,
         };
 
-        assert_eq!(
-            reader.peek_while(|&ch| ch == b'f').unwrap(),
-            b"f".as_slice()
-        );
+        assert_matches!(reader.peek_while(|&ch| ch == b'f'), Ok(b) if &*b == b"f");
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(reader.peek_while(|&ch| ch == b'o').unwrap(), b"".as_slice());
+        assert_matches!(reader.peek_while(|&ch| ch == b'o'), Ok(b) if &*b == b"");
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(
-            reader.peek_while(|&ch| !ch.is_ascii_whitespace()).unwrap(),
-            b"foo".as_slice()
-        );
+        assert_matches!(reader.peek_while(|&ch| !ch.is_ascii_whitespace()), Ok(b) if &*b == b"foo");
         assert_eq!(reader.offset, 0);
 
-        assert_eq!(
-            reader.peek_while(|&ch| ch.is_ascii()).unwrap(),
-            b"foo bar baz".as_slice()
-        );
+        assert_matches!(reader.peek_while(|&ch| ch.is_ascii()), Ok(b) if &*b == b"foo bar baz");
         assert_eq!(reader.offset, 0);
     }
 
@@ -902,19 +879,19 @@ mod tests {
             seq_start: None,
         };
 
-        assert!(reader.eat_char(b'f').unwrap());
+        assert_matches!(reader.eat_char(b'f'), Ok(true));
         assert_eq!(reader.offset, 1);
 
-        assert!(!reader.eat_char(b'f').unwrap());
+        assert_matches!(reader.eat_char(b'f'), Ok(false));
         assert_eq!(reader.offset, 1);
 
-        assert!(reader.eat_char(b'o').unwrap());
+        assert_matches!(reader.eat_char(b'o'), Ok(true));
         assert_eq!(reader.offset, 2);
 
-        assert!(reader.eat_char(b'o').unwrap());
+        assert_matches!(reader.eat_char(b'o'), Ok(true));
         assert_eq!(reader.offset, 3);
 
-        assert!(!reader.eat_char(b'o').unwrap());
+        assert_matches!(reader.eat_char(b'o'), Ok(false));
         assert_eq!(reader.offset, 3);
     }
 
@@ -926,19 +903,19 @@ mod tests {
             seq_start: None,
         };
 
-        assert!(reader.eat_str(b"foo").unwrap());
+        assert_matches!(reader.eat_str(b"foo"), Ok(true));
         assert_eq!(reader.offset, 3);
 
-        assert!(!reader.eat_str(b"foo").unwrap());
+        assert_matches!(reader.eat_str(b"foo"), Ok(false));
         assert_eq!(reader.offset, 3);
 
-        assert!(reader.eat_str(b"bar").unwrap());
+        assert_matches!(reader.eat_str(b"bar"), Ok(true));
         assert_eq!(reader.offset, 6);
 
-        assert!(!reader.eat_str(b"bar").unwrap());
+        assert_matches!(reader.eat_str(b"bar"), Ok(false));
         assert_eq!(reader.offset, 6);
 
-        assert!(!reader.eat_str(b"baz").unwrap());
+        assert_matches!(reader.eat_str(b"baz"), Ok(false));
         assert_eq!(reader.offset, 6);
     }
 
@@ -960,7 +937,7 @@ mod tests {
         reader.discard().unwrap();
         let _ba = reader.next_n(2).unwrap();
 
-        assert_eq!(reader.end_seq().unwrap(), b"oo bar ba".as_slice());
+        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar ba");
     }
 
     #[test]
@@ -997,14 +974,14 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.next().unwrap(), Some(b'f'));
-        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_matches!(reader.next(), Ok(Some(b'f')));
+        assert_matches!(reader.next(), Ok(Some(b'o')));
 
-        reader.peek().unwrap();
-        assert_eq!(reader.next().unwrap(), Some(b'o'));
+        assert_matches!(reader.peek(), Ok(Some(b'o')));
+        assert_matches!(reader.next(), Ok(Some(b'o')));
 
-        assert_eq!(reader.next().unwrap(), None);
-        assert_eq!(reader.next().unwrap(), None);
+        assert_matches!(reader.next(), Ok(None));
+        assert_matches!(reader.next(), Ok(None));
     }
 
     #[test]
@@ -1015,10 +992,10 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.next_n(2).unwrap(), Some(b"fo".into()));
-        assert_eq!(reader.next_n(5).unwrap(), Some(b"o bar".into()));
-        assert_eq!(reader.next_n(5).unwrap(), None);
-        assert_eq!(reader.next_n(4).unwrap(), Some(b" baz".into()));
+        assert_matches!(reader.next_n(2), Ok(Some(b)) if &*b == b"fo");
+        assert_matches!(reader.next_n(5), Ok(Some(b)) if &*b == b"o bar");
+        assert_matches!(reader.next_n(5), Ok(None));
+        assert_matches!(reader.next_n(4), Ok(Some(b)) if &*b == b" baz");
     }
 
     #[test]
@@ -1029,32 +1006,29 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.next_char().unwrap(), Some('f'));
-        assert_eq!(reader.next_char().unwrap(), None);
+        assert_matches!(reader.next_char(), Ok(Some('f')));
+        assert_matches!(reader.next_char(), Ok(None));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.next_char().unwrap_err();
+        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
@@ -1066,9 +1040,9 @@ mod tests {
         };
 
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_matches!(reader.peek(), Ok(Some(b'f')));
         assert_eq!(reader.peek.len(), 1);
-        assert_eq!(reader.peek().unwrap(), Some(b'f'));
+        assert_matches!(reader.peek(), Ok(Some(b'f')));
         assert_eq!(reader.peek.len(), 1);
     }
 
@@ -1081,11 +1055,11 @@ mod tests {
         };
 
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek_n(2).unwrap(), Some(b"fo".into()));
+        assert_matches!(reader.peek_n(2), Ok(Some(b)) if &*b == b"fo");
         assert_eq!(reader.peek.len(), 2);
-        assert_eq!(reader.peek_n(4).unwrap(), None);
+        assert_matches!(reader.peek_n(4), Ok(None));
         assert_eq!(reader.peek.len(), 3);
-        assert_eq!(reader.peek_n(3).unwrap(), Some(b"foo".into()));
+        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"foo");
         assert_eq!(reader.peek.len(), 3);
     }
 
@@ -1097,7 +1071,7 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.peek_char().unwrap(), Some('f'));
+        assert_matches!(reader.peek_char(), Ok(Some('f')));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"".as_slice()).bytes(),
@@ -1105,31 +1079,28 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.peek_char().unwrap(), None);
+        assert_matches!(reader.peek_char(), Ok(None));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
             peek: VecDeque::new(),
             seq: None,
         };
-
-        reader.peek_char().unwrap_err();
+        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
@@ -1141,11 +1112,11 @@ mod tests {
         };
 
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek_at(1).unwrap(), Some(b'a'));
+        assert_matches!(reader.peek_at(1), Ok(Some(b'a')));
         assert_eq!(reader.peek.len(), 2);
-        assert_eq!(reader.peek_at(3).unwrap(), None);
+        assert_matches!(reader.peek_at(3), Ok(None));
         assert_eq!(reader.peek.len(), 3);
-        assert_eq!(reader.peek_at(2).unwrap(), Some(b'r'));
+        assert_matches!(reader.peek_at(2), Ok(Some(b'r')));
         assert_eq!(reader.peek.len(), 3);
     }
 
@@ -1159,17 +1130,17 @@ mod tests {
 
         reader.discard().unwrap();
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek().unwrap(), Some(b'o'));
+        assert_matches!(reader.peek(), Ok(Some(b'o')));
         assert_eq!(reader.peek.len(), 1);
-        reader.discard().unwrap();
+        assert!(reader.discard().is_ok());
         assert_eq!(reader.peek.len(), 0);
-        reader.discard().unwrap();
+        assert!(reader.discard().is_ok());
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek().unwrap(), None);
+        assert_matches!(reader.peek(), Ok(None));
         assert_eq!(reader.peek.len(), 0);
-        reader.discard().unwrap();
+        assert!(reader.discard().is_ok());
         assert_eq!(reader.peek.len(), 0);
-        reader.discard().unwrap();
+        assert!(reader.discard().is_ok());
     }
 
     #[test]
@@ -1182,11 +1153,11 @@ mod tests {
 
         reader.discard_n(2).unwrap();
         assert_eq!(reader.peek.len(), 0);
-        assert_eq!(reader.peek_n(7).unwrap(), Some(b"o bar b".into()));
+        assert_matches!(reader.peek_n(7), Ok(Some(b)) if &*b == b"o bar b");
         assert_eq!(reader.peek.len(), 7);
-        reader.discard_n(5).unwrap();
+        assert!(reader.discard_n(5).is_ok());
         assert_eq!(reader.peek.len(), 2);
-        reader.discard_n(12).unwrap();
+        assert!(reader.discard_n(12).is_ok());
         assert_eq!(reader.peek.len(), 0);
     }
 
@@ -1198,11 +1169,11 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), Some(b'f'));
-        assert_eq!(reader.next_if(|&ch| ch == b'f').unwrap(), None);
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), Some(b'o'));
-        assert_eq!(reader.next_if(|&ch| ch == b'o').unwrap(), None);
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(Some(b'f')));
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(None));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(None));
     }
 
     #[test]
@@ -1213,30 +1184,15 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'b').unwrap(),
-            b"bbbb".as_slice()
-        );
-        assert_eq!(reader.next_while(|&ch| ch == b'b').unwrap(), b"".as_slice());
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'a').unwrap(),
-            b"aaaaaaa".as_slice()
-        );
-        assert_eq!(reader.next_while(|&ch| ch == b'a').unwrap(), b"".as_slice());
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'r').unwrap(),
-            b"r".as_slice()
-        );
-        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'a').unwrap(),
-            b"a".as_slice()
-        );
-        assert_eq!(
-            reader.next_while(|&ch| ch == b'r').unwrap(),
-            b"rrrrrrr".as_slice()
-        );
-        assert_eq!(reader.next_while(|&ch| ch == b'r').unwrap(), b"".as_slice());
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if &*b == b"bbbb");
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"aaaaaaa");
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"r");
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"a");
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"rrrrrrr");
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
     }
 
     #[test]
@@ -1247,15 +1203,15 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "bbbb");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'b').unwrap(), "");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "aaaaaaa");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "r");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'a').unwrap(), "a");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "rrrrrrr");
-        assert_eq!(reader.next_str_while(|&ch| ch == b'r').unwrap(), "");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s == "bbbb");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s.is_empty());
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "aaaaaaa");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s.is_empty());
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "r");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
+        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "a");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "rrrrrrr");
+        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"\xff\xff\xff\xff".as_slice()).bytes(),
@@ -1263,7 +1219,10 @@ mod tests {
             seq: None,
         };
 
-        reader.next_str_while(|&ch| ch == b'\xff').unwrap_err();
+        assert_matches!(
+            reader.next_str_while(|&ch| ch == b'\xff'),
+            Err(Error(ErrorKind::InvalidEncoding))
+        );
     }
 
     #[test]
@@ -1274,19 +1233,10 @@ mod tests {
             seq: None,
         };
 
-        assert_eq!(
-            reader.peek_while(|&ch| ch == b'f').unwrap(),
-            b"f".as_slice()
-        );
-        assert_eq!(reader.peek_while(|&ch| ch == b'o').unwrap(), b"".as_slice());
-        assert_eq!(
-            reader.peek_while(|&ch| !ch.is_ascii_whitespace()).unwrap(),
-            b"foo".as_slice()
-        );
-        assert_eq!(
-            reader.peek_while(|&ch| ch.is_ascii()).unwrap(),
-            b"foo bar baz".as_slice()
-        );
+        assert_matches!(reader.peek_while(|&ch| ch == b'f'), Ok(b) if &*b == b"f");
+        assert_matches!(reader.peek_while(|&ch| ch == b'o'), Ok(b) if b.is_empty());
+        assert_matches!(reader.peek_while(|&ch| !ch.is_ascii_whitespace()), Ok(b) if &*b == b"foo");
+        assert_matches!(reader.peek_while(|&ch| ch.is_ascii()), Ok(b) if &*b == b"foo bar baz");
     }
 
     #[test]
@@ -1297,11 +1247,11 @@ mod tests {
             seq: None,
         };
 
-        assert!(reader.eat_char(b'f').unwrap());
-        assert!(!reader.eat_char(b'f').unwrap());
-        assert!(reader.eat_char(b'o').unwrap());
-        assert!(reader.eat_char(b'o').unwrap());
-        assert!(!reader.eat_char(b'o').unwrap());
+        assert_matches!(reader.eat_char(b'f'), Ok(true));
+        assert_matches!(reader.eat_char(b'f'), Ok(false));
+        assert_matches!(reader.eat_char(b'o'), Ok(true));
+        assert_matches!(reader.eat_char(b'o'), Ok(true));
+        assert_matches!(reader.eat_char(b'o'), Ok(false));
     }
 
     #[test]
@@ -1312,13 +1262,13 @@ mod tests {
             seq: None,
         };
 
-        assert!(reader.eat_str(b"foo").unwrap());
-        assert!(!reader.eat_str(b"foo").unwrap());
-        reader.peek_n(3).unwrap();
+        assert_matches!(reader.eat_str(b"foo"), Ok(true));
+        assert_matches!(reader.eat_str(b"foo"), Ok(false));
+        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"bar");
         assert_eq!(reader.peek.len(), 3);
-        assert!(reader.eat_str(b"bar").unwrap());
-        assert!(!reader.eat_str(b"bar").unwrap());
-        assert!(!reader.eat_str(b"baz").unwrap());
+        assert_matches!(reader.eat_str(b"bar"), Ok(true));
+        assert_matches!(reader.eat_str(b"bar"), Ok(false));
+        assert_matches!(reader.eat_str(b"baz"), Ok(false));
     }
 
     #[test]
@@ -1339,7 +1289,7 @@ mod tests {
         reader.discard().unwrap();
         let _ba = reader.next_n(2).unwrap();
 
-        assert_eq!(reader.end_seq().unwrap(), b"oo bar ba".as_slice());
+        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar ba");
 
         let mut reader = IoReader {
             iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
@@ -1355,7 +1305,7 @@ mod tests {
         reader.discard_n(3).unwrap();
         let _ar = reader.eat_str(b"ar").unwrap();
 
-        assert_eq!(reader.end_seq().unwrap(), b"oo bar".as_slice());
+        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar");
     }
 
     #[test]
@@ -1386,19 +1336,22 @@ mod tests {
             seq: None,
         };
 
-        reader.next().unwrap_err();
-        reader.next_n(4).unwrap_err();
-        reader.peek().unwrap_err();
-        reader.peek_n(4).unwrap_err();
-        reader.peek_at(1).unwrap_err();
-        reader.discard().unwrap_err();
-        reader.discard_n(4).unwrap_err();
-        reader.next_if(|_| true).unwrap_err();
-        reader.next_while(|_| true).unwrap_err();
-        reader.next_str_while(|_| true).unwrap_err();
-        reader.peek_while(|_| true).unwrap_err();
-        reader.eat_char(b'a').unwrap_err();
-        reader.eat_str(b"foo").unwrap_err();
+        assert_matches!(reader.next(), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.next_n(4), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.peek(), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.peek_n(4), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.peek_at(1), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.discard(), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.discard_n(4), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.next_if(|_| true), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.next_while(|_| true), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(
+            reader.next_str_while(|_| true),
+            Err(Error(ErrorKind::Io(..)))
+        );
+        assert_matches!(reader.peek_while(|_| true), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.eat_char(b'a'), Err(Error(ErrorKind::Io(..))));
+        assert_matches!(reader.eat_str(b"foo"), Err(Error(ErrorKind::Io(..))));
     }
 
     #[test]

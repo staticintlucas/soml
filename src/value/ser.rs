@@ -255,6 +255,7 @@ impl ser::Serializer for ToValueSerializer {
     }
 }
 
+#[derive(Debug)]
 pub struct ToValueArraySerializer {
     array: Vec<Value>,
 }
@@ -323,6 +324,7 @@ impl ser::SerializeTupleStruct for ToValueArraySerializer {
     }
 }
 
+#[derive(Debug)]
 pub struct ToValueWrappedArraySerializer {
     key: String,
     array: ToValueArraySerializer,
@@ -360,6 +362,7 @@ impl ser::SerializeTupleVariant for ToValueWrappedArraySerializer {
     }
 }
 
+#[derive(Debug)]
 pub struct ToValueTableSerializer {
     key: Option<String>,
     table: Table,
@@ -438,6 +441,7 @@ impl ser::SerializeStruct for ToValueTableSerializer {
     }
 }
 
+#[derive(Debug)]
 pub enum ToValueTableOrDatetimeSerializer {
     OffsetDatetime(Option<String>),
     LocalDatetime(Option<String>),
@@ -506,6 +510,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
     }
 }
 
+#[derive(Debug)]
 pub struct ToValueWrappedTableSerializer {
     key: String,
     table: ToValueTableSerializer,
@@ -543,6 +548,7 @@ impl ser::SerializeStructVariant for ToValueWrappedTableSerializer {
     }
 }
 
+#[derive(Debug)]
 struct RawStringSerializer;
 
 impl ser::Serializer for RawStringSerializer {
@@ -564,6 +570,7 @@ impl ser::Serializer for RawStringSerializer {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use assert_matches::assert_matches;
     use maplit::btreemap;
     use serde::Serializer as _;
 
@@ -622,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn to_value_serializer() {
         let result = ToValueSerializer.serialize_bool(true).unwrap();
         assert_eq!(result, Value::Boolean(true));
@@ -642,7 +649,7 @@ mod tests {
         let result = ToValueSerializer.serialize_i128(42).unwrap();
         assert_eq!(result, Value::Integer(42));
         let result = ToValueSerializer.serialize_i128(i128::MIN);
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedValue(..))));
 
         let result = ToValueSerializer.serialize_u8(42).unwrap();
         assert_eq!(result, Value::Integer(42));
@@ -656,12 +663,12 @@ mod tests {
         let result = ToValueSerializer.serialize_u64(42).unwrap();
         assert_eq!(result, Value::Integer(42));
         let result = ToValueSerializer.serialize_u64(u64::MAX);
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedValue(..))));
 
         let result = ToValueSerializer.serialize_u128(42).unwrap();
         assert_eq!(result, Value::Integer(42));
         let result = ToValueSerializer.serialize_u128(u128::MAX);
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedValue(..))));
 
         let result = ToValueSerializer.serialize_f32(42.0).unwrap();
         assert_eq!(result, Value::Float(42.0));
@@ -686,16 +693,16 @@ mod tests {
         );
 
         let result = ToValueSerializer.serialize_none();
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedValue(..))));
 
         let result = ToValueSerializer.serialize_some(&42).unwrap();
         assert_eq!(result, Value::Integer(42));
 
         let result = ToValueSerializer.serialize_unit();
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedType(..))));
 
         let result = ToValueSerializer.serialize_unit_struct("UnitStruct");
-        assert!(result.is_err());
+        assert_matches!(result, Err(Error(ErrorKind::UnsupportedType(..))));
 
         let result = ToValueSerializer
             .serialize_unit_variant("Enum", 0, "UnitVariant")
@@ -716,19 +723,34 @@ mod tests {
         );
 
         // These create a type-specific serializer which is tested below, so just unwrap to test for panics
-        ToValueSerializer.serialize_seq(Some(3)).unwrap();
-        ToValueSerializer.serialize_tuple(3).unwrap();
-        ToValueSerializer
-            .serialize_tuple_struct("TupleStruct", 3)
-            .unwrap();
-        ToValueSerializer
-            .serialize_tuple_variant("Enum", 0, "TupleVariant", 3)
-            .unwrap();
-        ToValueSerializer.serialize_map(Some(3)).unwrap();
-        ToValueSerializer.serialize_struct("Struct", 3).unwrap();
-        ToValueSerializer
-            .serialize_struct_variant("Enum", 0, "StructVariant", 3)
-            .unwrap();
+        assert_matches!(
+            ToValueSerializer.serialize_seq(Some(3)),
+            Ok(ToValueArraySerializer { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_tuple(3),
+            Ok(ToValueArraySerializer { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_tuple_struct("TupleStruct", 3),
+            Ok(ToValueArraySerializer { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_tuple_variant("Enum", 0, "TupleVariant", 3),
+            Ok(ToValueWrappedArraySerializer { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_map(Some(3)),
+            Ok(ToValueTableSerializer { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_struct("Struct", 3),
+            Ok(ToValueTableOrDatetimeSerializer::Table { .. })
+        );
+        assert_matches!(
+            ToValueSerializer.serialize_struct_variant("Enum", 0, "StructVariant", 3),
+            Ok(ToValueWrappedTableSerializer { .. })
+        );
     }
 
     #[test]
@@ -950,11 +972,17 @@ mod tests {
 
         let serializer =
             ToValueTableOrDatetimeSerializer::start(Some(0), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert!(serializer.end().is_err());
+        assert_matches!(
+            serializer.end(),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert!(serializer.serialize_field("one", &1).is_err());
+        assert_matches!(
+            serializer.serialize_field("one", &1),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(2), OffsetDatetime::WRAPPER_TYPE).unwrap();
@@ -964,19 +992,23 @@ mod tests {
                 &"2023-01-02T03:04:05.006+07:08",
             )
             .unwrap();
-        assert!(serializer
-            .serialize_field(
+        assert_matches!(
+            serializer.serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
                 &"2023-01-02T03:04:05.006+07:08"
-            )
-            .is_err());
+            ),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         serializer
             .serialize_field(OffsetDatetime::WRAPPER_FIELD, &"blah")
             .unwrap();
-        assert!(serializer.end().is_err());
+        assert_matches!(
+            serializer.end(),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
     }
 
     #[test]

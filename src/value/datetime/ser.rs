@@ -173,6 +173,7 @@ mod tests {
             time: None,
             offset: None,
         });
+        // Since this is a serde_json error, we can't match the exact error
         assert!(result.is_err());
     }
 

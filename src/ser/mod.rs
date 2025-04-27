@@ -4,6 +4,7 @@ use std::{fmt, io};
 
 use serde::ser;
 
+pub(crate) use self::_impl::Impossible;
 use self::_impl::{
     Float, InlineArraySerializer, InlineTableOrDatetimeSerializer, InlineTableSerializer,
     InlineWrappedArraySerializer, InlineWrappedTableSerializer, Integer, TableKind,
@@ -619,6 +620,7 @@ impl ValueSerializer {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use assert_matches::assert_matches;
     use indoc::indoc;
     use maplit::hashmap;
     use serde::Serializer as _;
@@ -713,9 +715,9 @@ mod tests {
             },
         };
 
-        assert_eq!(
-            to_string(&value).unwrap(),
-            indoc! {r#"
+        assert_matches!(
+            to_string(&value),
+            Ok(s) if s == indoc! {r#"
                 title = "TOML Example"
 
                 [clients]
@@ -1256,107 +1258,101 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_bool() {
-        assert_eq!(ValueSerializer.serialize_bool(true).unwrap(), "true");
-        assert_eq!(ValueSerializer.serialize_bool(false).unwrap(), "false");
+        assert_matches!(ValueSerializer.serialize_bool(true), Ok(s) if s == "true");
+        assert_matches!(ValueSerializer.serialize_bool(false), Ok(s) if s == "false");
     }
 
     #[test]
     fn inline_serializer_serialize_i8() {
-        assert_eq!(ValueSerializer.serialize_i8(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_i8(-12).unwrap(), "-12");
+        assert_matches!(ValueSerializer.serialize_i8(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_i8(-12), Ok(s) if s == "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i16() {
-        assert_eq!(ValueSerializer.serialize_i16(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_i16(-12).unwrap(), "-12");
+        assert_matches!(ValueSerializer.serialize_i16(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_i16(-12), Ok(s) if s == "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i32() {
-        assert_eq!(ValueSerializer.serialize_i32(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_i32(-12).unwrap(), "-12");
+        assert_matches!(ValueSerializer.serialize_i32(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_i32(-12), Ok(s) if s == "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i64() {
-        assert_eq!(ValueSerializer.serialize_i64(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_i64(-12).unwrap(), "-12");
+        assert_matches!(ValueSerializer.serialize_i64(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_i64(-12), Ok(s) if s == "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_i128() {
-        assert_eq!(ValueSerializer.serialize_i128(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_i128(-12).unwrap(), "-12");
+        assert_matches!(ValueSerializer.serialize_i128(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_i128(-12), Ok(s) if s == "-12");
     }
 
     #[test]
     fn inline_serializer_serialize_u8() {
-        assert_eq!(ValueSerializer.serialize_u8(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_u8(12).unwrap(), "12");
+        assert_matches!(ValueSerializer.serialize_u8(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_u8(12), Ok(s) if s == "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u16() {
-        assert_eq!(ValueSerializer.serialize_u16(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_u16(12).unwrap(), "12");
+        assert_matches!(ValueSerializer.serialize_u16(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_u16(12), Ok(s) if s == "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u32() {
-        assert_eq!(ValueSerializer.serialize_u32(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_u32(12).unwrap(), "12");
+        assert_matches!(ValueSerializer.serialize_u32(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_u32(12), Ok(s) if s == "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u64() {
-        assert_eq!(ValueSerializer.serialize_u64(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_u64(12).unwrap(), "12");
+        assert_matches!(ValueSerializer.serialize_u64(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_u64(12), Ok(s) if s == "12");
     }
 
     #[test]
     fn inline_serializer_serialize_u128() {
-        assert_eq!(ValueSerializer.serialize_u128(42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_u128(12).unwrap(), "12");
+        assert_matches!(ValueSerializer.serialize_u128(42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_u128(12), Ok(s) if s == "12");
     }
 
     #[test]
     fn inline_serializer_serialize_f32() {
-        assert_eq!(ValueSerializer.serialize_f32(42.0).unwrap(), "42.0");
-        assert_eq!(ValueSerializer.serialize_f32(-12.0).unwrap(), "-12.0");
-        assert_eq!(ValueSerializer.serialize_f32(1e28).unwrap(), "1e28");
-        assert_eq!(ValueSerializer.serialize_f32(0.5e-9).unwrap(), "5e-10");
-        assert_eq!(ValueSerializer.serialize_f32(f32::INFINITY).unwrap(), "inf");
-        assert_eq!(
-            ValueSerializer.serialize_f32(f32::NEG_INFINITY).unwrap(),
-            "-inf"
-        );
-        assert_eq!(ValueSerializer.serialize_f32(f32::NAN).unwrap(), "nan");
-        assert_eq!(ValueSerializer.serialize_f32(-f32::NAN).unwrap(), "-nan");
+        assert_matches!(ValueSerializer.serialize_f32(42.0), Ok(s) if s == "42.0");
+        assert_matches!(ValueSerializer.serialize_f32(-12.0), Ok(s) if s == "-12.0");
+        assert_matches!(ValueSerializer.serialize_f32(1e28), Ok(s) if s == "1e28");
+        assert_matches!(ValueSerializer.serialize_f32(0.5e-9), Ok(s) if s == "5e-10");
+        assert_matches!(ValueSerializer.serialize_f32(f32::INFINITY), Ok(s) if s == "inf");
+        assert_matches!(ValueSerializer.serialize_f32(f32::NEG_INFINITY), Ok(s) if s == "-inf");
+        assert_matches!(ValueSerializer.serialize_f32(f32::NAN), Ok(s) if s == "nan");
+        assert_matches!(ValueSerializer.serialize_f32(-f32::NAN), Ok(s) if s == "-nan");
     }
 
     #[test]
     fn inline_serializer_serialize_f64() {
-        assert_eq!(ValueSerializer.serialize_f64(42.0).unwrap(), "42.0");
-        assert_eq!(ValueSerializer.serialize_f64(-12.0).unwrap(), "-12.0");
-        assert_eq!(ValueSerializer.serialize_f64(1e28).unwrap(), "1e28");
-        assert_eq!(ValueSerializer.serialize_f64(0.5e-9).unwrap(), "5e-10");
-        assert_eq!(ValueSerializer.serialize_f64(f64::INFINITY).unwrap(), "inf");
-        assert_eq!(
-            ValueSerializer.serialize_f64(f64::NEG_INFINITY).unwrap(),
-            "-inf"
-        );
-        assert_eq!(ValueSerializer.serialize_f64(f64::NAN).unwrap(), "nan");
-        assert_eq!(ValueSerializer.serialize_f64(-f64::NAN).unwrap(), "-nan");
+        assert_matches!(ValueSerializer.serialize_f64(42.0), Ok(s) if s == "42.0");
+        assert_matches!(ValueSerializer.serialize_f64(-12.0), Ok(s) if s == "-12.0");
+        assert_matches!(ValueSerializer.serialize_f64(1e28), Ok(s) if s == "1e28");
+        assert_matches!(ValueSerializer.serialize_f64(0.5e-9), Ok(s) if s == "5e-10");
+        assert_matches!(ValueSerializer.serialize_f64(f64::INFINITY), Ok(s) if s == "inf");
+        assert_matches!(ValueSerializer.serialize_f64(f64::NEG_INFINITY), Ok(s) if s == "-inf");
+        assert_matches!(ValueSerializer.serialize_f64(f64::NAN), Ok(s) if s == "nan");
+        assert_matches!(ValueSerializer.serialize_f64(-f64::NAN), Ok(s) if s == "-nan");
     }
 
     #[test]
     fn inline_serializer_serialize_char() {
-        assert_eq!(ValueSerializer.serialize_char('a').unwrap(), r#""a""#);
-        assert_eq!(ValueSerializer.serialize_char('😎').unwrap(), r#""😎""#);
-        assert_eq!(
-            ValueSerializer.serialize_char('\n').unwrap(),
-            indoc! {r#"
+        assert_matches!(ValueSerializer.serialize_char('a'), Ok(s) if s == r#""a""#);
+        assert_matches!(ValueSerializer.serialize_char('😎'), Ok(s) if s == r#""😎""#);
+        assert_matches!(
+            ValueSerializer.serialize_char('\n'),
+            Ok(s) if s == indoc! {r#"
                 """
 
                 """"#}
@@ -1365,11 +1361,11 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_str() {
-        assert_eq!(ValueSerializer.serialize_str("foo").unwrap(), r#""foo""#);
-        assert_eq!(ValueSerializer.serialize_str("😎").unwrap(), r#""😎""#);
-        assert_eq!(
-            ValueSerializer.serialize_str("abc\ndef\n").unwrap(),
-            indoc! {r#"
+        assert_matches!(ValueSerializer.serialize_str("foo"), Ok(s) if s == r#""foo""#);
+        assert_matches!(ValueSerializer.serialize_str("😎"), Ok(s) if s == r#""😎""#);
+        assert_matches!(
+            ValueSerializer.serialize_str("abc\ndef\n"),
+            Ok(s) if s == indoc! {r#"
                 """
                 abc
                 def
@@ -1379,70 +1375,71 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_bytes() {
-        assert_eq!(
-            ValueSerializer.serialize_bytes(b"foo").unwrap(),
-            "[102, 111, 111]"
+        assert_matches!(
+            ValueSerializer.serialize_bytes(b"foo"),
+            Ok(s) if s == "[102, 111, 111]"
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_bytes(b"\xF0\x9F\x98\x8E")
-                .unwrap(),
-            "[240, 159, 152, 142]"
+        assert_matches!(
+            ValueSerializer.serialize_bytes(b"\xF0\x9F\x98\x8E"),
+            Ok(s) if s == "[240, 159, 152, 142]"
         );
-        assert_eq!(
-            ValueSerializer.serialize_bytes(b"abc\ndef\n").unwrap(),
-            "[97, 98, 99, 10, 100, 101, 102, 10]"
+        assert_matches!(
+            ValueSerializer.serialize_bytes(b"abc\ndef\n"),
+            Ok(s) if s == "[97, 98, 99, 10, 100, 101, 102, 10]"
         );
     }
 
     #[test]
     fn inline_serializer_serialize_none() {
-        ValueSerializer.serialize_none().unwrap_err();
+        assert_matches!(
+            ValueSerializer.serialize_none(),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
     }
 
     #[test]
     fn inline_serializer_serialize_some() {
-        assert_eq!(ValueSerializer.serialize_some(&42).unwrap(), "42");
-        assert_eq!(ValueSerializer.serialize_some("foo").unwrap(), r#""foo""#);
+        assert_matches!(ValueSerializer.serialize_some(&42), Ok(s) if s == "42");
+        assert_matches!(ValueSerializer.serialize_some("foo"), Ok(s) if s == r#""foo""#);
     }
 
     #[test]
     fn inline_serializer_serialize_unit() {
-        ValueSerializer.serialize_unit().unwrap_err();
+        assert_matches!(
+            ValueSerializer.serialize_unit(),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
     }
 
     #[test]
     fn inline_serializer_serialize_unit_struct() {
-        ValueSerializer.serialize_unit_struct("name").unwrap_err();
+        assert_matches!(
+            ValueSerializer.serialize_unit_struct("name"),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
     }
 
     #[test]
     fn inline_serializer_serialize_unit_variant() {
-        assert_eq!(
-            ValueSerializer
-                .serialize_unit_variant("name", 0, "foo")
-                .unwrap(),
-            r#""foo""#
+        assert_matches!(
+            ValueSerializer.serialize_unit_variant("name", 0, "foo"),
+            Ok(s) if s == r#""foo""#
         );
     }
 
     #[test]
     fn inline_serializer_serialize_newtype_struct() {
-        assert_eq!(
-            ValueSerializer
-                .serialize_newtype_struct("name", &42)
-                .unwrap(),
-            "42"
+        assert_matches!(
+            ValueSerializer.serialize_newtype_struct("name", &42),
+            Ok(s) if s == "42"
         );
     }
 
     #[test]
     fn inline_serializer_serialize_newtype_variant() {
-        assert_eq!(
-            ValueSerializer
-                .serialize_newtype_variant("name", 0, "foo", &42)
-                .unwrap(),
-            "{ foo = 42 }"
+        assert_matches!(
+            ValueSerializer.serialize_newtype_variant("name", 0, "foo", &42),
+            Ok(s) if s == "{ foo = 42 }"
         );
     }
 
@@ -1536,76 +1533,64 @@ mod tests {
 
     #[test]
     fn inline_serializer_serialize_basic_str() {
-        assert_eq!(
-            ValueSerializer.serialize_basic_str("foo").unwrap(),
-            r#""foo""#
+        assert_matches!(
+            ValueSerializer.serialize_basic_str("foo"),
+            Ok(s) if s == r#""foo""#
         );
-        assert_eq!(
-            ValueSerializer.serialize_basic_str("😎").unwrap(),
-            r#""😎""#
+        assert_matches!(
+            ValueSerializer.serialize_basic_str("😎"),
+            Ok(s) if s == r#""😎""#
         );
-        assert_eq!(
-            ValueSerializer.serialize_basic_str("abc\ndef\n").unwrap(),
-            r#""abc\ndef\n""#
+        assert_matches!(
+            ValueSerializer.serialize_basic_str("abc\ndef\n"),
+            Ok(s) if s == r#""abc\ndef\n""#
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
-                .unwrap(),
-            r#""\b\t\n\f\r\"\\""#
+        assert_matches!(
+            ValueSerializer.serialize_basic_str("\x08\x09\x0A\x0C\x0D\"\\"),
+            Ok(s) if s == r#""\b\t\n\f\r\"\\""#
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_basic_str(
-                    "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
-                )
-                .unwrap(),
-                r#""\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u000b\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f""#
+        assert_matches!(
+            ValueSerializer.serialize_basic_str(
+                "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+            ),
+            Ok(s) if s == r#""\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u000b\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f""#
         );
     }
 
     #[test]
     fn inline_serializer_serialize_multiline_basic_str() {
-        assert_eq!(
-            ValueSerializer
-                .serialize_multiline_basic_str("foo")
-                .unwrap(),
-            indoc! {r#"
+        assert_matches!(
+            ValueSerializer.serialize_multiline_basic_str("foo"),
+            Ok(s) if s == indoc! {r#"
                 """
                 foo""""#}
         );
-        assert_eq!(
-            ValueSerializer.serialize_multiline_basic_str("😎").unwrap(),
-            indoc! {r#"
+        assert_matches!(
+            ValueSerializer.serialize_multiline_basic_str("😎"),
+            Ok(s) if s == indoc! {r#"
                 """
                 😎""""#}
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_multiline_basic_str("abc\ndef\n")
-                .unwrap(),
-            indoc! {r#"
+        assert_matches!(
+            ValueSerializer.serialize_multiline_basic_str("abc\ndef\n"),
+            Ok(s) if s == indoc! {r#"
                 """
                 abc
                 def
                 """"#}
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_multiline_basic_str("\x08\x09\x0A\x0C\x0D\"\\")
-                .unwrap(),
-            indoc! {"
+        assert_matches!(
+            ValueSerializer.serialize_multiline_basic_str("\x08\x09\x0A\x0C\x0D\"\\"),
+            Ok(s) if s == indoc! {"
                 \"\"\"
                 \\b\t
                 \\f\\r\\\"\\\\\"\"\""}
         );
-        assert_eq!(
-            ValueSerializer
-                .serialize_multiline_basic_str(
-                    "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
-                )
-                .unwrap(),
-            indoc! {r#"
+        assert_matches!(
+            ValueSerializer.serialize_multiline_basic_str(
+                "\x00\x01\x02\x03\x04\x05\x06\x07\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+            ),
+            Ok(s) if s == indoc! {r#"
                 """
                 \u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u000b\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f""""#}
         );

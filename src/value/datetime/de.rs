@@ -1029,13 +1029,10 @@ mod tests {
 
         assert_matches!(access, OffsetDatetimeAccess(Some(OFFSET_DATETIME)));
 
-        assert_eq!(
-            access.next_key().unwrap(),
-            Some(OffsetDatetime::WRAPPER_FIELD)
-        );
-        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 14);
+        assert_matches!(access.next_key(), Ok(Some(OffsetDatetime::WRAPPER_FIELD)));
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if &*b == b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01");
 
-        assert!(access.next_key::<&str>().unwrap().is_none());
+        assert_matches!(access.next_key::<&str>(), Ok(None));
     }
 
     #[test]
@@ -1043,7 +1040,7 @@ mod tests {
     fn offset_datetime_access_empty() {
         let mut access = OffsetDatetimeAccess(None);
 
-        access.next_value::<ByteBuf>().unwrap();
+        let _result = access.next_value::<ByteBuf>();
     }
 
     #[test]
@@ -1159,13 +1156,10 @@ mod tests {
 
         assert_matches!(access, LocalDatetimeAccess(Some(LOCAL_DATETIME)));
 
-        assert_eq!(
-            access.next_key().unwrap(),
-            Some(LocalDatetime::WRAPPER_FIELD)
-        );
-        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 12);
+        assert_matches!(access.next_key(), Ok(Some(LocalDatetime::WRAPPER_FIELD)));
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if &*b == b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02");
 
-        assert!(access.next_key::<&str>().unwrap().is_none());
+        assert_matches!(access.next_key::<&str>(), Ok(None));
     }
 
     #[test]
@@ -1173,7 +1167,7 @@ mod tests {
     fn local_datetime_access_empty() {
         let mut access = LocalDatetimeAccess(None);
 
-        access.next_value::<ByteBuf>().unwrap();
+        let _result = access.next_value::<ByteBuf>();
     }
 
     #[test]
@@ -1289,10 +1283,10 @@ mod tests {
 
         assert_matches!(access, LocalDateAccess(Some(DATE)));
 
-        assert_eq!(access.next_key().unwrap(), Some(LocalDate::WRAPPER_FIELD));
-        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 4);
+        assert_matches!(access.next_key(), Ok(Some(LocalDate::WRAPPER_FIELD)));
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == b"\xE7\x07\x01\x02");
 
-        assert!(access.next_key::<&str>().unwrap().is_none());
+        assert_matches!(access.next_key::<&str>(), Ok(None));
     }
 
     #[test]
@@ -1300,7 +1294,7 @@ mod tests {
     fn local_date_access_empty() {
         let mut access = LocalDateAccess(None);
 
-        access.next_value::<ByteBuf>().unwrap();
+        let _result = access.next_value::<ByteBuf>();
     }
 
     #[test]
@@ -1416,10 +1410,10 @@ mod tests {
 
         assert_matches!(access, LocalTimeAccess(Some(TIME)));
 
-        assert_eq!(access.next_key().unwrap(), Some(LocalTime::WRAPPER_FIELD));
-        assert_eq!(access.next_value::<ByteBuf>().unwrap().len(), 8);
+        assert_matches!(access.next_key(), Ok(Some(LocalTime::WRAPPER_FIELD)));
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if &*b == b"\x80\x8D\x5B\x00\x03\x04\x05\x00");
 
-        assert!(access.next_key::<&str>().unwrap().is_none());
+        assert_matches!(access.next_key::<&str>(), Ok(None));
     }
 
     #[test]
@@ -1427,6 +1421,6 @@ mod tests {
     fn local_time_access_empty() {
         let mut access = LocalTimeAccess(None);
 
-        access.next_value::<ByteBuf>().unwrap();
+        let _result = access.next_value::<ByteBuf>();
     }
 }

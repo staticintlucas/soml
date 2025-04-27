@@ -875,7 +875,6 @@ mod tests {
 
     use assert_matches::assert_matches;
     use indoc::indoc;
-    use isclose::{assert_is_close, IsClose as _};
     use maplit::{btreemap, hashmap};
     use serde::de::{EnumAccess as _, MapAccess as _, SeqAccess as _, VariantAccess as _};
     use serde_bytes::ByteBuf;
@@ -1193,11 +1192,11 @@ mod tests {
     fn deserializer_from_str() {
         let mut deserializer = Deserializer::from_str("abc = 123");
 
-        assert_eq!(
-            deserializer.parser.parse().unwrap(),
-            ParsedValue::Table(hashmap! {
-                "abc".into() => ParsedValue::Integer(b"123".into()),
-            }),
+        assert_matches!(
+            deserializer.parser.parse(),
+            Ok(ParsedValue::Table(t)) if t == hashmap! {
+                "abc".into() => ParsedValue::Integer(b"123".into())
+            }
         );
     }
 
@@ -1205,11 +1204,11 @@ mod tests {
     fn deserializer_from_slice() {
         let mut deserializer = Deserializer::from_slice(b"abc = 123");
 
-        assert_eq!(
-            deserializer.parser.parse().unwrap(),
-            ParsedValue::Table(hashmap! {
+        assert_matches!(
+            deserializer.parser.parse(),
+            Ok(ParsedValue::Table(t)) if t == hashmap! {
                 "abc".into() => ParsedValue::Integer(b"123".into()),
-            }),
+            }
         );
     }
 
@@ -1217,11 +1216,11 @@ mod tests {
     fn deserializer_from_reader() {
         let mut deserializer = Deserializer::from_reader(b"abc = 123".as_ref());
 
-        assert_eq!(
-            deserializer.parser.parse().unwrap(),
-            ParsedValue::Table(hashmap! {
+        assert_matches!(
+            deserializer.parser.parse(),
+            Ok(ParsedValue::Table(t)) if t == hashmap! {
                 "abc".into() => ParsedValue::Integer(b"123".into()),
-            }),
+            }
         );
     }
 
@@ -1229,11 +1228,11 @@ mod tests {
     fn deserializer_deserialize_any() {
         let deserializer = Deserializer::from_str("abc = 123");
 
-        assert_eq!(
-            HashMap::deserialize(deserializer).unwrap(),
-            hashmap! {
+        assert_matches!(
+            HashMap::deserialize(deserializer),
+            Ok(t) if t == hashmap! {
                 "abc".to_owned() => 123_i32,
-            },
+            }
         );
     }
 
@@ -1245,56 +1244,32 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn value_deserializer_deserialize_any() {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::String("hello".into()),
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::String(s)) if &*s == "hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Integer(123)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Integer(10)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(10)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Integer(83)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(83)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"123".into()));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Integer(291)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(291)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
-        assert_matches!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Float(v) if v.is_close(123.0)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Float(123.0)));
 
         let deserializer =
             ValueDeserializer::new(ParsedValue::SpecialFloat(SpecialFloat::Infinity));
-        assert_matches!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Float(v) if v.is_infinite()
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Float(v)) if v.is_infinite());
 
         let deserializer = ValueDeserializer::new(ParsedValue::Boolean(true));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Boolean(true)
-        );
+        assert_matches!(Value::deserialize(deserializer), Ok(Value::Boolean(true)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
             date: LocalDate {
@@ -1310,9 +1285,9 @@ mod tests {
             },
             offset: Offset::Custom { minutes: -480 },
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Datetime(Datetime {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Datetime(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -1325,7 +1300,7 @@ mod tests {
                     nanosecond: 0,
                 }),
                 offset: Some(Offset::Custom { minutes: -480 }),
-            })
+            }))
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
@@ -1341,9 +1316,9 @@ mod tests {
                 nanosecond: 0,
             },
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Datetime(Datetime {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Datetime(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -1356,7 +1331,7 @@ mod tests {
                     nanosecond: 0,
                 }),
                 offset: None,
-            })
+            }))
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
@@ -1364,9 +1339,9 @@ mod tests {
             month: 5,
             day: 27,
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Datetime(Datetime {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Datetime(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -1374,7 +1349,7 @@ mod tests {
                 }),
                 time: None,
                 offset: None,
-            })
+            }))
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
@@ -1383,9 +1358,9 @@ mod tests {
             second: 0,
             nanosecond: 0,
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Datetime(Datetime {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Datetime(Datetime {
                 date: None,
                 time: Some(LocalTime {
                     hour: 7,
@@ -1394,7 +1369,7 @@ mod tests {
                     nanosecond: 0
                 }),
                 offset: None,
-            })
+            }))
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
@@ -1402,13 +1377,13 @@ mod tests {
             ParsedValue::Integer(b"456".into()),
             ParsedValue::Integer(b"789".into()),
         ]));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Array(vec![
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Array(a)) if a == vec![
                 Value::Integer(123),
                 Value::Integer(456),
                 Value::Integer(789),
-            ])
+            ]
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
@@ -1422,9 +1397,9 @@ mod tests {
                 "ghi".into() => ParsedValue::Integer(b"789".into()),
             },
         ]));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Array(vec![
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Array(a)) if a == [
                 Value::Table(btreemap! {
                     "abc".into() => Value::Integer(123),
                 }),
@@ -1434,348 +1409,400 @@ mod tests {
                 Value::Table(btreemap! {
                     "ghi".into() => Value::Integer(789),
                 }),
-            ])
+            ]
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Table(btreemap! {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Table(t)) if t == btreemap! {
                 "abc".into() => Value::Integer(123),
-            })
+            }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Table(btreemap! {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Table(t)) if t == btreemap! {
                 "abc".into() => Value::Integer(123),
-            })
+            }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Table(btreemap! {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Table(t)) if t == btreemap! {
                 "abc".into() => Value::Integer(123),
-            })
+            }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Value::deserialize(deserializer).unwrap(),
-            Value::Table(btreemap! {
+        assert_matches!(
+            Value::deserialize(deserializer),
+            Ok(Value::Table(t)) if t == btreemap! {
                 "abc".into() => Value::Integer(123),
-            })
+            }
         );
     }
 
     #[test]
+    #[allow(clippy::bool_assert_comparison)]
     fn value_deserializer_deserialize_bool() {
         let deserializer = ValueDeserializer::new(ParsedValue::Boolean(true));
-        assert!(bool::deserialize(deserializer).unwrap());
+        assert_matches!(bool::deserialize(deserializer), Ok(true));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        bool::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            bool::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_i8() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(i8::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(i8::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(i8::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(i8::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(i8::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(i8::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(i8::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(i8::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        i8::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            i8::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_i16() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(i16::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(i16::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(i16::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(i16::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(i16::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(i16::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(i16::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(i16::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        i16::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            i16::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_i32() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(i32::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(i32::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(i32::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(i32::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(i32::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(i32::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(i32::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(i32::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        i32::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            i32::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_i64() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(i64::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(i64::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(i64::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(i64::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(i64::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(i64::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(i64::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(i64::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        i64::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            i64::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_i128() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(i128::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(i128::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(i128::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(i128::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(i128::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(i128::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(i128::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(i128::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        i128::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            i128::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_u8() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(u8::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(u8::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(u8::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(u8::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(u8::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(u8::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(u8::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(u8::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        u8::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            u8::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_u16() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(u16::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(u16::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(u16::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(u16::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(u16::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(u16::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(u16::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(u16::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        u16::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            u16::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_u32() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(u32::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(u32::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(u32::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(u32::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(u32::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(u32::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(u32::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(u32::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        u32::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            u32::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_u64() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(u64::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(u64::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(u64::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(u64::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(u64::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(u64::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(u64::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(u64::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        u64::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            u64::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_u128() {
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(u128::deserialize(deserializer).unwrap(), 123);
+        assert_matches!(u128::deserialize(deserializer), Ok(123));
 
         let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
-        assert_eq!(u128::deserialize(deserializer).unwrap(), 10);
+        assert_matches!(u128::deserialize(deserializer), Ok(10));
 
         let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
-        assert_eq!(u128::deserialize(deserializer).unwrap(), 83);
+        assert_matches!(u128::deserialize(deserializer), Ok(83));
 
         let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
-        assert_eq!(u128::deserialize(deserializer).unwrap(), 90);
+        assert_matches!(u128::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        u128::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            u128::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_f32() {
         let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
-        assert_is_close!(f32::deserialize(deserializer).unwrap(), 123.0);
+        assert_matches!(f32::deserialize(deserializer), Ok(123.0));
 
         let deserializer =
             ValueDeserializer::new(ParsedValue::SpecialFloat(SpecialFloat::Infinity));
-        assert!(f32::deserialize(deserializer).unwrap().is_infinite());
+        assert_matches!(f32::deserialize(deserializer), Ok(f) if f.is_infinite());
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        f32::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            f32::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_f64() {
         let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
-        assert_is_close!(f64::deserialize(deserializer).unwrap(), 123.0);
+        assert_matches!(f64::deserialize(deserializer), Ok(123.0));
 
         let deserializer =
             ValueDeserializer::new(ParsedValue::SpecialFloat(SpecialFloat::Infinity));
-        assert!(f64::deserialize(deserializer).unwrap().is_infinite());
+        assert_matches!(f64::deserialize(deserializer), Ok(f) if f.is_infinite());
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        f64::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            f64::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_char() {
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("A")));
-        assert_eq!(char::deserialize(deserializer).unwrap(), 'A');
+        assert_matches!(char::deserialize(deserializer), Ok('A'));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("A".into())));
-        assert_eq!(char::deserialize(deserializer).unwrap(), 'A');
+        assert_matches!(char::deserialize(deserializer), Ok('A'));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        char::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            char::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        char::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            char::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_str() {
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_eq!(<&str>::deserialize(deserializer).unwrap(), "hello");
+        assert_matches!(<&str>::deserialize(deserializer), Ok("hello"));
 
         // TODO
         // let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
-        // assert_eq!(<&str>::deserialize(deserializer).unwrap(), "hello");
+        // assert_matches!(<&str>::deserialize(deserializer), Ok("hello"));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        <&str>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            <&str>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_string() {
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_eq!(String::deserialize(deserializer).unwrap(), "hello");
+        assert_matches!(String::deserialize(deserializer), Ok(s) if s == "hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
-        assert_eq!(String::deserialize(deserializer).unwrap(), "hello");
+        assert_matches!(String::deserialize(deserializer), Ok(s) if s == "hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        String::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            String::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_bytes() {
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_eq!(<&[u8]>::deserialize(deserializer).unwrap(), b"hello");
+        assert_matches!(<&[u8]>::deserialize(deserializer), Ok(b"hello"));
 
         // let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
-        // assert_eq!(<&[u8]>::deserialize(deserializer).unwrap(), b"hello");
+        // assert_matches!(<&[u8]>::deserialize(deserializer), Ok(b"hello"));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        <&[u8]>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            <&[u8]>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_byte_buf() {
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_eq!(
-            ByteBuf::deserialize(deserializer).unwrap(),
-            b"hello".to_owned()
-        );
+        assert_matches!(ByteBuf::deserialize(deserializer), Ok(b) if &*b == b"hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
-        assert_eq!(
-            ByteBuf::deserialize(deserializer).unwrap(),
-            b"hello".to_owned()
-        );
+        assert_matches!(ByteBuf::deserialize(deserializer), Ok(b) if &*b == b"hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        ByteBuf::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            ByteBuf::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
     fn value_deserializer_deserialize_option() {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        assert_eq!(
-            Option::<&str>::deserialize(deserializer).unwrap(),
-            Some("hello")
-        );
+        assert_matches!(Option::<&str>::deserialize(deserializer), Ok(Some(s)) if s == "hello");
     }
 
     #[test]
     fn value_deserializer_deserialize_unit() {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        <()>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            <()>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1784,7 +1811,10 @@ mod tests {
         struct Unit;
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        Unit::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Unit::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1793,7 +1823,7 @@ mod tests {
         struct Newtype(i32);
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        assert_eq!(Newtype::deserialize(deserializer).unwrap(), Newtype(123));
+        assert_matches!(Newtype::deserialize(deserializer), Ok(Newtype(123)));
     }
 
     #[test]
@@ -1808,9 +1838,9 @@ mod tests {
             ParsedValue::Integer(b"456".into()),
             ParsedValue::Integer(b"789".into()),
         ]));
-        assert_eq!(
-            <Vec<i32>>::deserialize(deserializer).unwrap(),
-            vec![123, 456, 789]
+        assert_matches!(
+            <Vec<i32>>::deserialize(deserializer),
+            Ok(a) if a == [123, 456, 789]
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
@@ -1818,9 +1848,9 @@ mod tests {
             hashmap! { "val".into() => ParsedValue::Integer(b"456".into()) },
             hashmap! { "val".into() => ParsedValue::Integer(b"789".into()) },
         ]));
-        assert_eq!(
-            <Vec<Struct>>::deserialize(deserializer).unwrap(),
-            vec![
+        assert_matches!(
+            <Vec<Struct>>::deserialize(deserializer),
+            Ok(a) if a == [
                 Struct { val: 123 },
                 Struct { val: 456 },
                 Struct { val: 789 },
@@ -1828,7 +1858,10 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        <Vec<i32>>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            <Vec<i32>>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1847,17 +1880,13 @@ mod tests {
                 day: 27,
             }),
         ]));
-        assert_eq!(
-            <(i32, String, LocalDate)>::deserialize(deserializer).unwrap(),
-            (
-                123,
-                "hello".into(),
-                LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }
-            )
+        assert_matches!(
+            <(i32, String, LocalDate)>::deserialize(deserializer),
+            Ok((i, s, d)) if i == 123 && s == "hello" && d == LocalDate {
+                year: 1979,
+                month: 5,
+                day: 27,
+            }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
@@ -1865,25 +1894,24 @@ mod tests {
             hashmap! { "val".into() => ParsedValue::String("hello".into()) },
             hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate { year: 1979, month: 5, day: 27 }) },
         ]));
-        assert_eq!(
-            <(Struct<i32>, Struct<String>, Struct<LocalDate>)>::deserialize(deserializer).unwrap(),
-            (
-                Struct { val: 123 },
-                Struct {
-                    val: "hello".into()
-                },
-                Struct {
+        assert_matches!(
+            <(Struct<i32>, Struct<String>, Struct<LocalDate>)>::deserialize(deserializer),
+            Ok((a, b, c)) if a == Struct { val: 123 }
+                && b == Struct { val: "hello".into() }
+                && c == Struct {
                     val: LocalDate {
                         year: 1979,
                         month: 5,
                         day: 27,
                     }
-                },
-            )
+                }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        <(i32, i32, i32)>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            <(i32, i32, i32)>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1900,21 +1928,22 @@ mod tests {
                 day: 27,
             }),
         ]));
-        assert_eq!(
-            TupleStruct::deserialize(deserializer).unwrap(),
-            TupleStruct(
-                123,
-                "hello".into(),
-                LocalDate {
+        assert_matches!(
+            TupleStruct::deserialize(deserializer),
+            Ok(TupleStruct(i, s, d)) if i == 123
+                && s == "hello"
+                && d == LocalDate {
                     year: 1979,
                     month: 5,
                     day: 27,
                 }
-            )
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        TupleStruct::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            TupleStruct::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1922,9 +1951,9 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            HashMap::<String, i32>::deserialize(deserializer).unwrap(),
-            hashmap! {
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(deserializer),
+            Ok(m) if m == hashmap! {
                 "abc".into() => 123,
             }
         );
@@ -1932,9 +1961,9 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            HashMap::<String, i32>::deserialize(deserializer).unwrap(),
-            hashmap! {
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(deserializer),
+            Ok(m) if m == hashmap! {
                 "abc".into() => 123,
             }
         );
@@ -1942,9 +1971,9 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            HashMap::<String, i32>::deserialize(deserializer).unwrap(),
-            hashmap! {
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(deserializer),
+            Ok(m) if m == hashmap! {
                 "abc".into() => 123,
             }
         );
@@ -1952,15 +1981,18 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            HashMap::<String, i32>::deserialize(deserializer).unwrap(),
-            hashmap! {
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(deserializer),
+            Ok(m) if m == hashmap! {
                 "abc".into() => 123,
             }
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        HashMap::<String, i32>::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            HashMap::<String, i32>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -1973,37 +2005,28 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Struct::deserialize(deserializer).unwrap(),
-            Struct { abc: 123 }
-        );
+        assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Struct::deserialize(deserializer).unwrap(),
-            Struct { abc: 123 }
-        );
+        assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Struct::deserialize(deserializer).unwrap(),
-            Struct { abc: 123 }
-        );
+        assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
             "abc".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Struct::deserialize(deserializer).unwrap(),
-            Struct { abc: 123 }
-        );
+        assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        Struct::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Struct::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -2023,9 +2046,9 @@ mod tests {
             },
             offset: Offset::Custom { minutes: -480 },
         }));
-        assert_eq!(
-            OffsetDatetime::deserialize(deserializer).unwrap(),
-            OffsetDatetime {
+        assert_matches!(
+            OffsetDatetime::deserialize(deserializer),
+            Ok(OffsetDatetime {
                 date: LocalDate {
                     year: 1979,
                     month: 5,
@@ -2038,7 +2061,7 @@ mod tests {
                     nanosecond: 0,
                 },
                 offset: Offset::Custom { minutes: -480 }
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
@@ -2054,9 +2077,9 @@ mod tests {
                 nanosecond: 0,
             },
         }));
-        assert_eq!(
-            LocalDatetime::deserialize(deserializer).unwrap(),
-            LocalDatetime {
+        assert_matches!(
+            LocalDatetime::deserialize(deserializer),
+            Ok(LocalDatetime {
                 date: LocalDate {
                     year: 1979,
                     month: 5,
@@ -2068,7 +2091,7 @@ mod tests {
                     second: 0,
                     nanosecond: 0,
                 },
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
@@ -2076,13 +2099,13 @@ mod tests {
             month: 5,
             day: 27,
         }));
-        assert_eq!(
-            LocalDate::deserialize(deserializer).unwrap(),
-            LocalDate {
+        assert_matches!(
+            LocalDate::deserialize(deserializer),
+            Ok(LocalDate {
                 year: 1979,
                 month: 5,
                 day: 27,
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
@@ -2091,14 +2114,14 @@ mod tests {
             second: 0,
             nanosecond: 0,
         }));
-        assert_eq!(
-            LocalTime::deserialize(deserializer).unwrap(),
-            LocalTime {
+        assert_matches!(
+            LocalTime::deserialize(deserializer),
+            Ok(LocalTime {
                 hour: 7,
                 minute: 32,
                 second: 0,
                 nanosecond: 0,
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
@@ -2115,9 +2138,9 @@ mod tests {
             },
             offset: Offset::Custom { minutes: -480 },
         }));
-        assert_eq!(
-            Datetime::deserialize(deserializer).unwrap(),
-            Datetime {
+        assert_matches!(
+            Datetime::deserialize(deserializer),
+            Ok(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -2130,7 +2153,7 @@ mod tests {
                     nanosecond: 0,
                 }),
                 offset: Some(Offset::Custom { minutes: -480 }),
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
@@ -2146,9 +2169,9 @@ mod tests {
                 nanosecond: 0,
             },
         }));
-        assert_eq!(
-            Datetime::deserialize(deserializer).unwrap(),
-            Datetime {
+        assert_matches!(
+            Datetime::deserialize(deserializer),
+            Ok(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -2161,7 +2184,7 @@ mod tests {
                     nanosecond: 0,
                 }),
                 offset: None,
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
@@ -2169,9 +2192,9 @@ mod tests {
             month: 5,
             day: 27,
         }));
-        assert_eq!(
-            Datetime::deserialize(deserializer).unwrap(),
-            Datetime {
+        assert_matches!(
+            Datetime::deserialize(deserializer),
+            Ok(Datetime {
                 date: Some(LocalDate {
                     year: 1979,
                     month: 5,
@@ -2179,7 +2202,7 @@ mod tests {
                 }),
                 time: None,
                 offset: None,
-            }
+            })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
@@ -2188,9 +2211,9 @@ mod tests {
             second: 0,
             nanosecond: 0,
         }));
-        assert_eq!(
-            Datetime::deserialize(deserializer).unwrap(),
-            Datetime {
+        assert_matches!(
+            Datetime::deserialize(deserializer),
+            Ok(Datetime {
                 date: None,
                 time: Some(LocalTime {
                     hour: 7,
@@ -2199,7 +2222,7 @@ mod tests {
                     nanosecond: 0
                 }),
                 offset: None,
-            }
+            })
         );
     }
 
@@ -2213,39 +2236,27 @@ mod tests {
         }
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("VariantA".into()));
-        assert_eq!(Enum::deserialize(deserializer).unwrap(), Enum::VariantA);
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantA));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantB(123)
-        );
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantB(123)
-        );
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantB(123)
-        );
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantB(123)
-        );
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantC".into() => ParsedValue::InlineTable(hashmap! {
@@ -2253,9 +2264,9 @@ mod tests {
                 "b".into() => ParsedValue::Integer(b"456".into()),
             }),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantC { a: 123, b: 456 }
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Ok(Enum::VariantC { a: 123, b: 456 })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
@@ -2264,9 +2275,9 @@ mod tests {
                 "b".into() => ParsedValue::Integer(b"456".into()),
             }),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantC { a: 123, b: 456 }
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Ok(Enum::VariantC { a: 123, b: 456 })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
@@ -2275,9 +2286,9 @@ mod tests {
                 "b".into() => ParsedValue::Integer(b"456".into()),
             }),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantC { a: 123, b: 456 }
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Ok(Enum::VariantC { a: 123, b: 456 })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
@@ -2286,15 +2297,18 @@ mod tests {
                 "b".into() => ParsedValue::Integer(b"456".into()),
             }),
         }));
-        assert_eq!(
-            Enum::deserialize(deserializer).unwrap(),
-            Enum::VariantC { a: 123, b: 456 }
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Ok(Enum::VariantC { a: 123, b: 456 })
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantA".into() => ParsedValue::Integer(b"123".into()),
         }));
-        Enum::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantB".into() => ParsedValue::InlineTable(hashmap! {
@@ -2302,13 +2316,22 @@ mod tests {
                 "b".into() => ParsedValue::Integer(b"456".into()),
             }),
         }));
-        Enum::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("VariantC".into()));
-        Enum::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
-        Enum::deserialize(deserializer).unwrap_err();
+        assert_matches!(
+            Enum::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -2321,16 +2344,16 @@ mod tests {
         }
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("VariantA".into()));
-        assert_eq!(Enum::deserialize(deserializer).unwrap(), Enum::VariantA);
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantA));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("VariantB".into()));
-        assert_eq!(Enum::deserialize(deserializer).unwrap(), Enum::VariantB);
+        assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB));
     }
 
     #[test]
     fn value_deserializer_deserialize_ignored_any() {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        de::IgnoredAny::deserialize(deserializer).unwrap();
+        assert!(de::IgnoredAny::deserialize(deserializer).is_ok());
     }
 
     #[test]
@@ -2350,10 +2373,10 @@ mod tests {
         ];
         let mut seq = SeqAccess::new(array.clone());
 
-        assert_eq!(seq.next_element().unwrap(), Some(123));
-        assert_eq!(seq.next_element().unwrap(), Some(456));
-        assert_eq!(seq.next_element().unwrap(), Some(789));
-        assert_eq!(seq.next_element().unwrap(), None::<i32>);
+        assert_matches!(seq.next_element(), Ok(Some(123)));
+        assert_matches!(seq.next_element(), Ok(Some(456)));
+        assert_matches!(seq.next_element(), Ok(Some(789)));
+        assert_matches!(seq.next_element(), Ok(None::<i32>));
 
         let array = vec![
             hashmap! { "abc".into() => ParsedValue::Integer(b"123".into()) },
@@ -2362,19 +2385,19 @@ mod tests {
         ];
         let mut seq = SeqAccess::new(array.clone());
 
-        assert_eq!(
-            seq.next_element().unwrap(),
-            Some(hashmap! { "abc".to_owned() => 123 })
+        assert_matches!(
+            seq.next_element::<HashMap<String, i32>>(),
+            Ok(Some(m)) if m == hashmap! { "abc".to_owned() => 123 }
         );
-        assert_eq!(
-            seq.next_element().unwrap(),
-            Some(hashmap! { "def".to_owned() => 456 })
+        assert_matches!(
+            seq.next_element::<HashMap<String, i32>>(),
+            Ok(Some(m)) if m == hashmap! { "def".to_owned() => 456 }
         );
-        assert_eq!(
-            seq.next_element().unwrap(),
-            Some(hashmap! { "ghi".to_owned() => 789 })
+        assert_matches!(
+            seq.next_element::<HashMap<String, i32>>(),
+            Ok(Some(m)) if m == hashmap! { "ghi".to_owned() => 789 }
         );
-        assert_eq!(seq.next_element().unwrap(), None::<HashMap<String, i32>>);
+        assert_matches!(seq.next_element::<HashMap<String, i32>>(), Ok(None));
     }
 
     #[test]
@@ -2440,7 +2463,7 @@ mod tests {
             ]
         );
 
-        assert_eq!(map.next_key().unwrap(), None::<String>);
+        assert_matches!(map.next_key::<String>(), Ok(None));
     }
 
     #[test]
@@ -2464,7 +2487,7 @@ mod tests {
             ]
         );
 
-        assert_eq!(map.next_key().unwrap(), None::<String>);
+        assert_matches!(map.next_key::<String>(), Ok(None));
     }
 
     #[test]
@@ -2492,10 +2515,16 @@ mod tests {
             "def".into() => ParsedValue::Integer(b"456".into()),
             "ghi".into() => ParsedValue::Integer(b"789".into()),
         };
-        EnumAccess::new(table).unwrap_err();
+        assert_matches!(
+            EnumAccess::new(table),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let table = hashmap! {};
-        EnumAccess::new(table).unwrap_err();
+        assert_matches!(
+            EnumAccess::new(table),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -2504,13 +2533,13 @@ mod tests {
             "VariantA".into() => ParsedValue::Table(hashmap! {}),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.variant::<String>().unwrap().0, "VariantA");
+        assert_matches!(access.variant::<String>(), Ok((v, _)) if v == "VariantA");
 
         let table = hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.variant::<String>().unwrap().0, "VariantB");
+        assert_matches!(access.variant::<String>(), Ok((v, _)) if v == "VariantB");
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Table(hashmap! {
@@ -2519,7 +2548,7 @@ mod tests {
             }),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.variant::<String>().unwrap().0, "VariantC");
+        assert_matches!(access.variant::<String>(), Ok((v, _)) if v == "VariantC");
     }
 
     #[test]
@@ -2534,7 +2563,10 @@ mod tests {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.unit_variant().unwrap_err();
+        assert_matches!(
+            access.unit_variant(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
@@ -2543,7 +2575,10 @@ mod tests {
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.unit_variant().unwrap_err();
+        assert_matches!(
+            access.unit_variant(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
@@ -2552,7 +2587,10 @@ mod tests {
             }),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.unit_variant().unwrap_err();
+        assert_matches!(
+            access.unit_variant(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -2561,13 +2599,16 @@ mod tests {
             "VariantA".into() => ParsedValue::Table(hashmap! {}),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.newtype_variant::<i32>().unwrap_err();
+        assert_matches!(
+            access.newtype_variant::<i32>(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.newtype_variant::<i32>().unwrap(), 123);
+        assert_matches!(access.newtype_variant::<i32>(), Ok(123));
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
@@ -2576,7 +2617,10 @@ mod tests {
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.newtype_variant::<i32>().unwrap_err();
+        assert_matches!(
+            access.newtype_variant::<i32>(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
@@ -2585,7 +2629,10 @@ mod tests {
             }),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.newtype_variant::<i32>().unwrap_err();
+        assert_matches!(
+            access.newtype_variant::<i32>(),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -2615,13 +2662,19 @@ mod tests {
             "VariantA".into() => ParsedValue::Table(hashmap! {}),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.tuple_variant(0, Visitor).unwrap_err();
+        assert_matches!(
+            access.tuple_variant(0, Visitor),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.tuple_variant(1, Visitor).unwrap_err();
+        assert_matches!(
+            access.tuple_variant(1, Visitor),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
@@ -2630,7 +2683,7 @@ mod tests {
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.tuple_variant(2, Visitor).unwrap(), vec![123, 456]);
+        assert_matches!(access.tuple_variant(2, Visitor), Ok(s) if s == [123, 456]);
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
@@ -2639,7 +2692,10 @@ mod tests {
             }),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.tuple_variant(2, Visitor).unwrap_err();
+        assert_matches!(
+            access.tuple_variant(2, Visitor),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
     }
 
     #[test]
@@ -2669,13 +2725,16 @@ mod tests {
             "VariantA".into() => ParsedValue::Table(hashmap! {}),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(access.struct_variant(&[], Visitor).unwrap(), hashmap! {});
+        assert_matches!(access.struct_variant(&[], Visitor), Ok(m) if m.is_empty());
 
         let table = hashmap! {
             "VariantB".into() => ParsedValue::Integer(b"123".into()),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.struct_variant(&["a"], Visitor).unwrap_err();
+        assert_matches!(
+            access.struct_variant(&["a"], Visitor),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
@@ -2684,7 +2743,10 @@ mod tests {
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
-        access.struct_variant(&["a", "b"], Visitor).unwrap_err();
+        assert_matches!(
+            access.struct_variant(&["a", "b"], Visitor),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
@@ -2693,9 +2755,9 @@ mod tests {
             }),
         };
         let access = EnumAccess::new(table).unwrap();
-        assert_eq!(
-            access.struct_variant(&["a", "b"], Visitor).unwrap(),
-            hashmap! {
+        assert_matches!(
+            access.struct_variant(&["a", "b"], Visitor),
+            Ok(m) if m == hashmap! {
                 "a".into() => 123,
                 "b".into() => 456,
             }
@@ -2705,106 +2767,151 @@ mod tests {
     #[test]
     fn test_parse_integer() {
         let bytes = b"123";
-        assert_eq!(parse_integer::<i32>(bytes).unwrap(), 123);
+        assert_matches!(parse_integer::<i32>(bytes), Ok(123));
 
         let bytes = b"0123"; // Leading zeros are handled in the parser
-        assert_eq!(parse_integer::<i32>(bytes).unwrap(), 123);
+        assert_matches!(parse_integer::<i32>(bytes), Ok(123));
 
         let bytes = b"1_2_3"; // Underscores are stripped in the parser
-        parse_integer::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_integer::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
 
         let bytes = b"123.0";
-        parse_integer::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_integer::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
     }
 
     #[test]
     fn test_parse_binary() {
         let bytes = b"1010";
-        assert_eq!(parse_binary::<i32>(bytes).unwrap(), 10);
+        assert_matches!(parse_binary::<i32>(bytes), Ok(10));
 
         let bytes = b"01010"; // Leading zeros are ok because we already have a leading 0b
-        assert_eq!(parse_binary::<i32>(bytes).unwrap(), 10);
+        assert_matches!(parse_binary::<i32>(bytes), Ok(10));
 
         let bytes = b"1_0_1_0"; // Underscores are stripped in the parser
-        parse_binary::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_binary::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
 
         let bytes = b"1010.0";
-        parse_binary::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_binary::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
     }
 
     #[test]
     fn test_parse_octal() {
         let bytes = b"123";
-        assert_eq!(parse_octal::<i32>(bytes).unwrap(), 83);
+        assert_matches!(parse_octal::<i32>(bytes), Ok(83));
 
         let bytes = b"0123"; // Leading zeros are ok because we already have a leading 0o
-        assert_eq!(parse_octal::<i32>(bytes).unwrap(), 83);
+        assert_matches!(parse_octal::<i32>(bytes), Ok(83));
 
         let bytes = b"1_2_3"; // Underscores are stripped in the parser
-        parse_octal::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_octal::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
 
         let bytes = b"123.0";
-        parse_octal::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_octal::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
     }
 
     #[test]
     fn test_parse_hexadecimal() {
         let bytes = b"123";
-        assert_eq!(parse_hexadecimal::<i32>(bytes).unwrap(), 291);
+        assert_matches!(parse_hexadecimal::<i32>(bytes), Ok(291));
 
         let bytes = b"0123"; // Leading zeros are ok because we already have a leading 0x
-        assert_eq!(parse_hexadecimal::<i32>(bytes).unwrap(), 291);
+        assert_matches!(parse_hexadecimal::<i32>(bytes), Ok(291));
 
         let bytes = b"1_2_3"; // Underscores are stripped in the parser
-        parse_hexadecimal::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_hexadecimal::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
 
         let bytes = b"123.0";
-        parse_hexadecimal::<i32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_hexadecimal::<i32>(bytes),
+            Err(Error(ErrorKind::InvalidInteger(..)))
+        );
     }
 
     #[test]
     fn test_parse_float() {
         let bytes = b"123.456";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.456));
 
         let bytes = b"123e0";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.0);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.0));
 
         let bytes = b"123e+0";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.0);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.0));
 
         let bytes = b"123e-0";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.0);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.0));
 
         let bytes = b"123.456e123";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456e123);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.456e123));
 
         let bytes = b"123.456e+123";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456e123);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.456e123));
 
         let bytes = b"123.456e-123";
-        assert_is_close!(parse_float::<f64>(bytes).unwrap(), 123.456e-123);
+        assert_matches!(parse_float::<f64>(bytes), Ok(123.456e-123));
 
         let bytes = b"1_2_3.4_5_6";
-        parse_float::<f64>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f64>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"1_2_3e1_2_3";
-        parse_float::<f64>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f64>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"1_2_3e+1_2_3";
-        parse_float::<f64>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f64>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"1_2_3e-1_2_3";
-        parse_float::<f64>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f64>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"123.0_";
-        parse_float::<f32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f32>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"_123.0";
-        parse_float::<f32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f32>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
 
         let bytes = b"123.0.0";
-        parse_float::<f32>(bytes).unwrap_err();
+        assert_matches!(
+            parse_float::<f32>(bytes),
+            Err(Error(ErrorKind::InvalidFloat(..)))
+        );
     }
 
     #[test]

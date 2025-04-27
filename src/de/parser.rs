@@ -477,19 +477,19 @@ where
                 Some(b'\\') => {
                     // Trailing '\' means eat all whitespace and newlines
                     if self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")? {
-                        self.reader.next_while(is_toml_whitespace_or_newline)?;
+                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline)?;
                     }
                     // If there's space after the \ we assume a trailing \ with trailing whitespace,
                     // but we need to verify there's only whitespace chars before the next newline
                     else if let Some(char) = self.reader.next_if(is_toml_whitespace)? {
-                        self.reader.next_while(is_toml_whitespace)?;
+                        let _ws = self.reader.next_while(is_toml_whitespace)?;
                         if !(self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?) {
                             return Err(ErrorKind::InvalidEscape(
                                 format!("{:?}", char::from(char)).into(),
                             )
                             .into());
                         }
-                        self.reader.next_while(is_toml_whitespace_or_newline)?;
+                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline)?;
                     } else {
                         // Parse a regular escape sequence and continue
                         str.to_mut().push(self.parse_escape_seq()?);
@@ -611,14 +611,13 @@ where
                 u32::from_str_radix(str, 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()).into())
+                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\U{str}").into()).into())
             }
             _ => Err(ErrorKind::InvalidEscape(
                 self.reader
                     .next_char()? // We want a char here, not just a byte
-                    .ok_or(ErrorKind::UnterminatedString)?
-                    .to_string()
-                    .into(),
+                    .ok_or(ErrorKind::UnterminatedString)
+                    .map(|ch| format!("\\{ch}").into())?,
             )
             .into()),
         }
@@ -856,8 +855,7 @@ where
                     Some(b) if is_toml_word(&b) => {
                         ErrorKind::InvalidNumber("invalid digit".into()).into()
                     }
-                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                    None => ErrorKind::UnexpectedEof.into(),
+                    _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
                 });
             }
             num.to_mut().extend_from_slice(&bytes);
@@ -883,7 +881,7 @@ where
                 return Err(match self.reader.peek()? {
                     Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
                     Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                    None => ErrorKind::UnexpectedEof.into(),
+                    None => ErrorKind::InvalidNumber("no digits after decimal point".into()).into(),
                 });
             }
             let bytes = self.reader.end_seq()?;
@@ -898,8 +896,7 @@ where
                         Some(b) if is_toml_word(&b) => {
                             ErrorKind::InvalidNumber("invalid digit".into()).into()
                         }
-                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                        None => ErrorKind::UnexpectedEof.into(),
+                        _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
                     });
                 }
                 num.to_mut().extend_from_slice(&bytes);
@@ -921,7 +918,9 @@ where
                 return Err(match self.reader.peek()? {
                     Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
                     Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                    None => ErrorKind::UnexpectedEof.into(),
+                    None => {
+                        ErrorKind::InvalidNumber("no digits after decimal exponent".into()).into()
+                    }
                 });
             }
             let bytes = self.reader.end_seq()?;
@@ -936,8 +935,7 @@ where
                         Some(b) if is_toml_word(&b) => {
                             ErrorKind::InvalidNumber("invalid digit".into()).into()
                         }
-                        Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                        None => ErrorKind::UnexpectedEof.into(),
+                        _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
                     });
                 }
                 num.to_mut().extend_from_slice(&bytes);
@@ -1065,11 +1063,11 @@ where
         Ok(())
     }
 
-    fn skip_comment(&mut self) -> Result<bool> {
+    fn skip_comment(&mut self) -> Result<()> {
         if self.reader.eat_char(b'#')? {
             // Skip validating comments with feature = "fast"
             if cfg!(feature = "fast") {
-                self.reader.next_while(|&ch| ch != b'\n')?;
+                let _comment = self.reader.next_while(|&ch| ch != b'\n')?;
             } else {
                 // next_str_while will validate UTF-8
                 let comment = self.reader.next_str_while(|&ch| ch != b'\n')?;
@@ -1080,11 +1078,8 @@ where
                     return Err(ErrorKind::IllegalChar(ch).into());
                 }
             }
-
-            Ok(true)
-        } else {
-            Ok(false)
         }
+        Ok(())
     }
 
     fn skip_comments_and_whitespace(&mut self) -> Result<()> {
@@ -1327,6 +1322,7 @@ mod tests {
     use maplit::hashmap;
 
     use super::*;
+    use crate::de::Error;
     use crate::value::Offset;
 
     #[test]
@@ -1431,27 +1427,21 @@ mod tests {
     #[test]
     fn parser_from_str() {
         let mut parser = Parser::from_str("foo = 123");
-        assert_eq!(
-            parser.reader.next_while(|_| true).unwrap(),
-            b"foo = 123".as_slice()
+        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
         );
     }
 
     #[test]
     fn parser_from_slice() {
         let mut parser = Parser::from_slice(b"foo = 123");
-        assert_eq!(
-            parser.reader.next_while(|_| true).unwrap(),
-            b"foo = 123".as_slice()
+        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
         );
     }
 
     #[test]
     fn parser_from_reader() {
         let mut parser = Parser::from_reader(b"foo = 123".as_slice());
-        assert_eq!(
-            parser.reader.next_while(|_| true).unwrap(),
-            b"foo = 123".as_slice()
+        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
         );
     }
 
@@ -1459,21 +1449,21 @@ mod tests {
     #[test]
     fn parser_parse() {
         let mut parser = Parser::from_str("a = 1\nb = 2");
-        assert_eq!(
-            parser.parse().unwrap(),
-            Value::Table(hashmap! {
+        assert_matches!(
+            parser.parse(),
+            Ok(Value::Table(t)) if t == hashmap! {
                 "a".into() => Value::Integer(b"1".into()),
                 "b".into() => Value::Integer(b"2".into()),
-            })
+            }
         );
 
         let mut parser = Parser::from_str("a = 1\r\nb = 2");
-        assert_eq!(
-            parser.parse().unwrap(),
-            Value::Table(hashmap! {
+        assert_matches!(
+            parser.parse(),
+            Ok(Value::Table(t)) if t == hashmap! {
                 "a".into() => Value::Integer(b"1".into()),
                 "b".into() => Value::Integer(b"2".into()),
-            })
+            }
         );
 
         let mut parser = Parser::from_str(indoc! {r#"
@@ -1517,9 +1507,9 @@ mod tests {
                 value = [1, 2]
         "#});
 
-        assert_eq!(
-            parser.parse().unwrap(),
-            Value::Table(hashmap! {
+        assert_matches!(
+            parser.parse(),
+            Ok(Value::Table(t)) if t == hashmap! {
                 "title".into() => Value::String("TOML Example".into()),
                 "owner".into() => Value::Table(hashmap! {
                     "name".into() => Value::String("Tom Preston-Werner".into()),
@@ -1578,7 +1568,7 @@ mod tests {
                         }
                     ]),
                 }),
-            })
+            }
         );
     }
 
@@ -1588,7 +1578,7 @@ mod tests {
             a = 123
             a = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::DuplicateKey(..))));
 
         let mut parser = Parser::from_str(indoc! {r"
             a = 123
@@ -1596,7 +1586,10 @@ mod tests {
             [a]
             b = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(
+            parser.parse(),
+            Err(Error(ErrorKind::InvalidTableHeader(..)))
+        );
 
         let mut parser = Parser::from_str(indoc! {r"
             a = 123
@@ -1604,13 +1597,16 @@ mod tests {
             [[a]]
             b = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(
+            parser.parse(),
+            Err(Error(ErrorKind::InvalidTableHeader(..)))
+        );
 
         let mut parser = Parser::from_str(indoc! {r"
             a = 123
             a.b = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::InvalidKeyPath(..))));
 
         let mut parser = Parser::from_str(indoc! {r"
             [a.b]
@@ -1619,254 +1615,269 @@ mod tests {
             [a]
             b.d = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::InvalidKeyPath(..))));
 
         let mut parser = Parser::from_str(indoc! {r"
             [table]
             a.b = 123
             a.b = 456
         "});
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::DuplicateKey(..))));
 
         let mut parser = Parser::from_str("a = 123 $");
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
 
         let mut parser = Parser::from_str("a = 123 \0");
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::IllegalChar(..))));
 
         let mut parser = Parser::from_str("$");
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
 
         let mut parser = Parser::from_str("\0");
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::IllegalChar(..))));
 
         let mut parser = Parser::from_str("a = 1\rb = 2");
-        assert!(parser.parse().is_err());
+        assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
     }
 
     #[test]
     fn parser_parse_array_header() {
         let mut parser = Parser::from_str(r#" a .b. "..c"]]"#);
-        assert_eq!(parser.parse_array_header().unwrap(), vec!["a", "b", "..c"]);
+        assert_matches!(parser.parse_array_header(), Ok(s) if s == ["a", "b", "..c"]);
 
         let mut parser = Parser::from_str(r#""]]""#);
-        assert!(parser.parse_array_header().is_err());
+        assert_matches!(
+            parser.parse_array_header(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_table_header() {
         let mut parser = Parser::from_str(r#" a .b. "..c"]"#);
-        assert_eq!(parser.parse_table_header().unwrap(), vec!["a", "b", "..c"]);
+        assert_matches!(parser.parse_table_header(), Ok(s) if s == ["a", "b", "..c"]);
 
         let mut parser = Parser::from_str(r#""]""#);
-        assert!(parser.parse_table_header().is_err());
+        assert_matches!(
+            parser.parse_table_header(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_key_value_pair() {
         let mut parser = Parser::from_str(r"a = 123");
-        assert_eq!(
-            parser.parse_key_value_pair().unwrap(),
-            (vec!["a".into()], Value::Integer(b"123".into()))
+        assert_matches!(
+            parser.parse_key_value_pair(),
+            Ok((k, Value::Integer(v))) if k == ["a"] && &*v == b"123"
         );
 
         let mut parser = Parser::from_str(r#""a = 123""#);
-        assert!(parser.parse_key_value_pair().is_err());
+        assert_matches!(
+            parser.parse_key_value_pair(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_dotted_key() {
         let mut parser = Parser::from_str(r#"a .b. "..c""#);
-        assert_eq!(parser.parse_dotted_key().unwrap(), vec!["a", "b", "..c"]);
+        assert_matches!(parser.parse_dotted_key(), Ok(s) if s == ["a", "b", "..c"]);
 
         let mut parser = Parser::from_str(".");
-        assert!(parser.parse_dotted_key().is_err());
+        assert_matches!(
+            parser.parse_dotted_key(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("a..b");
-        assert!(parser.parse_dotted_key().is_err());
+        assert_matches!(
+            parser.parse_dotted_key(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_key() {
         let mut parser = Parser::from_str("abc");
-        assert_eq!(parser.parse_key().unwrap(), "abc");
+        assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
         let mut parser = Parser::from_str(r#""abc""#);
-        assert_eq!(parser.parse_key().unwrap(), "abc");
+        assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
         let mut parser = Parser::from_str("'abc'");
-        assert_eq!(parser.parse_key().unwrap(), "abc");
+        assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
         let mut parser = Parser::from_str(r#""""abc""""#);
-        assert!(parser.parse_key().is_err());
+        assert_matches!(parser.parse_key(), Err(Error(ErrorKind::ExpectedToken(..))));
 
         let mut parser = Parser::from_str("'''abc'''");
-        assert!(parser.parse_key().is_err());
+        assert_matches!(parser.parse_key(), Err(Error(ErrorKind::ExpectedToken(..))));
     }
 
     #[test]
     fn parser_parse_bare_key() {
         let mut parser = Parser::from_str("abc");
-        assert_eq!(parser.parse_bare_key().unwrap(), "abc");
+        assert_matches!(parser.parse_bare_key(), Ok(k) if k == "abc");
 
         let mut parser = Parser::from_str("123");
-        assert_eq!(parser.parse_bare_key().unwrap(), "123");
+        assert_matches!(parser.parse_bare_key(), Ok(k) if k == "123");
 
         let mut parser = Parser::from_str("-");
-        assert_eq!(parser.parse_bare_key().unwrap(), "-");
+        assert_matches!(parser.parse_bare_key(), Ok(k) if k == "-");
 
         let mut parser = Parser::from_str("_");
-        assert_eq!(parser.parse_bare_key().unwrap(), "_");
+        assert_matches!(parser.parse_bare_key(), Ok(k) if k == "_");
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn parser_parse_value() {
         let mut parser = Parser::from_str(r#""hello""#);
-        assert_eq!(parser.parse_value().unwrap(), Value::String("hello".into()));
+        assert_matches!(parser.parse_value(), Ok(Value::String(s)) if &*s == "hello");
 
         let mut parser = Parser::from_str("true");
-        assert_eq!(parser.parse_value().unwrap(), Value::Boolean(true));
+        assert_matches!(parser.parse_value(), Ok(Value::Boolean(true)));
 
         let mut parser = Parser::from_str("0.2");
-        assert_eq!(parser.parse_value().unwrap(), Value::Float(b"0.2".into()));
+        assert_matches!(parser.parse_value(), Ok(Value::Float(b)) if &*b == b"0.2");
 
         let mut parser = Parser::from_str("0x123abc");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::HexInt(b"123abc".into())
-        );
+        assert_matches!(parser.parse_value(), Ok(Value::HexInt(v)) if &*v == b"123abc");
 
         let mut parser = Parser::from_str("0001-01-01");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::LocalDate(LocalDate {
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::LocalDate(LocalDate {
                 year: 1,
                 month: 1,
                 day: 1
-            })
+            }))
         );
 
         let mut parser = Parser::from_str("00:00:00");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::LocalTime(LocalTime {
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::LocalTime(LocalTime {
                 hour: 0,
                 minute: 0,
                 second: 0,
                 nanosecond: 0
-            })
+            }))
         );
 
         let mut parser = Parser::from_str("0");
-        assert_eq!(parser.parse_value().unwrap(), Value::Integer(b"0".into()));
+        assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"0");
 
         let mut parser = Parser::from_str("12");
-        assert_eq!(parser.parse_value().unwrap(), Value::Integer(b"12".into()));
+        assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"12");
 
         let mut parser = Parser::from_str("1234");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::Integer(b"1234".into())
-        );
+        assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"1234");
 
         let mut parser = Parser::from_str("1234-05-06");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::LocalDate(LocalDate {
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::LocalDate(LocalDate {
                 year: 1234,
                 month: 5,
                 day: 6
-            })
+            }))
         );
 
         let mut parser = Parser::from_str("12:34:56");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::LocalTime(LocalTime {
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::LocalTime(LocalTime {
                 hour: 12,
                 minute: 34,
                 second: 56,
                 nanosecond: 0
-            })
+            }))
         );
 
         let mut parser = Parser::from_str("-123");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::Integer(b"-123".into())
-        );
+        assert_matches!(parser.parse_value(), Ok(Value::Integer(v)) if &*v == b"-123");
 
         let mut parser = Parser::from_str("+123");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::Integer(b"+123".into())
-        );
+        assert_matches!(parser.parse_value(), Ok(Value::Integer(v)) if &*v == b"+123");
 
         let mut parser = Parser::from_str("+inf");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::SpecialFloat(SpecialFloat::Infinity)
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::SpecialFloat(SpecialFloat::Infinity))
         );
 
         let mut parser = Parser::from_str("-nan");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::SpecialFloat(SpecialFloat::NegNan)
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::SpecialFloat(SpecialFloat::NegNan))
         );
 
         let mut parser = Parser::from_str("inf");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::SpecialFloat(SpecialFloat::Infinity)
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::SpecialFloat(SpecialFloat::Infinity))
         );
 
         let mut parser = Parser::from_str("nan");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::SpecialFloat(SpecialFloat::Nan)
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::SpecialFloat(SpecialFloat::Nan))
         );
 
         let mut parser = Parser::from_str("[123, 456, 789]");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::Array(vec![
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::Array(a)) if a == [
                 Value::Integer(b"123".into()),
                 Value::Integer(b"456".into()),
                 Value::Integer(b"789".into()),
-            ])
+            ]
         );
 
         let mut parser = Parser::from_str("{ a = 123, b = 456, c = 789 }");
-        assert_eq!(
-            parser.parse_value().unwrap(),
-            Value::InlineTable(hashmap! {
+        assert_matches!(
+            parser.parse_value(),
+            Ok(Value::InlineTable(t)) if t == hashmap! {
                 "a".into() => Value::Integer(b"123".into()),
                 "b".into() => Value::Integer(b"456".into()),
                 "c".into() => Value::Integer(b"789".into()),
-            })
+            }
         );
     }
 
     #[test]
     fn parser_parse_value_invalid() {
         let mut parser = Parser::from_str("01");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(
+            parser.parse_value(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0123");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(
+            parser.parse_value(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("+");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(
+            parser.parse_value(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("blah");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(
+            parser.parse_value(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("\0");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(parser.parse_value(), Err(Error(ErrorKind::IllegalChar(..))));
 
         let mut parser = Parser::from_str("");
-        assert!(parser.parse_value().is_err());
+        assert_matches!(parser.parse_value(), Err(Error(ErrorKind::UnexpectedEof)));
     }
 
     #[test]
@@ -1874,67 +1885,88 @@ mod tests {
         let mut parser = Parser::from_str(indoc! {r#"
             "hello"
         "#});
-        assert_eq!(parser.parse_string().unwrap(), "hello");
+        assert_matches!(parser.parse_string(), Ok(s) if s == "hello");
 
         let mut parser = Parser::from_str(indoc! {r#"
             """
             hello
             """
         "#});
-        assert_eq!(parser.parse_string().unwrap(), "hello\n");
+        assert_matches!(parser.parse_string(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r"
             'hello'
         "});
-        assert_eq!(parser.parse_string().unwrap(), "hello");
+        assert_matches!(parser.parse_string(), Ok(s) if s == "hello");
 
         let mut parser = Parser::from_str(indoc! {r"
             '''
             hello
             '''
         "});
-        assert_eq!(parser.parse_string().unwrap(), "hello\n");
+        assert_matches!(parser.parse_string(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             "hello'
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             """
             hello
             "
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             """
             hello
             '''
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             'hello"
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             '''
             hello
             "
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             '''
             hello
             """
         "#});
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("hello");
-        assert!(parser.parse_string().is_err());
+        assert_matches!(
+            parser.parse_string(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
@@ -1942,20 +1974,29 @@ mod tests {
         let mut parser = Parser::from_str(indoc! {r#"
             hello\n"
         "#});
-        assert_eq!(parser.parse_basic_str().unwrap(), "hello\n");
+        assert_matches!(parser.parse_basic_str(), Ok(s) if s =="hello\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello\"
         "#});
-        assert!(parser.parse_basic_str().is_err());
+        assert_matches!(
+            parser.parse_basic_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello\0"
         "#});
-        assert!(parser.parse_basic_str().is_err());
+        assert_matches!(
+            parser.parse_basic_str(),
+            Err(Error(ErrorKind::InvalidEscape(..)))
+        );
 
         let mut parser = Parser::from_str("hello\0\"");
-        assert!(parser.parse_basic_str().is_err());
+        assert_matches!(
+            parser.parse_basic_str(),
+            Err(Error(ErrorKind::IllegalChar(..)))
+        );
     }
 
     #[test]
@@ -1964,45 +2005,45 @@ mod tests {
             hello
             """
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello
             """"
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello
             """""
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\"");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\"");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello
             """"""
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\""); // Still only 2 "s
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\""); // Still only 2 "s
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello
             ""
             """
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n\"\"\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\"\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello\t
             """
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\t\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\t\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello \
             world
             """
         "#});
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello world\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello world\n");
 
         let mut parser = Parser::from_str(concat!(
             indoc! {r#"
@@ -2013,37 +2054,52 @@ mod tests {
                 """
             "#}
         ));
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello world\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello world\n");
 
         let mut parser = Parser::from_str("hello\r\n\"\"\"");
-        assert_eq!(parser.parse_multiline_basic_str().unwrap(), "hello\n");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello
             ""
         "#});
-        assert!(parser.parse_multiline_basic_str().is_err());
+        assert_matches!(
+            parser.parse_multiline_basic_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str(indoc! {r#"
             hello\    \
             """
         "#});
-        assert!(parser.parse_multiline_basic_str().is_err());
+        assert_matches!(
+            parser.parse_multiline_basic_str(),
+            Err(Error(ErrorKind::InvalidEscape(..)))
+        );
 
         let mut parser = Parser::from_str("hello\0\"");
-        assert!(parser.parse_multiline_basic_str().is_err());
+        assert_matches!(
+            parser.parse_multiline_basic_str(),
+            Err(Error(ErrorKind::IllegalChar(..)))
+        );
     }
 
     #[test]
     fn parser_parse_literal_str() {
         let mut parser = Parser::from_str("hello\\n'");
-        assert_eq!(parser.parse_literal_str().unwrap(), "hello\\n");
+        assert_matches!(parser.parse_literal_str(), Ok(s) if s == "hello\\n");
 
         let mut parser = Parser::from_str("hello\n'");
-        assert!(parser.parse_literal_str().is_err());
+        assert_matches!(
+            parser.parse_literal_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("hello\0'");
-        assert!(parser.parse_literal_str().is_err());
+        assert_matches!(
+            parser.parse_literal_str(),
+            Err(Error(ErrorKind::IllegalChar(..)))
+        );
     }
 
     #[test]
@@ -2052,195 +2108,268 @@ mod tests {
             hello
             '''
         "});
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r"
             hello
             ''''
         "});
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n'");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n'");
 
         let mut parser = Parser::from_str(indoc! {r"
             hello
             '''''
         "});
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''");
 
         let mut parser = Parser::from_str(indoc! {r"
             hello
             ''''''
         "});
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''"); // Still only 2 's
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''"); // Still only 2 's
 
         let mut parser = Parser::from_str(indoc! {r"
             hello
             ''
             '''
         "});
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n''\n");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''\n");
 
         let mut parser = Parser::from_str("hello\r\n'''");
-        assert_eq!(parser.parse_multiline_literal_str().unwrap(), "hello\n");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n");
 
         let mut parser = Parser::from_str(indoc! {r"
             hello
             ''
         "});
-        assert!(parser.parse_multiline_literal_str().is_err());
+        assert_matches!(
+            parser.parse_multiline_literal_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("hello\0'");
-        assert!(parser.parse_multiline_literal_str().is_err());
+        assert_matches!(
+            parser.parse_multiline_literal_str(),
+            Err(Error(ErrorKind::IllegalChar(..)))
+        );
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn parser_parse_escape_seq() {
         let mut parser = Parser::from_str("b");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\x08');
+        assert_matches!(parser.parse_escape_seq(), Ok('\x08'));
 
         let mut parser = Parser::from_str("t");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\t');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\t');
 
         let mut parser = Parser::from_str("n");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\n');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\n');
 
         let mut parser = Parser::from_str("f");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\x0c');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\x0c');
 
         let mut parser = Parser::from_str("r");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\r');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\r');
 
         let mut parser = Parser::from_str("\"");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '"');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '"');
 
         let mut parser = Parser::from_str("\\");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '\\');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\\');
 
         let mut parser = Parser::from_str("u20ac");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '€');
+        assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '€');
 
         let mut parser = Parser::from_str("u2");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(
+            parser.parse_escape_seq(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("ulmao");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\ulmao");
 
         let mut parser = Parser::from_slice(b"u\xff\xff\xff\xff");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(
+            parser.parse_escape_seq(),
+            Err(Error(ErrorKind::InvalidEncoding))
+        );
 
         let mut parser = Parser::from_str("U0001f60e");
-        assert_eq!(parser.parse_escape_seq().unwrap(), '😎');
+        assert_matches!(parser.parse_escape_seq(), Ok('😎'));
 
         let mut parser = Parser::from_str("U2");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(
+            parser.parse_escape_seq(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("UROFLCOPTER");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\UROFLCOPT");
 
         let mut parser = Parser::from_slice(b"U\xff\xff\xff\xff\xff\xff\xff\xff");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(
+            parser.parse_escape_seq(),
+            Err(Error(ErrorKind::InvalidEncoding))
+        );
 
         let mut parser = Parser::from_slice(b"");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(
+            parser.parse_escape_seq(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
 
         let mut parser = Parser::from_str("p");
-        assert!(parser.parse_escape_seq().is_err());
+        assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\p");
     }
 
     #[test]
     #[allow(clippy::bool_assert_comparison)]
     fn parser_parse_bool() {
         let mut parser = Parser::from_str("true");
-        assert_eq!(parser.parse_bool().unwrap(), true);
+        assert_matches!(parser.parse_bool(), Ok(true));
 
         let mut parser = Parser::from_str("false");
-        assert_eq!(parser.parse_bool().unwrap(), false);
+        assert_matches!(parser.parse_bool(), Ok(false));
 
         let mut parser = Parser::from_str("TRUE");
-        assert!(parser.parse_bool().is_err());
+        assert_matches!(
+            parser.parse_bool(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("f");
-        assert!(parser.parse_bool().is_err());
+        assert_matches!(
+            parser.parse_bool(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("1");
-        assert!(parser.parse_bool().is_err());
+        assert_matches!(
+            parser.parse_bool(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("trueueue");
-        assert!(parser.parse_bool().is_err());
+        assert_matches!(
+            parser.parse_bool(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_datetime() {
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000+02:30");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Z");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000Z");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::OffsetDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01 12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01 12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDatetime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
 
         let mut parser = Parser::from_str("1980-01-01");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalDate(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDate(_)));
 
         let mut parser = Parser::from_str("12:00:00.000000000");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalTime(_)));
 
         let mut parser = Parser::from_str("12:00:00");
-        assert_matches!(parser.parse_datetime().unwrap(), Value::LocalTime(_));
+        assert_matches!(parser.parse_datetime(), Ok(Value::LocalTime(_)));
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Zabc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01T12:00:00abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01T12:00abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01T12:00");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01 12:00");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("1980-01-01abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("12:00:00.000000000abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("12:00:00abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("12:00abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("12:00");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("abc");
-        assert!(parser.parse_datetime().is_err());
+        assert_matches!(
+            parser.parse_datetime(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
@@ -2252,13 +2381,13 @@ mod tests {
         assert!(parser.check_date().is_ok());
 
         let mut parser = Parser::from_str("1980");
-        assert!(parser.check_date().is_err());
+        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
 
         let mut parser = Parser::from_str("1980-01");
-        assert!(parser.check_date().is_err());
+        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
 
         let mut parser = Parser::from_str("198-01-01");
-        assert!(parser.check_date().is_err());
+        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
     }
 
     #[test]
@@ -2276,13 +2405,13 @@ mod tests {
         assert!(parser.check_time().is_ok());
 
         let mut parser = Parser::from_str("12:00:00.abc");
-        assert!(parser.check_time().is_err());
+        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
 
         let mut parser = Parser::from_str("12:00:abc");
-        assert!(parser.check_time().is_err());
+        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
 
         let mut parser = Parser::from_str("198:01:01");
-        assert!(parser.check_time().is_err());
+        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
     }
 
     #[test]
@@ -2300,279 +2429,376 @@ mod tests {
         assert!(parser.check_offset().is_ok());
 
         let mut parser = Parser::from_str("02:30");
-        assert!(parser.check_offset().is_err());
+        assert_matches!(
+            parser.check_offset(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         let mut parser = Parser::from_str("+002:30");
-        assert!(parser.check_offset().is_err());
+        assert_matches!(
+            parser.check_offset(),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
     fn parser_parse_number_radix() {
         let mut parser = Parser::from_str("0x123");
-        assert_eq!(
-            parser.parse_number_radix().unwrap(),
-            Value::HexInt(b"123".into())
+        assert_matches!(
+            parser.parse_number_radix(),
+            Ok(Value::HexInt(v)) if &*v == b"123"
         );
 
         let mut parser = Parser::from_str("0o123");
-        assert_eq!(
-            parser.parse_number_radix().unwrap(),
-            Value::OctalInt(b"123".into())
+        assert_matches!(
+            parser.parse_number_radix(),
+            Ok(Value::OctalInt(v)) if &*v == b"123"
         );
 
         let mut parser = Parser::from_str("0b101");
-        assert_eq!(
-            parser.parse_number_radix().unwrap(),
-            Value::BinaryInt(b"101".into())
+        assert_matches!(
+            parser.parse_number_radix(),
+            Ok(Value::BinaryInt(v)) if &*v == b"101"
         );
 
         let mut parser = Parser::from_str("0X123");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0O123");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0B101");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0xabcdefg");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0o12345678");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0b012");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("0q123abc");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123");
-        assert!(parser.parse_number_radix().is_err());
+        assert_matches!(
+            parser.parse_number_radix(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
     }
 
     #[test]
     fn parser_parse_number_special() {
         let mut parser = Parser::from_str("inf");
-        assert_eq!(
-            parser.parse_number_special().unwrap(),
-            SpecialFloat::Infinity
-        );
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Infinity));
 
         let mut parser = Parser::from_str("+inf");
-        assert_eq!(
-            parser.parse_number_special().unwrap(),
-            SpecialFloat::Infinity
-        );
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Infinity));
 
         let mut parser = Parser::from_str("-inf");
-        assert_eq!(
-            parser.parse_number_special().unwrap(),
-            SpecialFloat::NegInfinity
-        );
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::NegInfinity));
 
         let mut parser = Parser::from_str("nan");
-        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::Nan);
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Nan));
 
         let mut parser = Parser::from_str("+nan");
-        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::Nan);
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Nan));
 
         let mut parser = Parser::from_str("-nan");
-        assert_eq!(parser.parse_number_special().unwrap(), SpecialFloat::NegNan);
+        assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::NegNan));
 
         let mut parser = Parser::from_str("+1.0e+3");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("NaN");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("INF");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("abc");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("+abc");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("-abc");
-        assert!(parser.parse_number_special().is_err());
+        assert_matches!(
+            parser.parse_number_special(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_number_decimal_int() {
         let mut parser = Parser::from_str("123");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Integer(b"123".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Integer(v)) if &*v == b"123"
         );
 
         let mut parser = Parser::from_str("+123");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Integer(b"+123".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Integer(v)) if &*v == b"+123"
         );
 
         let mut parser = Parser::from_str("-123");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Integer(b"-123".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Integer(v)) if &*v == b"-123"
         );
 
         let mut parser = Parser::from_str("123_456_789");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Integer(b"123456789".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Integer(v)) if &*v == b"123456789"
         );
 
         let mut parser = Parser::from_str("_123_456");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123_456_");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123__456");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("e123");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("abc");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("+abc");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("-abc");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn parser_parse_number_decimal_float() {
         let mut parser = Parser::from_str("123.456");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123.456".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"123.456"
         );
 
         let mut parser = Parser::from_str("+123.456");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"+123.456".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"+123.456"
         );
 
         let mut parser = Parser::from_str("-123.456");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"-123.456".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"-123.456"
         );
 
         let mut parser = Parser::from_str("123.456e+3");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123.456e+3".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"123.456e+3"
         );
 
         let mut parser = Parser::from_str("123.456e-3");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123.456e-3".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"123.456e-3"
         );
 
         let mut parser = Parser::from_str("123.456e3");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123.456e3".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"123.456e3"
         );
 
         let mut parser = Parser::from_str("123_456.123_456");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"123456.123456".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"123456.123456"
         );
 
         let mut parser = Parser::from_str("1.23e456_789");
-        assert_eq!(
-            parser.parse_number_decimal().unwrap(),
-            Value::Float(b"1.23e456789".into())
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Ok(Value::Float(v)) if &*v == b"1.23e456789"
         );
 
         let mut parser = Parser::from_str("_123.456");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123_.456");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123._456");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123.456_");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123__456.789");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123.456__789");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("1.23e_456_789");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("1.23e456_789_");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("1.23e456__789");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str(".123");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("123.");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
 
         let mut parser = Parser::from_str("1.23e");
-        assert!(parser.parse_number_decimal().is_err());
+        assert_matches!(
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
     }
 
     #[test]
     fn parser_parse_array() {
         let mut parser = Parser::from_str("]");
-        assert_eq!(parser.parse_array().unwrap(), vec![]);
+        assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
         let mut parser = Parser::from_str("  ]");
-        assert_eq!(parser.parse_array().unwrap(), vec![]);
+        assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
         let mut parser = Parser::from_str(indoc! {r"
                 # comment
             ]
         "});
-        assert_eq!(parser.parse_array().unwrap(), vec![]);
+        assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
         let mut parser = Parser::from_str("123]");
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![Value::Integer(b"123".into())]
+        assert_matches!(
+            parser.parse_array(),
+            Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
         let mut parser = Parser::from_str("123,]");
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![Value::Integer(b"123".into())]
+        assert_matches!(
+            parser.parse_array(),
+            Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
         let mut parser = Parser::from_str(indoc! {r"
                 123,
             ]
         "});
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![Value::Integer(b"123".into())]
+        assert_matches!(
+            parser.parse_array(),
+            Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
         let mut parser = Parser::from_str(r"123, 456, 789]");
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![
+        assert_matches!(
+            parser.parse_array(),
+            Ok(a) if a == [
                 Value::Integer(b"123".into()),
                 Value::Integer(b"456".into()),
                 Value::Integer(b"789".into())
@@ -2580,9 +2806,9 @@ mod tests {
         );
 
         let mut parser = Parser::from_str(r"123, 456, 789,]");
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![
+        assert_matches!(
+            parser.parse_array(),
+            Ok(a) if a == [
                 Value::Integer(b"123".into()),
                 Value::Integer(b"456".into()),
                 Value::Integer(b"789".into())
@@ -2595,9 +2821,9 @@ mod tests {
                 789,
             ]
         "});
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![
+        assert_matches!(
+            parser.parse_array(),
+            Ok(a) if a == [
                 Value::Integer(b"123".into()),
                 Value::Integer(b"456".into()),
                 Value::Integer(b"789".into())
@@ -2610,9 +2836,9 @@ mod tests {
                 789 # comment
             ]
         "});
-        assert_eq!(
-            parser.parse_array().unwrap(),
-            vec![
+        assert_matches!(
+            parser.parse_array(),
+            Ok(a) if a == [
                 Value::Integer(b"123".into()),
                 Value::Integer(b"456".into()),
                 Value::Integer(b"789".into())
@@ -2620,27 +2846,30 @@ mod tests {
         );
 
         let mut parser = Parser::from_str("123 abc]");
-        assert!(parser.parse_array().is_err());
+        assert_matches!(
+            parser.parse_array(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_inline_table() {
         let mut parser = Parser::from_str("}");
-        assert_eq!(parser.parse_inline_table().unwrap(), Table::new());
+        assert_matches!(parser.parse_inline_table(), Ok(t) if t == Table::new());
 
         let mut parser = Parser::from_str("  }");
-        assert_eq!(parser.parse_inline_table().unwrap(), Table::new());
+        assert_matches!(parser.parse_inline_table(), Ok(t) if t == Table::new());
 
         let mut parser = Parser::from_str("abc = 123 }");
-        assert_eq!(
-            parser.parse_inline_table().unwrap(),
-            hashmap! { "abc".into() => Value::Integer(b"123".into()) }
+        assert_matches!(
+            parser.parse_inline_table(),
+            Ok(t) if t == hashmap! { "abc".into() => Value::Integer(b"123".into()) }
         );
 
         let mut parser = Parser::from_str(r"abc = 123, def = 456, ghi = 789 }");
-        assert_eq!(
-            parser.parse_inline_table().unwrap(),
-            hashmap! {
+        assert_matches!(
+            parser.parse_inline_table(),
+            Ok(t) if t == hashmap! {
                 "abc".into() => Value::Integer(b"123".into()),
                 "def".into() => Value::Integer(b"456".into()),
                 "ghi".into() => Value::Integer(b"789".into()),
@@ -2648,9 +2877,9 @@ mod tests {
         );
 
         let mut parser = Parser::from_str(r"abc = { def = 123, ghi = 456 } }");
-        assert_eq!(
-            parser.parse_inline_table().unwrap(),
-            hashmap! {
+        assert_matches!(
+            parser.parse_inline_table(),
+            Ok(t) if t == hashmap! {
                 "abc".into() => Value::InlineTable(hashmap! {
                     "def".into() => Value::Integer(b"123".into()),
                     "ghi".into() => Value::Integer(b"456".into()),
@@ -2659,9 +2888,9 @@ mod tests {
         );
 
         let mut parser = Parser::from_str(r"abc.def = 123, abc.ghi = 456 }");
-        assert_eq!(
-            parser.parse_inline_table().unwrap(),
-            hashmap! {
+        assert_matches!(
+            parser.parse_inline_table(),
+            Ok(t) if t == hashmap! {
                 "abc".into() => Value::DottedKeyTable(hashmap! {
                     "def".into() => Value::Integer(b"123".into()),
                     "ghi".into() => Value::Integer(b"456".into()),
@@ -2670,86 +2899,113 @@ mod tests {
         );
 
         let mut parser = Parser::from_str("abc 123 }");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("abc = 123, }");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("123 }");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str(indoc! {r"
                 abc = 123
             }
         "});
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
 
         let mut parser = Parser::from_str("abc = 123, abc = 456 }");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::DuplicateKey(..)))
+        );
 
         let mut parser = Parser::from_str("abc = { def = 123 }, abc.ghi = 456 }");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::InvalidKeyPath(..)))
+        );
 
         let mut parser = Parser::from_str("abc = 123, def = 456 ");
-        assert!(parser.parse_inline_table().is_err());
+        assert_matches!(
+            parser.parse_inline_table(),
+            Err(Error(ErrorKind::UnexpectedEof))
+        );
     }
 
     #[test]
     fn parser_skip_whitespace() {
         let mut parser = Parser::from_str("   ");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), None);
+        assert_matches!(parser.reader.peek(), Ok(None));
 
         let mut parser = Parser::from_str("   \t");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), None);
+        assert_matches!(parser.reader.peek(), Ok(None));
 
         let mut parser = Parser::from_str("   abc");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
 
         let mut parser = Parser::from_str("   \t   abc");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
 
         let mut parser = Parser::from_str("   \t   # comment");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'#'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'#')));
 
         let mut parser = Parser::from_str("abc");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
 
         let mut parser = Parser::from_str("");
         assert!(parser.skip_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), None);
+        assert_matches!(parser.reader.peek(), Ok(None));
     }
 
     #[test]
     #[allow(clippy::bool_assert_comparison)]
     fn parser_skip_comment() {
         let mut parser = Parser::from_str("# comment");
-        assert_eq!(parser.skip_comment().unwrap(), true);
-        assert_eq!(parser.reader.peek().unwrap(), None);
+        parser.skip_comment().unwrap();
+        assert_matches!(parser.reader.peek(), Ok(None));
 
         let mut parser = Parser::from_str("# comment\n");
-        assert_eq!(parser.skip_comment().unwrap(), true);
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'\n'));
+        parser.skip_comment().unwrap();
+        assert_matches!(parser.reader.peek(), Ok(Some(b'\n')));
 
         let mut parser = Parser::from_str("# comment\r\n");
-        assert_eq!(parser.skip_comment().unwrap(), true);
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'\n'));
+        parser.skip_comment().unwrap();
+        assert_matches!(parser.reader.peek(), Ok(Some(b'\n')));
 
         let mut parser = Parser::from_str("abc");
-        assert_eq!(parser.skip_comment().unwrap(), false);
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        parser.skip_comment().unwrap();
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
 
         if cfg!(not(feature = "fast")) {
             let mut parser = Parser::from_slice(b"# comment\xff");
-            assert!(parser.skip_comment().is_err());
+            assert_matches!(
+                parser.skip_comment(),
+                Err(Error(ErrorKind::InvalidEncoding))
+            );
 
             let mut parser = Parser::from_str("# comment\0");
-            assert!(parser.skip_comment().is_err());
+            assert_matches!(
+                parser.skip_comment(),
+                Err(Error(ErrorKind::IllegalChar(..)))
+            );
         }
     }
 
@@ -2762,11 +3018,11 @@ mod tests {
             abc
         "});
         assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
 
         let mut parser = Parser::from_str("# comment\r\n\tabc");
         assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_eq!(parser.reader.peek().unwrap(), Some(b'a'));
+        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
     }
 
     #[test]

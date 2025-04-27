@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::result::Result as StdResult;
 
 use serde::{ser, Serialize as _};
 
@@ -54,6 +55,156 @@ impl ValueKind {
                 array_serializer.end()
             }
         }
+    }
+}
+
+// Similar to serde::ser::Impossible, but this implements Debug so it can be unwrapped.
+#[derive(Debug)]
+pub struct Impossible<O, E> {
+    never: Never,
+    _phantom: PhantomData<(O, E)>,
+}
+
+#[derive(Debug)]
+enum Never {}
+
+impl<O, E> ser::SerializeSeq for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_element<T>(&mut self, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeTuple for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_element<T>(&mut self, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeTupleStruct for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_field<T>(&mut self, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeTupleVariant for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_field<T>(&mut self, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeMap for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_key<T>(&mut self, _key: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn serialize_value<T>(&mut self, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeStruct for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
+    }
+}
+
+impl<O, E> ser::SerializeStructVariant for Impossible<O, E>
+where
+    E: ser::Error,
+{
+    type Ok = O;
+    type Error = E;
+
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> StdResult<(), Self::Error>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        match self.never {}
+    }
+
+    fn end(self) -> StdResult<Self::Ok, Self::Error> {
+        match self.never {}
     }
 }
 
@@ -167,31 +318,31 @@ macro_rules! __serialize_unimplemented_helper {
         $crate::__serialize_unimplemented_method!(serialize_newtype_variant<T>(name: &'static str, u32, &str, &T) -> Ok);
     };
     (seq) => {
-        type SerializeSeq = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeSeq = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_seq(Option<usize>) -> SerializeSeq, "slice");
     };
     (tuple) => {
-        type SerializeTuple = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeTuple = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_tuple(usize) -> SerializeTuple, "tuple");
     };
     (tuple_struct) => {
-        type SerializeTupleStruct = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeTupleStruct = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_tuple_struct(name: &'static str, usize) -> SerializeTupleStruct);
     };
     (tuple_variant) => {
-        type SerializeTupleVariant = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeTupleVariant = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_tuple_variant(name: &'static str, u32, &str, usize) -> SerializeTupleVariant);
     };
     (map) => {
-        type SerializeMap = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeMap = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_map(Option<usize>) -> SerializeMap, "map");
     };
     (struct) => {
-        type SerializeStruct = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeStruct = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_struct(name: &'static str, usize) -> SerializeStruct);
     };
     (struct_variant) => {
-        type SerializeStructVariant = ::serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeStructVariant = $crate::ser::Impossible<Self::Ok, Self::Error>;
         $crate::__serialize_unimplemented_method!(serialize_struct_variant(name: &'static str, u32, &str, usize) -> SerializeStructVariant);
     };
 }
@@ -1372,13 +1523,13 @@ mod tests {
     #[test]
     fn value_kind_into_inline_value() {
         let value = ValueKind::InlineValue("foo".to_owned());
-        assert_eq!(value.into_inline_value().unwrap(), "foo");
+        assert_matches!(value.into_inline_value(), Ok(s) if s == "foo");
 
         let value = ValueKind::Table(TableKind::Table(vec![(
             "foo".to_owned(),
             ValueKind::InlineValue(r#""bar""#.to_owned()),
         )]));
-        assert_eq!(value.into_inline_value().unwrap(), r#"{ foo = "bar" }"#);
+        assert_matches!(value.into_inline_value(), Ok(s) if s == r#"{ foo = "bar" }"#);
 
         let value = ValueKind::Table(TableKind::Array(vec![
             vec![(
@@ -1390,9 +1541,9 @@ mod tests {
                 ValueKind::InlineValue(r#""baz""#.to_owned()),
             )],
         ]));
-        assert_eq!(
-            value.into_inline_value().unwrap(),
-            r#"[{ foo = "bar" }, { foo = "baz" }]"#
+        assert_matches!(
+            value.into_inline_value(),
+            Ok(s) if s == r#"[{ foo = "bar" }, { foo = "baz" }]"#
         );
     }
 
@@ -1553,21 +1704,21 @@ mod tests {
             ValueKindSerializer.serialize_bytes(b"foo"),
             Ok(ValueKind::InlineValue(_))
         );
-        assert!(
-            ValueKindSerializer.serialize_none().is_err(),
-            "TOML doesn't have a none/null type"
+        assert_matches!(
+            ValueKindSerializer.serialize_none(),
+            Err(Error(ErrorKind::UnsupportedValue(..))) // TOML doesn't have a none/null type
         );
         assert_matches!(
             ValueKindSerializer.serialize_some(&1),
             Ok(ValueKind::InlineValue(_))
         );
-        assert!(
-            ValueKindSerializer.serialize_unit().is_err(),
-            "TOML doesn't have a unit type"
+        assert_matches!(
+            ValueKindSerializer.serialize_unit(),
+            Err(Error(ErrorKind::UnsupportedType(..))) // TOML doesn't have a unit type
         );
-        assert!(
-            ValueKindSerializer.serialize_unit_struct("foo").is_err(),
-            "TOML doesn't have a unit type"
+        assert_matches!(
+            ValueKindSerializer.serialize_unit_struct("foo"),
+            Err(Error(ErrorKind::UnsupportedType(..))) // TOML doesn't have a unit type
         );
         assert_matches!(
             ValueKindSerializer.serialize_unit_variant("foo", 1, "bar"),
@@ -1817,7 +1968,10 @@ mod tests {
         // Wrong field name
         let mut kind_ser =
             TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert!(kind_ser.serialize_field("foo", "bar").is_err());
+        assert_matches!(
+            kind_ser.serialize_field("foo", "bar"),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         // More than one field
         let mut kind_ser =
@@ -1825,14 +1979,15 @@ mod tests {
         kind_ser
             .serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
             .unwrap();
-        assert!(kind_ser
-            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar")
-            .is_err());
+        assert_matches!(
+            kind_ser.serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar"),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         // No field
         let kind_ser =
             TableOrDatetimeKindSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert!(kind_ser.end().is_err());
+        assert_matches!(kind_ser.end(), Err(Error(ErrorKind::UnsupportedValue(..))));
     }
 
     #[test]
@@ -1999,7 +2154,10 @@ mod tests {
             OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
-        assert!(ser.serialize_field("foo", "bar").is_err());
+        assert_matches!(
+            ser.serialize_field("foo", "bar"),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         // More than one field
         let mut ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
@@ -2009,9 +2167,10 @@ mod tests {
         .unwrap();
         ser.serialize_field(OffsetDatetime::WRAPPER_FIELD, "foo")
             .unwrap();
-        assert!(ser
-            .serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar")
-            .is_err());
+        assert_matches!(
+            ser.serialize_field(OffsetDatetime::WRAPPER_FIELD, "bar"),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
 
         // No field
         let ser = InlineTableOrDatetimeSerializer::<ValueSerializer>::start(
@@ -2019,7 +2178,7 @@ mod tests {
             OffsetDatetime::WRAPPER_TYPE,
         )
         .unwrap();
-        assert!(ser.end().is_err());
+        assert_matches!(ser.end(), Err(Error(ErrorKind::UnsupportedValue(..))));
     }
 
     #[test]
@@ -2038,22 +2197,34 @@ mod tests {
     fn key_serializer() {
         use serde::ser::Serializer as _;
 
-        assert_eq!(KeySerializer.serialize_char('b').unwrap(), "b");
-        assert_eq!(KeySerializer.serialize_str("foo").unwrap(), "foo");
-        assert_eq!(KeySerializer.serialize_str("😎").unwrap(), r#""😎""#);
+        assert_matches!(KeySerializer.serialize_char('b'), Ok(s) if s == "b");
+        assert_matches!(KeySerializer.serialize_str("foo"), Ok(s) if s == "foo");
+        assert_matches!(KeySerializer.serialize_str("😎"), Ok(s) if s == r#""😎""#);
 
-        assert!(KeySerializer.serialize_i64(1).is_err());
-        assert!(KeySerializer.serialize_struct("foo", 1).is_err());
+        assert_matches!(
+            KeySerializer.serialize_i64(1),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
+        assert_matches!(
+            KeySerializer.serialize_struct("foo", 1),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
     }
 
     #[test]
     fn raw_string_serializer() {
         use serde::ser::Serializer as _;
 
-        assert_eq!(RawSerializer.serialize_str("foo").unwrap(), "foo");
-        assert_eq!(RawSerializer.serialize_str("😎").unwrap(), "😎");
+        assert_matches!(RawSerializer.serialize_str("foo"), Ok(s) if s == "foo");
+        assert_matches!(RawSerializer.serialize_str("😎"), Ok(s) if s == "😎");
 
-        assert!(RawSerializer.serialize_i64(1).is_err());
-        assert!(RawSerializer.serialize_struct("foo", 1).is_err());
+        assert_matches!(
+            RawSerializer.serialize_i64(1),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
+        assert_matches!(
+            RawSerializer.serialize_struct("foo", 1),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
     }
 }

@@ -839,10 +839,11 @@ impl PartialEq<Value> for Datetime {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use std::num::TryFromIntError;
     use std::ops::{Index as _, IndexMut as _};
 
+    use assert_matches::assert_matches;
     use indoc::indoc;
-    use isclose::assert_is_close;
     use maplit::{btreemap, hashmap};
 
     use super::*;
@@ -949,11 +950,8 @@ mod tests {
             "b".to_string() => Value::String("Hello!".to_string()),
         });
 
-        assert_eq!(value.get("a").unwrap(), &Value::Integer(1));
-        assert_eq!(
-            value.get("b").unwrap(),
-            &Value::String("Hello!".to_string())
-        );
+        assert_eq!(value.get("a"), Some(&Value::Integer(1)));
+        assert_eq!(value.get("b"), Some(&Value::String("Hello!".to_string())));
         assert!(value.get("c").is_none());
     }
 
@@ -964,10 +962,10 @@ mod tests {
             "b".to_string() => Value::String("Hello!".to_string()),
         });
 
-        assert_eq!(value.get_mut("a").unwrap(), &Value::Integer(1));
+        assert_eq!(value.get_mut("a"), Some(&mut Value::Integer(1)));
         assert_eq!(
-            value.get_mut("b").unwrap(),
-            &mut Value::String("Hello!".to_string())
+            value.get_mut("b"),
+            Some(&mut Value::String("Hello!".to_string()))
         );
         assert!(value.get_mut("c").is_none());
     }
@@ -1078,7 +1076,7 @@ mod tests {
     #[allow(clippy::cognitive_complexity)]
     fn value_as() {
         let mut value = Value::String("Hello!".to_string());
-        assert_eq!(value.as_str().unwrap(), "Hello!");
+        assert_matches!(value.as_str(), Some("Hello!"));
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
@@ -1090,7 +1088,7 @@ mod tests {
 
         let mut value = Value::Integer(42);
         assert!(value.as_str().is_none());
-        assert_eq!(value.as_integer().unwrap(), 42);
+        assert_matches!(value.as_integer(), Some(42));
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
         assert!(value.as_datetime().is_none());
@@ -1102,7 +1100,7 @@ mod tests {
         let mut value = Value::Float(42.0);
         assert!(value.as_str().is_none());
         assert!(value.as_integer().is_none());
-        assert_is_close!(value.as_float().unwrap(), 42.0);
+        assert_matches!(value.as_float(), Some(42.0));
         assert!(value.as_bool().is_none());
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
@@ -1114,7 +1112,7 @@ mod tests {
         assert!(value.as_str().is_none());
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
-        assert!(value.as_bool().unwrap());
+        assert_matches!(value.as_bool(), Some(true));
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
@@ -1140,7 +1138,7 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
-        assert_eq!(value.as_datetime().unwrap(), &datetime);
+        assert_matches!(value.as_datetime(), Some(d) if d == &datetime);
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
         assert!(value.as_table().is_none());
@@ -1153,8 +1151,8 @@ mod tests {
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
         assert!(value.as_datetime().is_none());
-        assert_eq!(value.as_array().unwrap(), &array);
-        assert_eq!(value.as_array_mut().unwrap(), &array);
+        assert_matches!(value.as_array(), Some(a) if a == &array);
+        assert_matches!(value.as_array_mut(), Some(a) if a == &array);
         assert!(value.as_table().is_none());
         assert!(value.as_table_mut().is_none());
 
@@ -1171,8 +1169,8 @@ mod tests {
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
-        assert_eq!(value.as_table().unwrap(), &table);
-        assert_eq!(value.as_table_mut().unwrap(), &table);
+        assert_matches!(value.as_table(), Some(t) if t == &table);
+        assert_matches!(value.as_table_mut(), Some(t) if t == &table);
     }
 
     #[test]
@@ -1388,14 +1386,14 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        assert_eq!(0.get(&value).unwrap(), &Value::Integer(1));
-        assert_eq!(1.get(&value).unwrap(), &Value::Integer(2));
-        assert_eq!(2.get(&value).unwrap(), &Value::Integer(3));
+        assert_eq!(0.get(&value), Some(&Value::Integer(1)));
+        assert_eq!(1.get(&value), Some(&Value::Integer(2)));
+        assert_eq!(2.get(&value), Some(&Value::Integer(3)));
         assert!(3.get(&value).is_none());
 
-        assert_eq!(0.get_mut(&mut value).unwrap(), &Value::Integer(1));
-        assert_eq!(1.get_mut(&mut value).unwrap(), &Value::Integer(2));
-        assert_eq!(2.get_mut(&mut value).unwrap(), &Value::Integer(3));
+        assert_eq!(0.get_mut(&mut value), Some(&mut Value::Integer(1)));
+        assert_eq!(1.get_mut(&mut value), Some(&mut Value::Integer(2)));
+        assert_eq!(2.get_mut(&mut value), Some(&mut Value::Integer(3)));
         assert!(3.get_mut(&mut value).is_none());
 
         assert_eq!(0.index(&value), &Value::Integer(1));
@@ -1428,7 +1426,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        3.index(&value);
+        _ = 3.index(&value);
     }
 
     #[test]
@@ -1439,7 +1437,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        3.index_mut(&mut value);
+        _ = 3.index_mut(&mut value);
     }
 
     #[test]
@@ -1450,7 +1448,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        1.index(&value);
+        _ = 1.index(&value);
     }
 
     #[test]
@@ -1461,7 +1459,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        1.index_mut(&mut value);
+        _ = 1.index_mut(&mut value);
     }
 
     #[test]
@@ -1471,22 +1469,22 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        assert_eq!(Index::get("one", &value).unwrap(), &Value::Integer(1));
-        assert_eq!(Index::get("two", &value).unwrap(), &Value::Integer(2));
-        assert_eq!(Index::get("three", &value).unwrap(), &Value::Integer(3));
+        assert_eq!(Index::get("one", &value), Some(&Value::Integer(1)));
+        assert_eq!(Index::get("two", &value), Some(&Value::Integer(2)));
+        assert_eq!(Index::get("three", &value), Some(&Value::Integer(3)));
         assert!(Index::get("four", &value).is_none());
 
         assert_eq!(
-            Index::get_mut("one", &mut value).unwrap(),
-            &Value::Integer(1)
+            Index::get_mut("one", &mut value),
+            Some(&mut Value::Integer(1))
         );
         assert_eq!(
-            Index::get_mut("two", &mut value).unwrap(),
-            &Value::Integer(2)
+            Index::get_mut("two", &mut value),
+            Some(&mut Value::Integer(2))
         );
         assert_eq!(
-            Index::get_mut("three", &mut value).unwrap(),
-            &Value::Integer(3)
+            Index::get_mut("three", &mut value),
+            Some(&mut Value::Integer(3))
         );
         assert!(Index::get_mut("four", &mut value).is_none());
 
@@ -1520,7 +1518,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index("four", &value);
+        _ = Index::index("four", &value);
     }
 
     #[test]
@@ -1531,7 +1529,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index_mut("four", &mut value);
+        _ = Index::index_mut("four", &mut value);
     }
 
     #[test]
@@ -1542,7 +1540,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index("two", &value);
+        _ = Index::index("two", &value);
     }
 
     #[test]
@@ -1553,7 +1551,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index_mut("two", &mut value);
+        _ = Index::index_mut("two", &mut value);
     }
 
     #[test]
@@ -1564,30 +1562,30 @@ mod tests {
             "three".to_string() => Value::Integer(3),
         });
         assert_eq!(
-            Index::get(&"one".to_string(), &value).unwrap(),
-            &Value::Integer(1)
+            Index::get(&"one".to_string(), &value),
+            Some(&Value::Integer(1))
         );
         assert_eq!(
-            Index::get(&"two".to_string(), &value).unwrap(),
-            &Value::Integer(2)
+            Index::get(&"two".to_string(), &value),
+            Some(&Value::Integer(2))
         );
         assert_eq!(
-            Index::get(&"three".to_string(), &value).unwrap(),
-            &Value::Integer(3)
+            Index::get(&"three".to_string(), &value),
+            Some(&Value::Integer(3))
         );
         assert!(Index::get(&"four".to_string(), &value).is_none());
 
         assert_eq!(
-            Index::get_mut(&"one".to_string(), &mut value).unwrap(),
-            &Value::Integer(1)
+            Index::get_mut(&"one".to_string(), &mut value),
+            Some(&mut Value::Integer(1))
         );
         assert_eq!(
-            Index::get_mut(&"two".to_string(), &mut value).unwrap(),
-            &Value::Integer(2)
+            Index::get_mut(&"two".to_string(), &mut value),
+            Some(&mut Value::Integer(2))
         );
         assert_eq!(
-            Index::get_mut(&"three".to_string(), &mut value).unwrap(),
-            &Value::Integer(3)
+            Index::get_mut(&"three".to_string(), &mut value),
+            Some(&mut Value::Integer(3))
         );
         assert!(Index::get_mut(&"four".to_string(), &mut value).is_none());
 
@@ -1633,7 +1631,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index(&"four".to_string(), &value);
+        _ = Index::index(&"four".to_string(), &value);
     }
 
     #[test]
@@ -1644,7 +1642,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index_mut(&"four".to_string(), &mut value);
+        _ = Index::index_mut(&"four".to_string(), &mut value);
     }
 
     #[test]
@@ -1655,7 +1653,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index(&"two".to_string(), &value);
+        _ = Index::index(&"two".to_string(), &value);
     }
 
     #[test]
@@ -1666,7 +1664,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index_mut(&"two".to_string(), &mut value);
+        _ = Index::index_mut(&"two".to_string(), &mut value);
     }
 
     #[test]
@@ -1676,22 +1674,22 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        assert_eq!(Index::get(&"one", &value).unwrap(), &Value::Integer(1));
-        assert_eq!(Index::get(&"two", &value).unwrap(), &Value::Integer(2));
-        assert_eq!(Index::get(&"three", &value).unwrap(), &Value::Integer(3));
+        assert_eq!(Index::get(&"one", &value), Some(&Value::Integer(1)));
+        assert_eq!(Index::get(&"two", &value), Some(&Value::Integer(2)));
+        assert_eq!(Index::get(&"three", &value), Some(&Value::Integer(3)));
         assert!(Index::get(&"four", &value).is_none());
 
         assert_eq!(
-            Index::get_mut(&"one", &mut value).unwrap(),
-            &Value::Integer(1)
+            Index::get_mut(&"one", &mut value),
+            Some(&mut Value::Integer(1))
         );
         assert_eq!(
-            Index::get_mut(&"two", &mut value).unwrap(),
-            &Value::Integer(2)
+            Index::get_mut(&"two", &mut value),
+            Some(&mut Value::Integer(2))
         );
         assert_eq!(
-            Index::get_mut(&"three", &mut value).unwrap(),
-            &Value::Integer(3)
+            Index::get_mut(&"three", &mut value),
+            Some(&mut Value::Integer(3))
         );
         assert!(Index::get_mut(&"four", &mut value).is_none());
 
@@ -1725,7 +1723,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index(&"four", &value);
+        _ = Index::index(&"four", &value);
     }
 
     #[test]
@@ -1736,7 +1734,7 @@ mod tests {
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
         });
-        Index::index_mut(&"four", &mut value);
+        _ = Index::index_mut(&"four", &mut value);
     }
 
     #[test]
@@ -1747,7 +1745,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index(&"two", &value);
+        _ = Index::index(&"two", &value);
     }
 
     #[test]
@@ -1758,7 +1756,7 @@ mod tests {
             Value::Integer(2),
             Value::Integer(3),
         ]);
-        Index::index_mut(&"two", &mut value);
+        _ = Index::index_mut(&"two", &mut value);
     }
 
     #[test]
@@ -1893,22 +1891,31 @@ mod tests {
     #[test]
     fn value_try_from_trait() {
         assert_eq!(
-            <Value as TryFrom<i128>>::try_from(42_i128).unwrap(),
-            Value::Integer(42)
+            <Value as TryFrom<i128>>::try_from(42_i128),
+            Ok(Value::Integer(42))
         );
-        assert!(<Value as TryFrom<i128>>::try_from(i128::MIN).is_err());
+        assert_matches!(
+            <Value as TryFrom<i128>>::try_from(i128::MIN),
+            Err(TryFromIntError { .. })
+        );
 
         assert_eq!(
-            <Value as TryFrom<u64>>::try_from(42_u64).unwrap(),
-            Value::Integer(42)
+            <Value as TryFrom<u64>>::try_from(42_u64),
+            Ok(Value::Integer(42))
         );
-        assert!(<Value as TryFrom<u64>>::try_from(u64::MAX).is_err());
+        assert_matches!(
+            <Value as TryFrom<u64>>::try_from(u64::MAX),
+            Err(TryFromIntError { .. })
+        );
 
         assert_eq!(
-            <Value as TryFrom<u128>>::try_from(42_u128).unwrap(),
-            Value::Integer(42)
+            <Value as TryFrom<u128>>::try_from(42_u128),
+            Ok(Value::Integer(42))
         );
-        assert!(<Value as TryFrom<u128>>::try_from(u128::MAX).is_err());
+        assert_matches!(
+            <Value as TryFrom<u128>>::try_from(u128::MAX),
+            Err(TryFromIntError { .. })
+        );
     }
 
     #[test]

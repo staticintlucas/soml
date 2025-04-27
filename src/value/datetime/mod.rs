@@ -1021,6 +1021,8 @@ impl str::FromStr for Offset {
 mod tests {
     use std::str::FromStr as _;
 
+    use assert_matches::assert_matches;
+
     use super::*;
 
     const DATE: LocalDate = LocalDate {
@@ -1079,7 +1081,10 @@ mod tests {
         let datetime = AnyDatetime::LocalTime(TIME);
         assert_eq!(result, datetime);
 
-        AnyDatetime::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            AnyDatetime::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1115,7 +1120,10 @@ mod tests {
         let datetime = AnyDatetime::LocalTime(TIME);
         assert_eq!(result, datetime);
 
-        AnyDatetime::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            AnyDatetime::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1199,7 +1207,10 @@ mod tests {
         };
         assert_eq!(result, datetime);
 
-        Datetime::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            Datetime::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1308,7 +1319,10 @@ mod tests {
         };
         assert_eq!(result, datetime);
 
-        Datetime::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            Datetime::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1425,9 +1439,9 @@ mod tests {
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        assert_eq!(
-            AnyDatetime::try_from(datetime).unwrap(),
-            AnyDatetime::OffsetDatetime(OFFSET_DATETIME)
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Ok(AnyDatetime::OffsetDatetime(OFFSET_DATETIME))
         );
 
         let datetime = Datetime {
@@ -1435,9 +1449,9 @@ mod tests {
             time: Some(TIME),
             offset: None,
         };
-        assert_eq!(
-            AnyDatetime::try_from(datetime).unwrap(),
-            AnyDatetime::LocalDatetime(LOCAL_DATETIME)
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Ok(AnyDatetime::LocalDatetime(LOCAL_DATETIME))
         );
 
         let datetime = Datetime {
@@ -1445,9 +1459,9 @@ mod tests {
             time: None,
             offset: None,
         };
-        assert_eq!(
-            AnyDatetime::try_from(datetime).unwrap(),
-            AnyDatetime::LocalDate(DATE)
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Ok(AnyDatetime::LocalDate(DATE))
         );
 
         let datetime = Datetime {
@@ -1455,9 +1469,9 @@ mod tests {
             time: Some(TIME),
             offset: None,
         };
-        assert_eq!(
-            AnyDatetime::try_from(datetime).unwrap(),
-            AnyDatetime::LocalTime(TIME)
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Ok(AnyDatetime::LocalTime(TIME))
         );
 
         // Invalid permutations
@@ -1466,28 +1480,40 @@ mod tests {
             time: None,
             offset: Some(OFFSET),
         };
-        AnyDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: Some(OFFSET),
         };
-        AnyDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        AnyDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        AnyDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            AnyDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1501,7 +1527,10 @@ mod tests {
         let result = OffsetDatetime::from_slice(b"2023-01-02 03:04:05.006+07:08").unwrap();
         assert_eq!(result, OFFSET_DATETIME);
 
-        OffsetDatetime::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            OffsetDatetime::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1509,7 +1538,10 @@ mod tests {
         let result = OffsetDatetime::from_str("2023-01-02T03:04:05.006+07:08").unwrap();
         assert_eq!(result, OFFSET_DATETIME);
 
-        OffsetDatetime::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            OffsetDatetime::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1527,16 +1559,25 @@ mod tests {
     #[test]
     fn offset_datetime_try_from_any_datetime() {
         let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
-        assert_eq!(OffsetDatetime::try_from(datetime).unwrap(), OFFSET_DATETIME);
+        assert_matches!(OffsetDatetime::try_from(datetime), Ok(OFFSET_DATETIME));
 
         let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalDate(DATE);
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalTime(TIME);
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1557,56 +1598,77 @@ mod tests {
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        assert_eq!(OffsetDatetime::try_from(datetime).unwrap(), OFFSET_DATETIME);
+        assert_matches!(OffsetDatetime::try_from(datetime), Ok(OFFSET_DATETIME));
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: None,
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: None,
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: None,
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: Some(OFFSET),
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: Some(OFFSET),
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        OffsetDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            OffsetDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1620,7 +1682,10 @@ mod tests {
         let result = LocalDatetime::from_slice(b"2023-01-02 03:04:05.006").unwrap();
         assert_eq!(result, LOCAL_DATETIME);
 
-        LocalDatetime::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            LocalDatetime::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1628,7 +1693,10 @@ mod tests {
         let result = LocalDatetime::from_str("2023-01-02T03:04:05.006").unwrap();
         assert_eq!(result, LOCAL_DATETIME);
 
-        LocalDatetime::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            LocalDatetime::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1646,16 +1714,25 @@ mod tests {
     #[test]
     fn local_datetime_try_from_any_datetime() {
         let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
-        assert_eq!(LocalDatetime::try_from(datetime).unwrap(), LOCAL_DATETIME);
+        assert_matches!(LocalDatetime::try_from(datetime), Ok(LOCAL_DATETIME));
 
         let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalDate(DATE);
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalTime(TIME);
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1676,56 +1753,77 @@ mod tests {
             time: Some(TIME),
             offset: None,
         };
-        assert_eq!(LocalDatetime::try_from(datetime).unwrap(), LOCAL_DATETIME);
+        assert_matches!(LocalDatetime::try_from(datetime), Ok(LOCAL_DATETIME));
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: None,
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: None,
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: Some(OFFSET),
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: Some(OFFSET),
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        LocalDatetime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDatetime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1734,30 +1832,69 @@ mod tests {
         assert_eq!(result, DATE);
 
         // Incorrect lengths
-        LocalDate::from_slice(b"123-01-02").unwrap_err();
-        LocalDate::from_slice(b"2023-123-02").unwrap_err();
-        LocalDate::from_slice(b"2023-01-123").unwrap_err();
+        assert_matches!(
+            LocalDate::from_slice(b"123-01-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalDate::from_slice(b"2023-123-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalDate::from_slice(b"2023-01-123"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Invalid numbers
-        LocalDate::from_slice(b"abcd-01-02").unwrap_err();
-        LocalDate::from_slice(b"2023-ef-02").unwrap_err();
-        LocalDate::from_slice(b"2023-01-gh").unwrap_err();
+        assert_matches!(
+            LocalDate::from_slice(b"abcd-01-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalDate::from_slice(b"2023-ef-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalDate::from_slice(b"2023-01-gh"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Month in range
-        LocalDate::from_slice(b"2023-00-02").unwrap_err();
-        LocalDate::from_slice(b"2023-13-02").unwrap_err();
+        assert_matches!(
+            LocalDate::from_slice(b"2023-00-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalDate::from_slice(b"2023-13-02"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Day in range
-        LocalDate::from_slice(b"2023-01-31").unwrap();
-        LocalDate::from_slice(b"2023-01-32").unwrap_err();
-        LocalDate::from_slice(b"2023-04-30").unwrap();
-        LocalDate::from_slice(b"2023-04-31").unwrap_err();
-        LocalDate::from_slice(b"2023-02-28").unwrap();
-        LocalDate::from_slice(b"2023-02-29").unwrap_err();
-        LocalDate::from_slice(b"2024-02-29").unwrap();
-        LocalDate::from_slice(b"2024-02-30").unwrap_err();
+        assert_matches!(LocalDate::from_slice(b"2023-01-31"), Ok(LocalDate { .. }));
+        assert_matches!(
+            LocalDate::from_slice(b"2023-01-32"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(LocalDate::from_slice(b"2023-04-30"), Ok(LocalDate { .. }));
+        assert_matches!(
+            LocalDate::from_slice(b"2023-04-31"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(LocalDate::from_slice(b"2023-02-28"), Ok(LocalDate { .. }));
+        assert_matches!(
+            LocalDate::from_slice(b"2023-02-29"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(LocalDate::from_slice(b"2024-02-29"), Ok(LocalDate { .. }));
+        assert_matches!(
+            LocalDate::from_slice(b"2024-02-30"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
-        LocalDate::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            LocalDate::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1765,7 +1902,10 @@ mod tests {
         let result = LocalDate::from_str("2023-01-02").unwrap();
         assert_eq!(result, DATE);
 
-        LocalDate::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            LocalDate::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1783,16 +1923,25 @@ mod tests {
     #[test]
     fn local_date_try_from_any_datetime() {
         let datetime = AnyDatetime::LocalDate(DATE);
-        assert_eq!(LocalDate::try_from(datetime).unwrap(), DATE);
+        assert_matches!(LocalDate::try_from(datetime), Ok(DATE));
 
         let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalTime(TIME);
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1813,56 +1962,77 @@ mod tests {
             time: None,
             offset: None,
         };
-        assert_eq!(LocalDate::try_from(datetime).unwrap(), DATE);
+        assert_matches!(LocalDate::try_from(datetime), Ok(DATE));
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: None,
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: None,
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: Some(OFFSET),
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: Some(OFFSET),
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        LocalDate::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalDate::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1885,26 +2055,62 @@ mod tests {
         assert_eq!(result, TIME);
 
         // Incorrect lengths
-        LocalTime::from_slice(b"123:04:05").unwrap_err();
-        LocalTime::from_slice(b"03:123:05").unwrap_err();
-        LocalTime::from_slice(b"03:04:123").unwrap_err();
-        LocalTime::from_slice(b"03:04:05.").unwrap_err();
+        assert_matches!(
+            LocalTime::from_slice(b"123:04:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:123:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:04:123"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:04:05."),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Invalid numbers
-        LocalTime::from_slice(b"ab:04:05").unwrap_err();
-        LocalTime::from_slice(b"03:cd:05").unwrap_err();
-        LocalTime::from_slice(b"03:04:ef").unwrap_err();
-        LocalTime::from_slice(b"03:04:05.gh").unwrap_err();
+        assert_matches!(
+            LocalTime::from_slice(b"ab:04:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:cd:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:04:ef"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            LocalTime::from_slice(b"03:04:05.gh"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
-        // Time inrange
-        LocalTime::from_slice(b"23:04:05").unwrap();
-        LocalTime::from_slice(b"24:04:05").unwrap_err();
-        LocalTime::from_slice(b"03:59:05").unwrap();
-        LocalTime::from_slice(b"03:60:05").unwrap_err();
-        LocalTime::from_slice(b"03:04:60").unwrap(); // Allows for leap second
-        LocalTime::from_slice(b"03:04:61").unwrap_err();
+        // Time in range
+        assert_matches!(LocalTime::from_slice(b"23:04:05"), Ok(LocalTime { .. }));
+        assert_matches!(
+            LocalTime::from_slice(b"24:04:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(LocalTime::from_slice(b"03:59:05"), Ok(LocalTime { .. }));
+        assert_matches!(
+            LocalTime::from_slice(b"03:60:05"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(LocalTime::from_slice(b"03:04:60"), Ok(LocalTime { .. })); // Allows for leap second
+        assert_matches!(
+            LocalTime::from_slice(b"03:04:61"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
-        LocalTime::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            LocalTime::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1912,7 +2118,10 @@ mod tests {
         let result = LocalTime::from_str("03:04:05.006").unwrap();
         assert_eq!(result, TIME);
 
-        Time::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            Time::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -1936,16 +2145,25 @@ mod tests {
     #[test]
     fn local_datetime_try_from_any_time() {
         let datetime = AnyDatetime::LocalTime(TIME);
-        assert_eq!(LocalTime::try_from(datetime).unwrap(), TIME);
+        assert_matches!(LocalTime::try_from(datetime), Ok(TIME));
 
         let datetime = AnyDatetime::OffsetDatetime(OFFSET_DATETIME);
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalDatetime(LOCAL_DATETIME);
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = AnyDatetime::LocalDate(DATE);
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -1966,56 +2184,77 @@ mod tests {
             time: Some(TIME),
             offset: None,
         };
-        assert_eq!(LocalTime::try_from(datetime).unwrap(), TIME);
+        assert_matches!(LocalTime::try_from(datetime), Ok(TIME));
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: Some(TIME),
             offset: None,
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: None,
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: Some(OFFSET),
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: Some(DATE),
             time: None,
             offset: Some(OFFSET),
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: Some(TIME),
             offset: Some(OFFSET),
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
 
         let datetime = Datetime {
             date: None,
             time: None,
             offset: None,
         };
-        LocalTime::try_from(datetime).unwrap_err();
+        assert_matches!(
+            LocalTime::try_from(datetime),
+            Err(Error(ErrorKind::InvalidValue(..)))
+        );
     }
 
     #[test]
@@ -2032,27 +2271,57 @@ mod tests {
         let result = Offset::from_slice(b"-07:08").unwrap();
         assert_eq!(result, Offset::Custom { minutes: -428 });
 
-        Offset::from_slice(b"07:08").unwrap_err();
+        assert_matches!(
+            Offset::from_slice(b"07:08"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Incorrect lengths
-        Offset::from_slice(b"+123:08").unwrap_err();
-        Offset::from_slice(b"+07:123").unwrap_err();
+        assert_matches!(
+            Offset::from_slice(b"+123:08"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            Offset::from_slice(b"+07:123"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Invalid numbers
-        Offset::from_slice(b"+ab:08").unwrap_err();
-        Offset::from_slice(b"+07:cd").unwrap_err();
+        assert_matches!(
+            Offset::from_slice(b"+ab:08"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(
+            Offset::from_slice(b"+07:cd"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
         // Offset in range
-        Offset::from_slice(b"+23:08").unwrap();
-        Offset::from_slice(b"+24:08").unwrap_err();
-        Offset::from_slice(b"-23:08").unwrap();
-        Offset::from_slice(b"-24:08").unwrap_err();
-        Offset::from_slice(b"+07:59").unwrap();
-        Offset::from_slice(b"+07:60").unwrap_err();
-        Offset::from_slice(b"-07:59").unwrap();
-        Offset::from_slice(b"-07:60").unwrap_err();
+        assert_matches!(Offset::from_slice(b"+23:08"), Ok(Offset::Custom { .. }));
+        assert_matches!(
+            Offset::from_slice(b"+24:08"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(Offset::from_slice(b"-23:08"), Ok(Offset::Custom { .. }));
+        assert_matches!(
+            Offset::from_slice(b"-24:08"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(Offset::from_slice(b"+07:59"), Ok(Offset::Custom { .. }));
+        assert_matches!(
+            Offset::from_slice(b"+07:60"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
+        assert_matches!(Offset::from_slice(b"-07:59"), Ok(Offset::Custom { .. }));
+        assert_matches!(
+            Offset::from_slice(b"-07:60"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
 
-        Offset::from_slice(b"invalid string").unwrap_err();
+        assert_matches!(
+            Offset::from_slice(b"invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 
     #[test]
@@ -2073,6 +2342,9 @@ mod tests {
         let result = Offset::from_str("-07:08").unwrap();
         assert_eq!(result, Offset::Custom { minutes: -428 });
 
-        Offset::from_str("invalid string").unwrap_err();
+        assert_matches!(
+            Offset::from_str("invalid string"),
+            Err(Error(ErrorKind::InvalidDatetime))
+        );
     }
 }
