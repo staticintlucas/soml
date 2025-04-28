@@ -884,38 +884,8 @@ mod tests {
         let value: Value = Value::try_from(true).unwrap();
         assert_eq!(value, Value::Boolean(true));
 
-        let value: Value = Value::try_from(OffsetDatetime {
-            date: LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            },
-            time: LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            },
-            offset: Offset::Custom { minutes: 428 },
-        })
-        .unwrap();
-        assert_eq!(
-            value,
-            Value::Datetime(Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            })
-        );
+        let value: Value = Value::try_from(OffsetDatetime::EXAMPLE).unwrap();
+        assert_eq!(value, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
 
         let value: Value = Value::try_from(vec![1, 2, 3]).unwrap();
         assert_eq!(
@@ -1017,20 +987,7 @@ mod tests {
         assert!(!value.is_array());
         assert!(!value.is_table());
 
-        let value = Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        });
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
         assert!(!value.is_string());
         assert!(!value.is_str());
         assert!(!value.is_integer());
@@ -1119,20 +1076,7 @@ mod tests {
         assert!(value.as_table().is_none());
         assert!(value.as_table_mut().is_none());
 
-        let datetime = Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        };
+        let datetime = Datetime::EXAMPLE_OFFSET_DATETIME;
         let mut value = Value::Datetime(datetime.clone());
         assert!(value.as_str().is_none());
         assert!(value.as_integer().is_none());
@@ -1180,20 +1124,7 @@ mod tests {
             Value::Integer(42),
             Value::Float(42.0),
             Value::Boolean(true),
-            Value::Datetime(Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }),
+            Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME),
             Value::Array(vec![
                 Value::Integer(1),
                 Value::Integer(2),
@@ -1211,16 +1142,7 @@ mod tests {
             Value::Integer(123),
             Value::Float(123.4),
             Value::Boolean(false),
-            Value::Datetime(Datetime {
-                date: None,
-                time: Some(LocalTime {
-                    hour: 1,
-                    minute: 2,
-                    second: 3,
-                    nanosecond: 4_000_000,
-                }),
-                offset: None,
-            }),
+            Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME),
             Value::Array(vec![
                 Value::Integer(4),
                 Value::Integer(5),
@@ -1258,20 +1180,7 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.typ(), Type::Boolean);
 
-        let value = Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        });
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
         assert_eq!(value.typ(), Type::Datetime);
 
         let value = Value::Array(vec![
@@ -1303,20 +1212,7 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.type_str(), "boolean");
 
-        let value = Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        });
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
         assert_eq!(value.type_str(), "datetime");
 
         let value = Value::Array(vec![
@@ -1348,20 +1244,7 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.to_string(), "true");
 
-        let value = Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        });
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
         assert_eq!(value.to_string(), "2023-01-02T03:04:05.006+07:08");
 
         let value = Value::Array(vec![
@@ -1803,21 +1686,6 @@ mod tests {
 
     #[test]
     fn value_from() {
-        let datetime = || Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        };
-
         assert_eq!(
             Value::from("hello".to_string()),
             Value::String("hello".to_string())
@@ -1837,7 +1705,10 @@ mod tests {
         assert_eq!(Value::from(42.0_f32), Value::Float(42.0));
         assert_eq!(Value::from(42.0_f64), Value::Float(42.0));
         assert_eq!(Value::from(true), Value::Boolean(true));
-        assert_eq!(Value::from(datetime()), Value::Datetime(datetime()));
+        assert_eq!(
+            Value::from(Datetime::EXAMPLE_OFFSET_DATETIME),
+            Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)
+        );
         assert_eq!(
             Value::from(vec![1, 2, 3]),
             Value::Array(vec![
@@ -2053,40 +1924,8 @@ mod tests {
         assert_ne!(42.0, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }
-        );
-        assert_ne!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            },
-            value
-        );
+        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
     }
 
     #[test]
@@ -2110,40 +1949,8 @@ mod tests {
         assert_ne!(42.0, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }
-        );
-        assert_ne!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            },
-            value
-        );
+        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
     }
 
     #[test]
@@ -2167,40 +1974,8 @@ mod tests {
         assert_ne!(42, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }
-        );
-        assert_ne!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            },
-            value
-        );
+        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
     }
 
     #[test]
@@ -2224,129 +1999,20 @@ mod tests {
         assert_ne!(42, value);
         assert_ne!(value, 42.0);
         assert_ne!(42.0, value);
-        assert_ne!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }
-        );
-        assert_ne!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            },
-            value
-        );
+        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
     }
 
     #[test]
     #[allow(clippy::float_cmp)] // not really float cmp, but clippy doesn't know
     fn value_partial_eq_datetime() {
-        let value = Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        });
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
 
-        assert_eq!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            }
-        );
-        assert_eq!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 428 }),
-            },
-            value
-        );
+        assert_eq!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+        assert_eq!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
 
-        assert_ne!(
-            value,
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 429 }),
-            }
-        );
-        assert_ne!(
-            Datetime {
-                date: Some(LocalDate {
-                    year: 2023,
-                    month: 1,
-                    day: 2,
-                }),
-                time: Some(LocalTime {
-                    hour: 3,
-                    minute: 4,
-                    second: 5,
-                    nanosecond: 6_000_000,
-                }),
-                offset: Some(Offset::Custom { minutes: 429 }),
-            },
-            value
-        );
+        assert_ne!(value, Datetime::EXAMPLE_LOCAL_DATETIME,);
+        assert_ne!(Datetime::EXAMPLE_LOCAL_DATETIME, value);
 
         assert_ne!(value, "42");
         assert_ne!("42", value);

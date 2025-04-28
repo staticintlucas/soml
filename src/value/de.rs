@@ -830,7 +830,7 @@ mod tests {
 
     use super::*;
     use crate::de::ErrorKind;
-    use crate::value::{Datetime, Offset};
+    use crate::value::Datetime;
 
     struct OptionDeserializer<T, E> {
         value: Option<T>,
@@ -1038,55 +1038,26 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserialize_datetime() {
-        let date = || LocalDate {
-            year: 2023,
-            month: 1,
-            day: 2,
-        };
-        let time = || LocalTime {
-            hour: 3,
-            minute: 4,
-            second: 5,
-            nanosecond: 6_000_000,
-        };
-        let offset = || Offset::Custom { minutes: 428 };
-
         let tests = [
             (
                 OffsetDatetime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"[..],
-                Datetime {
-                    date: Some(date()),
-                    time: Some(time()),
-                    offset: Some(offset()),
-                },
+                OffsetDatetime::EXAMPLE_ENCODED.as_slice(),
+                Datetime::EXAMPLE_OFFSET_DATETIME,
             ),
             (
                 LocalDatetime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"[..],
-                Datetime {
-                    date: Some(date()),
-                    time: Some(time()),
-                    offset: None,
-                },
+                LocalDatetime::EXAMPLE_ENCODED.as_slice(),
+                Datetime::EXAMPLE_LOCAL_DATETIME,
             ),
             (
                 LocalDate::WRAPPER_FIELD,
-                &b"\xE7\x07\x01\x02"[..],
-                Datetime {
-                    date: Some(date()),
-                    time: None,
-                    offset: None,
-                },
+                LocalDate::EXAMPLE_ENCODED.as_slice(),
+                Datetime::EXAMPLE_LOCAL_DATE,
             ),
             (
                 LocalTime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00"[..],
-                Datetime {
-                    date: None,
-                    time: Some(time()),
-                    offset: None,
-                },
+                LocalTime::EXAMPLE_ENCODED.as_slice(),
+                Datetime::EXAMPLE_LOCAL_TIME,
             ),
         ];
 
@@ -1111,16 +1082,19 @@ mod tests {
         let tests = [
             (
                 OffsetDatetime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02\xAC\x01"[..],
+                OffsetDatetime::EXAMPLE_ENCODED.as_slice(),
             ),
             (
                 LocalDatetime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00\xE7\x07\x01\x02"[..],
+                LocalDatetime::EXAMPLE_ENCODED.as_slice(),
             ),
-            (LocalDate::WRAPPER_FIELD, &b"\xE7\x07\x01\x02"[..]),
+            (
+                LocalDate::WRAPPER_FIELD,
+                LocalDate::EXAMPLE_ENCODED.as_slice(),
+            ),
             (
                 LocalTime::WRAPPER_FIELD,
-                &b"\x80\x8D\x5B\x00\x03\x04\x05\x00"[..],
+                LocalTime::EXAMPLE_ENCODED.as_slice(),
             ),
         ];
 
@@ -1257,100 +1231,52 @@ mod tests {
 
     #[test]
     fn value_deserializer_datetime() {
-        let date = || LocalDate {
-            year: 2023,
-            month: 1,
-            day: 2,
-        };
-        let time = || LocalTime {
-            hour: 3,
-            minute: 4,
-            second: 5,
-            nanosecond: 6_000_000,
-        };
-        let offset = || Offset::Custom { minutes: 428 };
+        let result =
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_OFFSET_DATETIME);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: Some(time()),
-            offset: Some(offset()),
-        };
-        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            OffsetDatetime::deserialize(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
+                .unwrap();
+        assert_eq!(result, OffsetDatetime::EXAMPLE);
 
-        let result = OffsetDatetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result =
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_DATETIME);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: Some(time()),
-            offset: None,
-        };
-        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            LocalDatetime::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME)).unwrap();
+        assert_eq!(result, LocalDatetime::EXAMPLE);
 
-        let result = LocalDatetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result = Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_DATE);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: None,
-            offset: None,
-        };
-        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result = LocalDate::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE)).unwrap();
+        assert_eq!(result, LocalDate::EXAMPLE);
 
-        let result = LocalDate::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result = Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_TIME);
 
-        let datetime = Datetime {
-            date: None,
-            time: Some(time()),
-            offset: None,
-        };
-        let result = Datetime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result = LocalTime::deserialize(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME)).unwrap();
+        assert_eq!(result, LocalTime::EXAMPLE);
 
-        let result = LocalTime::deserialize(Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
-
-        let datetime = Datetime {
-            date: None,
-            time: None,
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(Value::Datetime(datetime)),
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_INVALID_1)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: None,
-            time: Some(time()),
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(Value::Datetime(datetime)),
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_INVALID_2)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: None,
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(Value::Datetime(datetime)),
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_INVALID_3)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: None,
-            time: None,
-            offset: None,
-        };
         assert_matches!(
-            Datetime::deserialize(Value::Datetime(datetime)),
+            Datetime::deserialize(Value::Datetime(Datetime::EXAMPLE_INVALID_4)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
     }
@@ -1642,100 +1568,54 @@ mod tests {
 
     #[test]
     fn value_ref_deserializer_datetime() {
-        let date = || LocalDate {
-            year: 2023,
-            month: 1,
-            day: 2,
-        };
-        let time = || LocalTime {
-            hour: 3,
-            minute: 4,
-            second: 5,
-            nanosecond: 6_000_000,
-        };
-        let offset = || Offset::Custom { minutes: 428 };
+        let result =
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_OFFSET_DATETIME);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: Some(time()),
-            offset: Some(offset()),
-        };
-        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            OffsetDatetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
+                .unwrap();
+        assert_eq!(result, OffsetDatetime::EXAMPLE);
 
-        let result = OffsetDatetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result =
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_DATETIME);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: Some(time()),
-            offset: None,
-        };
-        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            LocalDatetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME)).unwrap();
+        assert_eq!(result, LocalDatetime::EXAMPLE);
 
-        let result = LocalDatetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result = Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_DATE);
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: None,
-            offset: None,
-        };
-        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            LocalDate::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE)).unwrap();
+        assert_eq!(result, LocalDate::EXAMPLE);
 
-        let result = LocalDate::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
+        let result = Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME)).unwrap();
+        assert_eq!(result, Datetime::EXAMPLE_LOCAL_TIME);
 
-        let datetime = Datetime {
-            date: None,
-            time: Some(time()),
-            offset: None,
-        };
-        let result = Datetime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime);
+        let result =
+            LocalTime::deserialize(&Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME)).unwrap();
+        assert_eq!(result, LocalTime::EXAMPLE);
 
-        let result = LocalTime::deserialize(&Value::Datetime(datetime.clone())).unwrap();
-        assert_eq!(result, datetime.try_into().unwrap());
-
-        let datetime = Datetime {
-            date: None,
-            time: None,
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(&Value::Datetime(datetime)),
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_INVALID_1)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: None,
-            time: Some(time()),
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(&Value::Datetime(datetime)),
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_INVALID_2)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: Some(date()),
-            time: None,
-            offset: Some(offset()),
-        };
         assert_matches!(
-            Datetime::deserialize(&Value::Datetime(datetime)),
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_INVALID_3)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let datetime = Datetime {
-            date: None,
-            time: None,
-            offset: None,
-        };
         assert_matches!(
-            Datetime::deserialize(&Value::Datetime(datetime)),
+            Datetime::deserialize(&Value::Datetime(Datetime::EXAMPLE_INVALID_4)),
             Err(Error(ErrorKind::InvalidValue(..)))
         );
     }

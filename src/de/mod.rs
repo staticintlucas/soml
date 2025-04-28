@@ -1271,105 +1271,30 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Boolean(true));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Boolean(true)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-            offset: Offset::Custom { minutes: -480 },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
         assert_matches!(
             Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }),
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                }),
-                offset: Some(Offset::Custom { minutes: -480 }),
-            }))
+            Ok(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
         assert_matches!(
             Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }),
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                }),
-                offset: None,
-            }))
+            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
-            year: 1979,
-            month: 5,
-            day: 27,
-        }));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
         assert_matches!(
             Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27
-                }),
-                time: None,
-                offset: None,
-            }))
+            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
-            hour: 7,
-            minute: 32,
-            second: 0,
-            nanosecond: 0,
-        }));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
         assert_matches!(
             Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime {
-                date: None,
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0
-                }),
-                offset: None,
-            }))
+            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME))
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
@@ -2032,197 +1957,50 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserializer_deserialize_struct_datetime() {
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-            offset: Offset::Custom { minutes: -480 },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
         assert_matches!(
             OffsetDatetime::deserialize(deserializer),
-            Ok(OffsetDatetime {
-                date: LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                },
-                time: LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                },
-                offset: Offset::Custom { minutes: -480 }
-            })
+            Ok(OffsetDatetime::EXAMPLE)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
         assert_matches!(
             LocalDatetime::deserialize(deserializer),
-            Ok(LocalDatetime {
-                date: LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                },
-                time: LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                },
-            })
+            Ok(LocalDatetime::EXAMPLE)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
-            year: 1979,
-            month: 5,
-            day: 27,
-        }));
-        assert_matches!(
-            LocalDate::deserialize(deserializer),
-            Ok(LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            })
-        );
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
+        assert_matches!(LocalDate::deserialize(deserializer), Ok(LocalDate::EXAMPLE));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
-            hour: 7,
-            minute: 32,
-            second: 0,
-            nanosecond: 0,
-        }));
-        assert_matches!(
-            LocalTime::deserialize(deserializer),
-            Ok(LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            })
-        );
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
+        assert_matches!(LocalTime::deserialize(deserializer), Ok(LocalTime::EXAMPLE));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-            offset: Offset::Custom { minutes: -480 },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
         assert_matches!(
             Datetime::deserialize(deserializer),
-            Ok(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }),
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                }),
-                offset: Some(Offset::Custom { minutes: -480 }),
-            })
+            Ok(Datetime::EXAMPLE_OFFSET_DATETIME)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime {
-            date: LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            },
-            time: LocalTime {
-                hour: 7,
-                minute: 32,
-                second: 0,
-                nanosecond: 0,
-            },
-        }));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
         assert_matches!(
             Datetime::deserialize(deserializer),
-            Ok(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }),
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0,
-                }),
-                offset: None,
-            })
+            Ok(Datetime::EXAMPLE_LOCAL_DATETIME)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate {
-            year: 1979,
-            month: 5,
-            day: 27,
-        }));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
         assert_matches!(
             Datetime::deserialize(deserializer),
-            Ok(Datetime {
-                date: Some(LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27
-                }),
-                time: None,
-                offset: None,
-            })
+            Ok(Datetime::EXAMPLE_LOCAL_DATE)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime {
-            hour: 7,
-            minute: 32,
-            second: 0,
-            nanosecond: 0,
-        }));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
         assert_matches!(
             Datetime::deserialize(deserializer),
-            Ok(Datetime {
-                date: None,
-                time: Some(LocalTime {
-                    hour: 7,
-                    minute: 32,
-                    second: 0,
-                    nanosecond: 0
-                }),
-                offset: None,
-            })
+            Ok(Datetime::EXAMPLE_LOCAL_TIME)
         );
     }
 

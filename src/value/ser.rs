@@ -575,7 +575,6 @@ mod tests {
     use serde::Serializer as _;
 
     use super::*;
-    use crate::value::Offset;
 
     #[test]
     fn serialize_value() {
@@ -591,21 +590,8 @@ mod tests {
         let result = serde_json::to_string(&Value::Boolean(true)).unwrap();
         assert_eq!(result, "true");
 
-        let result = serde_json::to_string(&Value::Datetime(Datetime {
-            date: Some(LocalDate {
-                year: 2023,
-                month: 1,
-                day: 2,
-            }),
-            time: Some(LocalTime {
-                hour: 3,
-                minute: 4,
-                second: 5,
-                nanosecond: 6_000_000,
-            }),
-            offset: Some(Offset::Custom { minutes: 428 }),
-        }))
-        .unwrap();
+        let result =
+            serde_json::to_string(&Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)).unwrap();
         assert_eq!(
             result,
             r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
@@ -877,19 +863,6 @@ mod tests {
     fn to_value_table_or_datetime_serializer() {
         use ser::SerializeStruct as _;
 
-        let date = || LocalDate {
-            year: 2023,
-            month: 1,
-            day: 2,
-        };
-        let time = || LocalTime {
-            hour: 3,
-            minute: 4,
-            second: 5,
-            nanosecond: 6_000_000,
-        };
-        let offset = || Offset::Custom { minutes: 428 };
-
         let mut serializer = ToValueTableOrDatetimeSerializer::start(Some(3), "Struct").unwrap();
         serializer.serialize_field("one", &1).unwrap();
         serializer.serialize_field("two", &2).unwrap();
@@ -911,14 +884,7 @@ mod tests {
             )
             .unwrap();
         let result = serializer.end().unwrap();
-        assert_eq!(
-            result,
-            Value::Datetime(Datetime {
-                date: Some(date()),
-                time: Some(time()),
-                offset: Some(offset()),
-            })
-        );
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalDatetime::WRAPPER_TYPE).unwrap();
@@ -926,14 +892,7 @@ mod tests {
             .serialize_field(LocalDatetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006")
             .unwrap();
         let result = serializer.end().unwrap();
-        assert_eq!(
-            result,
-            Value::Datetime(Datetime {
-                date: Some(date()),
-                time: Some(time()),
-                offset: None,
-            })
-        );
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME));
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalDate::WRAPPER_TYPE).unwrap();
@@ -941,14 +900,7 @@ mod tests {
             .serialize_field(LocalDate::WRAPPER_FIELD, &"2023-01-02")
             .unwrap();
         let result = serializer.end().unwrap();
-        assert_eq!(
-            result,
-            Value::Datetime(Datetime {
-                date: Some(date()),
-                time: None,
-                offset: None,
-            })
-        );
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE));
 
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalTime::WRAPPER_TYPE).unwrap();
@@ -956,14 +908,7 @@ mod tests {
             .serialize_field(LocalTime::WRAPPER_FIELD, &"03:04:05.006")
             .unwrap();
         let result = serializer.end().unwrap();
-        assert_eq!(
-            result,
-            Value::Datetime(Datetime {
-                date: None,
-                time: Some(time()),
-                offset: None,
-            })
-        );
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME));
     }
 
     #[test]

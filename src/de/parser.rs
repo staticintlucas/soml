@@ -1381,41 +1381,27 @@ mod tests {
 
     #[test]
     fn value_type() {
-        let inf = SpecialFloat::Infinity;
-        let date = LocalDate {
-            year: 2023,
-            month: 1,
-            day: 2,
-        };
-        let time = LocalTime {
-            hour: 3,
-            minute: 4,
-            second: 5,
-            nanosecond: 6_000_000,
-        };
-        let offset = Offset::Custom { minutes: 248 };
-        let offset_datetime = OffsetDatetime {
-            date: date.clone(),
-            time: time.clone(),
-            offset,
-        };
-        let local_datetime = LocalDatetime {
-            date: date.clone(),
-            time: time.clone(),
-        };
-
         assert_eq!(Value::String("foo".into()).typ(), Type::String);
         assert_eq!(Value::Integer(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::BinaryInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::OctalInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::HexInt(b"123".into()).typ(), Type::Integer);
         assert_eq!(Value::Float(b"123".into()).typ(), Type::Float);
-        assert_eq!(Value::SpecialFloat(inf).typ(), Type::Float);
+        assert_eq!(
+            Value::SpecialFloat(SpecialFloat::Infinity).typ(),
+            Type::Float
+        );
         assert_eq!(Value::Boolean(true).typ(), Type::Boolean);
-        assert_eq!(Value::OffsetDatetime(offset_datetime).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDatetime(local_datetime).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDate(date).typ(), Type::Datetime);
-        assert_eq!(Value::LocalTime(time).typ(), Type::Datetime);
+        assert_eq!(
+            Value::OffsetDatetime(OffsetDatetime::EXAMPLE).typ(),
+            Type::Datetime
+        );
+        assert_eq!(
+            Value::LocalDatetime(LocalDatetime::EXAMPLE).typ(),
+            Type::Datetime
+        );
+        assert_eq!(Value::LocalDate(LocalDate::EXAMPLE).typ(), Type::Datetime);
+        assert_eq!(Value::LocalTime(LocalTime::EXAMPLE).typ(), Type::Datetime);
         assert_eq!(Value::Array(vec![]).typ(), Type::Array);
         assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
         assert_eq!(Value::Table(Table::new()).typ(), Type::Table);
