@@ -4,7 +4,6 @@ fn {test_name}() {{
     let json_value: crate::utils::EncodedItem = serde_json::from_slice(json.as_ref()).unwrap();
 
     let toml: String = soml::to_string(&soml::Value::from(json_value.clone())).unwrap();
-    eprintln!("{{toml:?}}");
     let toml_value: soml::Value = soml::from_str(&toml).unwrap();
 
     assert_eq!(toml_value, json_value);
