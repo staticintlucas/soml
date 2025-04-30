@@ -9,7 +9,7 @@ use serde::de;
 use super::error::{ErrorKind, Result};
 use super::reader::IoReader;
 use super::{Reader, SliceReader};
-use crate::value::{LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
+use crate::value::{LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpecialFloat {
@@ -352,43 +352,8 @@ where
             Some(b'"' | b'\'') => self.parse_string().map(Value::String),
             // Boolean
             Some(b't' | b'f') => self.parse_bool().map(Value::Boolean),
-            // Leading 0 => either prefixed int, date/time, just 0, or invalid
-            Some(b'0') => {
-                match self.reader.peek_at(1)? {
-                    // Floats with leading 0 before decimal/exponent
-                    Some(b'.' | b'e' | b'E') => self.parse_number_decimal(),
-                    // 0x, 0o, 0b, etc
-                    Some(ch) if ch.is_ascii_alphabetic() => self.parse_number_radix(),
-                    // Date/time or invalid number (leading 0 is not allowed)
-                    Some(ch) if ch.is_ascii_digit() => {
-                        // We only know whether we're parsing a datetime or a number when we see a
-                        // '-' after 4 digits or a ':' after 2, so we need to look ahead here
-                        let n_digits = self.reader.peek_while(u8::is_ascii_digit)?.len();
-                        if (n_digits == 4 && matches!(self.reader.peek_at(4)?, Some(b'-')))
-                            || (n_digits == 2 && matches!(self.reader.peek_at(2)?, Some(b':')))
-                        {
-                            self.parse_datetime()
-                        } else {
-                            self.parse_number_decimal()
-                        }
-                    }
-                    // Parse just the 0
-                    _ => self.parse_number_decimal(),
-                }
-            }
-            // Either date/time or number
-            Some(b'1'..=b'9') => {
-                // We only know whether we're parsing a datetime or a number when we see a
-                // '-' after 4 digits or a ':' after 2, so we need to look ahead here
-                let n_digits = self.reader.peek_while(u8::is_ascii_digit)?.len();
-                if (n_digits == 4 && self.reader.peek_at(4)?.is_some_and(|ch| ch == b'-'))
-                    || (n_digits == 2 && self.reader.peek_at(2)?.is_some_and(|ch| ch == b':'))
-                {
-                    self.parse_datetime()
-                } else {
-                    self.parse_number_decimal()
-                }
-            }
+            // Digit could mean either number or datetime
+            Some(b'0'..=b'9') => self.parse_number_or_datetime(),
             // Number (either int/float or special float)
             Some(b'+' | b'-') => {
                 match self.reader.peek_at(1)? {
@@ -412,11 +377,10 @@ where
                 self.reader.discard()?; // We consume the opening delimiter
                 self.parse_inline_table().map(Value::InlineTable)
             }
-            Some(ch) => Err(if is_toml_legal(&ch) {
-                ErrorKind::ExpectedToken("a value".into()).into()
-            } else {
-                ErrorKind::IllegalChar(ch).into()
-            }),
+            Some(ch) if is_toml_legal(&ch) => {
+                Err(ErrorKind::ExpectedToken("a value".into()).into())
+            }
+            Some(ch) => Err(ErrorKind::IllegalChar(ch).into()),
             None => Err(ErrorKind::UnexpectedEof.into()),
         }
     }
@@ -635,167 +599,205 @@ where
         result
     }
 
-    fn parse_datetime(&mut self) -> Result<Value<'de>> {
-        self.reader.start_seq(); // Start sequence for datetime
+    // Parses anything that starts with a digit. Does not parse special floats or +/- values
+    fn parse_number_or_datetime(&mut self) -> Result<Value<'de>> {
+        fn remove_start(value: Cow<'_, [u8]>, n: usize) -> Cow<'_, [u8]> {
+            match value {
+                Cow::Borrowed(bytes) => Cow::Borrowed(&bytes[n..]),
+                Cow::Owned(mut bytes) => {
+                    bytes.drain(..n);
+                    Cow::Owned(bytes)
+                }
+            }
+        }
 
-        // Use the number of digits to determine whether we have a date or time
-        let first_num = self.reader.peek_while(u8::is_ascii_digit)?;
+        let value = self.reader.next_while(is_toml_number_or_datetime)?;
+        match *value {
+            // Hex literal starts with "0x"
+            [b'0', b'x', ..] => {
+                let digits = remove_start(value, 2);
+                Self::normalize_number(digits, u8::is_ascii_hexdigit).map(Value::HexInt)
+            }
+            // Octal literal starts with "0o"
+            [b'0', b'o', ..] => {
+                let digits = remove_start(value, 2);
+                Self::normalize_number(digits, |&b| matches!(b, b'0'..=b'7')).map(Value::OctalInt)
+            }
+            // Binary literal starts with "0b"
+            [b'0', b'b', ..] => {
+                let digits = remove_start(value, 2);
+                Self::normalize_number(digits, |&b| matches!(b, b'0' | b'1')).map(Value::BinaryInt)
+            }
+            // LocalTime has a ':' at index 2
+            #[cfg(feature = "datetime")]
+            [_, _, b':', ..] => LocalTime::from_slice(&value).map(Value::LocalTime),
+            // OffsetDateTime, LocalDateTime, or LocalDate have '-' at index 4
+            // Also need to check for only digits before to rule out float literals (e.g. 120e-2)
+            #[cfg(feature = "datetime")]
+            [b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'-', ..] => {
+                // If we have a 'T' split the date and time
+                let (date, time) =
+                    if let Some(idx) = value.iter().position(|&b| matches!(b, b'T' | b't')) {
+                        (&value[..idx], &value[idx + 1..])
+                    }
+                    // If we don't have a 'T' we might have a space-delimited datetime which we have only
+                    // read part of, so check for space followed by a digit
+                    else if self
+                        .reader
+                        .peek_n(2)?
+                        .is_some_and(|b| b[0] == b' ' && b[1].is_ascii_digit())
+                    {
+                        // Discard the space
+                        self.reader.discard()?;
+                        // Read in the time
+                        (
+                            &value[..],
+                            &*self.reader.next_while(is_toml_number_or_datetime)?,
+                        )
+                    }
+                    // Else we definitely just have a LocalDate
+                    else {
+                        return LocalDate::from_slice(&value).map(Value::LocalDate);
+                    };
 
-        // 4 digits = year for date/datetime
-        if first_num.len() == 4 {
-            self.check_date()?;
+                if let Some(idx) = time
+                    .iter()
+                    .position(|&b| matches!(b, b'z' | b'Z' | b'+' | b'-'))
+                {
+                    let (time, offset) = time.split_at(idx);
+                    Ok(Value::OffsetDatetime(OffsetDatetime {
+                        date: LocalDate::from_slice(date)?,
+                        time: LocalTime::from_slice(time)?,
+                        offset: Offset::from_slice(offset)?,
+                    }))
+                // Otherwise it's just a LocalDateTime
+                } else {
+                    Ok(Value::LocalDatetime(LocalDatetime {
+                        date: LocalDate::from_slice(date)?,
+                        time: LocalTime::from_slice(time)?,
+                    }))
+                }
+            }
+            // Just a plain ol' decimal
+            [..] => Self::normalize_number_decimal(value),
+        }
+    }
 
-            // Check if we have a time or just a date
-            let have_time = match self.reader.peek()? {
-                Some(b'T' | b't') => true,
-                Some(b' ') if matches!(self.reader.peek_at(1)?, Some(b'0'..=b'9')) => true,
-                _ => false,
+    fn parse_number_decimal(&mut self) -> Result<Value<'de>> {
+        let value = self.reader.next_while(is_toml_number_or_datetime)?;
+        Self::normalize_number_decimal(value)
+    }
+
+    fn normalize_number_decimal(digits: Cow<'de, [u8]>) -> Result<Value<'de>> {
+        fn split_at_byte(bytes: &[u8], pred: impl FnMut(&u8) -> bool) -> Option<(&[u8], &[u8])> {
+            bytes
+                .iter()
+                .position(pred)
+                .map(|i| (&bytes[..i], &bytes[i + 1..]))
+        }
+
+        let mut float = false;
+
+        // Split the number into integer, fraction, and exponent parts (if present)
+        let (integer, fraction, exponent) =
+            if let Some((i, rest)) = split_at_byte(&digits, |&b| b == b'.') {
+                let (f, e) = split_at_byte(rest, |&b| matches!(b, b'e' | b'E'))
+                    .map_or((Some(rest), None), |(f, e)| (Some(f), Some(e)));
+                (i, f, e)
+            } else {
+                let (i, e) = split_at_byte(&digits, |&b| matches!(b, b'e' | b'E'))
+                    .map_or((&*digits, None), |(i, e)| (i, Some(e)));
+                (i, None, e)
             };
-            if !have_time {
-                // Check we're at the end of the value (i.e. no trailing invalid chars)
-                if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
-                    return Err(ErrorKind::InvalidDatetime.into());
-                }
 
-                return LocalDate::from_slice(&self.reader.end_seq()?).map(Value::LocalDate);
-            }
-            self.reader.discard()?; // Skip the 'T'/space
-
-            self.check_time()?;
-
-            // Check for the offset
-            let have_offset = matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'));
-            if !have_offset {
-                // Check we're at the end of the value (i.e. no trailing invalid chars)
-                if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
-                    return Err(ErrorKind::InvalidDatetime.into());
-                }
-
-                return LocalDatetime::from_slice(&self.reader.end_seq()?)
-                    .map(Value::LocalDatetime);
-            }
-
-            self.check_offset()?;
-
-            // Check we're at the end of the value (i.e. no trailing invalid chars)
-            if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
-                return Err(ErrorKind::InvalidDatetime.into());
-            }
-
-            OffsetDatetime::from_slice(&self.reader.end_seq()?).map(Value::OffsetDatetime)
-        }
-        // 2 digits = hour for time
-        else if first_num.len() == 2 {
-            self.check_time()?;
-
-            // Check for bogus offset (offset time is not a thing in TOML)
-            // Check we're at the end of the value (i.e. no trailing invalid chars)
-            if matches!(self.reader.peek()?, Some(b'Z' | b'z' | b'+' | b'-'))
-                || self.reader.peek()?.as_ref().is_some_and(is_toml_word)
-            {
-                return Err(ErrorKind::InvalidDatetime.into());
-            }
-
-            LocalTime::from_slice(&self.reader.end_seq()?).map(Value::LocalTime)
-        }
-        // Any other number of digits is invalid
-        else {
-            Err(ErrorKind::ExpectedToken("datetime".into()).into())
-        }
-    }
-
-    fn check_date(&mut self) -> Result<()> {
-        if self
-            .reader
-            .next_n(4)?
-            .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-            && self.reader.eat_char(b'-')?
-            && self
-                .reader
-                .next_n(2)?
-                .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-            && self.reader.eat_char(b'-')?
-            && self
-                .reader
-                .next_n(2)?
-                .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-        {
-            Ok(())
+        // Validate each part
+        let integer = if matches!(integer.first().copied(), Some(b'+' | b'-')) {
+            &integer[1..]
         } else {
-            Err(ErrorKind::InvalidDatetime.into())
+            integer
+        };
+        Self::check_underscores(integer)?;
+        if integer.len() > 1 && integer[0] == b'0' {
+            // Only fail for len > 1; we allow "0", "0.123", etc
+            return Err(ErrorKind::InvalidNumber("leading zero".into()).into());
+        }
+        if !integer.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
+            return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
+        }
+
+        if let Some(fraction) = fraction {
+            float = true;
+            Self::check_underscores(fraction)?;
+            if !fraction.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
+                return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
+            }
+        }
+        if let Some(exponent) = exponent {
+            float = true;
+            let exponent = if matches!(exponent.first().copied(), Some(b'+' | b'-')) {
+                &exponent[1..]
+            } else {
+                exponent
+            };
+            Self::check_underscores(exponent)?;
+            if !exponent.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
+                return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
+            }
+        }
+
+        // Now we can just strip the underscores
+        let number = Self::strip_underscores(digits);
+
+        Ok(if float {
+            Value::Float(number)
+        } else {
+            Value::Integer(number)
+        })
+    }
+
+    fn normalize_number(
+        digits: Cow<'de, [u8]>,
+        is_digit: fn(&u8) -> bool,
+    ) -> Result<Cow<'de, [u8]>> {
+        Self::check_underscores(&digits)?;
+        let digits = Self::strip_underscores(digits);
+
+        if digits.iter().all(is_digit) {
+            Ok(digits)
+        } else {
+            Err(ErrorKind::InvalidNumber("invalid digit".into()).into())
         }
     }
 
-    fn check_time(&mut self) -> Result<()> {
-        if !(self
-            .reader
-            .next_n(2)?
-            .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-            && self.reader.eat_char(b':')?
-            && self
-                .reader
-                .next_n(2)?
-                .is_some_and(|a| a.iter().all(u8::is_ascii_digit)))
-        {
-            return Err(ErrorKind::InvalidDatetime.into());
+    fn check_underscores(digits: &[u8]) -> Result<()> {
+        if digits.is_empty() {
+            return Err(ErrorKind::InvalidNumber("no digits".into()).into());
         }
-
-        if !self.reader.eat_char(b':')? {
-            return Ok(()); // Seconds are optional, so just return hh:mm
+        if digits.starts_with(b"_") {
+            return Err(ErrorKind::InvalidNumber("leading underscore".into()).into());
         }
-        if !self
-            .reader
-            .next_n(2)?
-            .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-        {
-            return Err(ErrorKind::InvalidDatetime.into());
+        if digits.ends_with(b"_") {
+            return Err(ErrorKind::InvalidNumber("trailing underscore".into()).into());
         }
-
-        if !self.reader.eat_char(b'.')? {
-            return Ok(()); // Fractional seconds are also optional, so just return hh:mm:ss
+        if digits.windows(2).any(|w| w == b"__") {
+            return Err(ErrorKind::InvalidNumber("double underscore".into()).into());
         }
-        if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
-            return Err(ErrorKind::InvalidDatetime.into());
-        }
-
         Ok(())
     }
 
-    fn check_offset(&mut self) -> Result<()> {
-        if self.reader.eat_char(b'Z')?
-            || self.reader.eat_char(b'z')?
-            || ((self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?)
-                && self
-                    .reader
-                    .next_n(2)?
-                    .is_some_and(|a| a.iter().all(u8::is_ascii_digit))
-                && self.reader.eat_char(b':')?
-                && self
-                    .reader
-                    .next_n(2)?
-                    .is_some_and(|a| a.iter().all(u8::is_ascii_digit)))
-        {
-            Ok(())
+    fn strip_underscores(digits: Cow<'de, [u8]>) -> Cow<'de, [u8]> {
+        if let Some(idx) = digits.iter().position(|&b| b == b'_') {
+            let mut result = Vec::with_capacity(digits.len() - 1); // Upper bound
+            result.extend_from_slice(&digits[..idx]);
+            let mut digits = &digits[idx + 1..];
+            while let Some(idx) = digits.iter().position(|&b| b == b'_') {
+                result.extend_from_slice(&digits[..idx]);
+                digits = &digits[idx + 1..];
+            }
+            result.extend_from_slice(digits);
+            Cow::Owned(result)
         } else {
-            Err(ErrorKind::InvalidDatetime.into())
-        }
-    }
-
-    fn parse_number_radix(&mut self) -> Result<Value<'de>> {
-        if self.reader.eat_str(b"0x")? {
-            self.reader.start_seq();
-            self.parse_number_inner(u8::is_ascii_hexdigit)
-                .map(Value::HexInt)
-        } else if self.reader.eat_str(b"0o")? {
-            self.reader.start_seq();
-            self.parse_number_inner(|b| matches!(*b, b'0'..=b'7'))
-                .map(Value::OctalInt)
-        } else if self.reader.eat_str(b"0b")? {
-            self.reader.start_seq();
-            self.parse_number_inner(|b| matches!(*b, b'0' | b'1'))
-                .map(Value::BinaryInt)
-        } else {
-            Err(ErrorKind::InvalidNumber("invalid radix".into()).into())
+            digits
         }
     }
 
@@ -824,162 +826,6 @@ where
                 b"nan" => Ok(SpecialFloat::Nan),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
             },
-        }
-    }
-
-    fn parse_number_decimal(&mut self) -> Result<Value<'de>> {
-        let mut float = false;
-
-        self.reader.start_seq(); // Start sequence for number parsing
-
-        // Optional sign
-        let sign = self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?;
-
-        // We need at least one digit
-        // Note: leading 0s are not allowed, but that is checked in parse_value
-        if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
-            return Err(match self.reader.peek()? {
-                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
-                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                None => ErrorKind::UnexpectedEof.into(),
-            });
-        }
-        let mut num = self.reader.end_seq()?;
-
-        // Remainder of integer digits
-        while self.reader.eat_char(b'_')? {
-            let bytes = self.reader.next_while(u8::is_ascii_digit)?;
-            if bytes.is_empty() {
-                return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
-                    Some(b) if is_toml_word(&b) => {
-                        ErrorKind::InvalidNumber("invalid digit".into()).into()
-                    }
-                    _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                });
-            }
-            num.to_mut().extend_from_slice(&bytes);
-        }
-
-        // Check for leading 0 - this is much easier after the fact
-        let start = usize::from(sign);
-        if let Some(&[zero, digit]) = num.get(start..start + 2) {
-            if zero == b'0' && digit.is_ascii_digit() {
-                return Err(ErrorKind::InvalidNumber("leading zero".into()).into());
-            }
-        }
-
-        // Check for decimal point
-        if self.reader.peek()?.is_some_and(|b| b == b'.') {
-            float = true;
-
-            self.reader.start_seq(); // Start sequence for fraction parsing
-            self.reader.discard()?; // Discard the decimal point
-
-            // We need at least one digit
-            if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
-                return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
-                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                    None => ErrorKind::InvalidNumber("no digits after decimal point".into()).into(),
-                });
-            }
-            let bytes = self.reader.end_seq()?;
-            num.to_mut().extend_from_slice(&bytes);
-
-            // Remainder of integer digits
-            while self.reader.eat_char(b'_')? {
-                let bytes = self.reader.next_while(u8::is_ascii_digit)?;
-                if bytes.is_empty() {
-                    return Err(match self.reader.peek()? {
-                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
-                        Some(b) if is_toml_word(&b) => {
-                            ErrorKind::InvalidNumber("invalid digit".into()).into()
-                        }
-                        _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                    });
-                }
-                num.to_mut().extend_from_slice(&bytes);
-            }
-        }
-
-        // Check for exponent
-        if self.reader.peek()?.is_some_and(|b| b == b'e' || b == b'E') {
-            float = true;
-
-            self.reader.start_seq(); // Start sequence for exponent parsing
-            self.reader.discard()?; // Discard the e/E
-
-            // Optional sign
-            let _ = self.reader.eat_char(b'+')? || self.reader.eat_char(b'-')?;
-
-            // We need at least one digit
-            if self.reader.next_while(u8::is_ascii_digit)?.is_empty() {
-                return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
-                    Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                    None => {
-                        ErrorKind::InvalidNumber("no digits after decimal exponent".into()).into()
-                    }
-                });
-            }
-            let bytes = self.reader.end_seq()?;
-            num.to_mut().extend_from_slice(&bytes);
-
-            // Remainder of integer digits
-            while self.reader.eat_char(b'_')? {
-                let bytes = self.reader.next_while(u8::is_ascii_digit)?;
-                if bytes.is_empty() {
-                    return Err(match self.reader.peek()? {
-                        Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
-                        Some(b) if is_toml_word(&b) => {
-                            ErrorKind::InvalidNumber("invalid digit".into()).into()
-                        }
-                        _ => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                    });
-                }
-                num.to_mut().extend_from_slice(&bytes);
-            }
-        }
-
-        Ok(if float {
-            Value::Float(num)
-        } else {
-            Value::Integer(num)
-        })
-    }
-
-    // Note: this function requres a sequence to have already been started with reader.start_seq()
-    // This is to allow +/-, etc to be parsed by the parent without copying for simple numbers
-    fn parse_number_inner(&mut self, is_digit: fn(&u8) -> bool) -> Result<Cow<'de, [u8]>> {
-        if self.reader.next_while(is_digit)?.is_empty() {
-            return Err(match self.reader.peek()? {
-                Some(b'_') => ErrorKind::InvalidNumber("leading underscore".into()).into(),
-                Some(_) => ErrorKind::InvalidNumber("invalid digit".into()).into(),
-                None => ErrorKind::UnexpectedEof.into(),
-            });
-        }
-        let mut num = self.reader.end_seq()?;
-
-        while self.reader.eat_char(b'_')? {
-            let bytes = self.reader.next_while(is_digit)?;
-            if bytes.is_empty() {
-                return Err(match self.reader.peek()? {
-                    Some(b'_') => ErrorKind::InvalidNumber("double underscore".into()).into(),
-                    Some(b) if is_toml_word(&b) => {
-                        ErrorKind::InvalidNumber("invalid digit".into()).into()
-                    }
-                    Some(_) => ErrorKind::InvalidNumber("trailing underscore".into()).into(),
-                    None => ErrorKind::UnexpectedEof.into(),
-                });
-            }
-            num.to_mut().extend_from_slice(&bytes);
-        }
-
-        if self.reader.peek()?.as_ref().is_some_and(is_toml_word) {
-            Err(ErrorKind::InvalidNumber("invalid digit".into()).into())
-        } else {
-            Ok(num)
         }
     }
 
@@ -1271,6 +1117,15 @@ const fn is_toml_word(char: &u8) -> bool {
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
 #[inline]
+const fn is_toml_number_or_datetime(char: &u8) -> bool {
+    matches!(
+        *char,
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'+' | b'-' | b'.' | b':'
+    )
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
+#[inline]
 const fn is_toml_comment(char: &u8) -> bool {
     // Disallow ASCII control chars except tab (0x09)
     matches!(*char, 0x09 | 0x20..=0x7e | 0x80..)
@@ -1323,7 +1178,6 @@ mod tests {
 
     use super::*;
     use crate::de::Error;
-    use crate::value::Offset;
 
     #[test]
     fn type_to_str() {
@@ -2245,254 +2099,242 @@ mod tests {
     }
 
     #[test]
-    fn parser_parse_datetime() {
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30");
-        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000+02:30");
-        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Z");
-        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01 12:00:00.000000000Z");
-        assert_matches!(parser.parse_datetime(), Ok(Value::OffsetDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01 12:00:00");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01 12:00:00");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDatetime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalDate(_)));
-
-        let mut parser = Parser::from_str("12:00:00.000000000");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalTime(_)));
-
-        let mut parser = Parser::from_str("12:00:00");
-        assert_matches!(parser.parse_datetime(), Ok(Value::LocalTime(_)));
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000+02:30abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000Zabc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000000000abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01T12:00:00abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01T12:00abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01T12:00");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01 12:00");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("1980-01-01abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("12:00:00.000000000abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("12:00:00abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("12:00abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("12:00");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("abc");
-        assert_matches!(
-            parser.parse_datetime(),
-            Err(Error(ErrorKind::ExpectedToken(..)))
-        );
-    }
-
-    #[test]
-    fn parser_check_date() {
-        let mut parser = Parser::from_str("1980-01-01");
-        assert!(parser.check_date().is_ok());
-
-        let mut parser = Parser::from_str("1980-01-01abc"); // Shouldn't care about what comes after
-        assert!(parser.check_date().is_ok());
-
-        let mut parser = Parser::from_str("1980");
-        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
-
-        let mut parser = Parser::from_str("1980-01");
-        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
-
-        let mut parser = Parser::from_str("198-01-01");
-        assert_matches!(parser.check_date(), Err(Error(ErrorKind::InvalidDatetime)));
-    }
-
-    #[test]
-    fn parser_check_time() {
-        let mut parser = Parser::from_str("12:00:00.000000000");
-        assert!(parser.check_time().is_ok());
-
-        let mut parser = Parser::from_str("12:00:00");
-        assert!(parser.check_time().is_ok());
-
-        let mut parser = Parser::from_str("12:00");
-        assert!(parser.check_time().is_ok());
-
-        let mut parser = Parser::from_str("12:00:00abc"); // Shouldn't care about what comes after
-        assert!(parser.check_time().is_ok());
-
-        let mut parser = Parser::from_str("12:00:00.abc");
-        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
-
-        let mut parser = Parser::from_str("12:00:abc");
-        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
-
-        let mut parser = Parser::from_str("198:01:01");
-        assert_matches!(parser.check_time(), Err(Error(ErrorKind::InvalidDatetime)));
-    }
-
-    #[test]
-    fn parser_check_offset() {
-        let mut parser = Parser::from_str("Z");
-        assert!(parser.check_offset().is_ok());
-
-        let mut parser = Parser::from_str("z");
-        assert!(parser.check_offset().is_ok());
-
-        let mut parser = Parser::from_str("+02:30");
-        assert!(parser.check_offset().is_ok());
-
-        let mut parser = Parser::from_str("-02:30");
-        assert!(parser.check_offset().is_ok());
-
-        let mut parser = Parser::from_str("02:30");
-        assert_matches!(
-            parser.check_offset(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-
-        let mut parser = Parser::from_str("+002:30");
-        assert_matches!(
-            parser.check_offset(),
-            Err(Error(ErrorKind::InvalidDatetime))
-        );
-    }
-
-    #[test]
-    fn parser_parse_number_radix() {
+    fn parser_parse_number_or_datetime() {
         let mut parser = Parser::from_str("0x123");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Ok(Value::HexInt(v)) if &*v == b"123"
-        );
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::HexInt(_)));
 
         let mut parser = Parser::from_str("0o123");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Ok(Value::OctalInt(v)) if &*v == b"123"
-        );
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::OctalInt(_)));
 
         let mut parser = Parser::from_str("0b101");
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::BinaryInt(_)));
+
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000+02:30");
         assert_matches!(
-            parser.parse_number_radix(),
-            Ok(Value::BinaryInt(v)) if &*v == b"101"
+            parser.parse_number_or_datetime(),
+            Ok(Value::OffsetDatetime(_))
         );
 
-        let mut parser = Parser::from_str("0X123");
+        let mut parser = Parser::from_str("1980-01-01 12:00:00Z");
         assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
+            parser.parse_number_or_datetime(),
+            Ok(Value::OffsetDatetime(_))
         );
 
-        let mut parser = Parser::from_str("0O123");
+        let mut parser = Parser::from_str("1980-01-01T12:00:00.000");
         assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
+            parser.parse_number_or_datetime(),
+            Ok(Value::LocalDatetime(_))
         );
 
-        let mut parser = Parser::from_str("0B101");
+        let mut parser = Parser::from_str("1980-01-01 12:00:00");
         assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
+            parser.parse_number_or_datetime(),
+            Ok(Value::LocalDatetime(_))
         );
 
-        let mut parser = Parser::from_str("0xabcdefg");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
+        let mut parser = Parser::from_str("1980-01-01");
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalDate(_)));
 
-        let mut parser = Parser::from_str("0o12345678");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("0b012");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("0q123abc");
-        assert_matches!(
-            parser.parse_number_radix(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
+        let mut parser = Parser::from_str("12:00:00.000000000");
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalTime(_)));
 
         let mut parser = Parser::from_str("123");
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::Integer(_)));
+
+        let mut parser = Parser::from_str("4.5");
+        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::Float(_)));
+    }
+
+    #[test]
+    fn parse_number_decimal() {
+        let mut parser = Parser::from_str("123");
         assert_matches!(
-            parser.parse_number_radix(),
+            parser.parse_number_decimal(),
+            Ok(Value::Integer(v)) if &*v == b"123"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::cognitive_complexity)]
+    fn parser_normalize_number_decimal() {
+        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456".into()),
+            Ok(Value::Integer(v)) if &*v == b"123456"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"+123_456".into()),
+            Ok(Value::Integer(v)) if &*v == b"+123456"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"-123_456".into()),
+            Ok(Value::Integer(v)) if &*v == b"-123456"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"0".into()),
+            Ok(Value::Integer(v)) if &*v == b"0"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"0123".into()),
             Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"abc".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"-abc".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456.789_012".into()),
+            Ok(Value::Float(v)) if &*v == b"123456.789012"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456.789_012e345_678".into()),
+            Ok(Value::Float(v)) if &*v == b"123456.789012e345678"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456.789_012e+345_678".into()),
+            Ok(Value::Float(v)) if &*v == b"123456.789012e+345678"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456.789_012e-345_678".into()),
+            Ok(Value::Float(v)) if &*v == b"123456.789012e-345678"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123_456e345_678".into()),
+            Ok(Value::Float(v)) if &*v == b"123456e345678"
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b".123".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123.".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123e".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"e123".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123.e456".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123e456.789".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123.abc".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number_decimal(b"123.456eabc".into()),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+    }
+
+    #[test]
+    fn parser_normalize_number() {
+        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
+
+        assert_matches!(
+            Parser::normalize_number(b"123_456".into(), u8::is_ascii_digit),
+            Ok(v) if &*v == b"123456"
+        );
+
+        assert_matches!(
+            Parser::normalize_number(b"abc_def".into(), u8::is_ascii_hexdigit),
+            Ok(v) if &*v == b"abcdef"
+        );
+
+        assert_matches!(
+            Parser::normalize_number(b"abc_def".into(), u8::is_ascii_digit),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::normalize_number(b"_123_".into(), u8::is_ascii_digit),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+    }
+
+    #[test]
+    fn parser_check_underscores() {
+        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
+
+        assert!(Parser::check_underscores(b"123_456").is_ok());
+
+        assert_matches!(
+            Parser::check_underscores(b"_123"),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::check_underscores(b"123_"),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::check_underscores(b"123__456"),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        assert_matches!(
+            Parser::check_underscores(b""),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+    }
+
+    #[test]
+    fn parser_strip_underscores() {
+        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
+
+        assert_eq!(
+            Parser::strip_underscores(b"123456".into()),
+            Cow::<[u8]>::Borrowed(b"123456")
+        );
+
+        assert_eq!(
+            Parser::strip_underscores(b"123_456".into()),
+            Cow::<[u8]>::Owned(b"123456".to_vec())
+        );
+
+        assert_eq!(
+            Parser::strip_underscores(b"123_456_789".into()),
+            Cow::<[u8]>::Owned(b"123456789".to_vec())
+        );
+
+        assert_eq!(
+            Parser::strip_underscores(b"123_456_789_abc".into()),
+            Cow::<[u8]>::Owned(b"123456789abc".to_vec())
         );
     }
 
@@ -2550,199 +2392,6 @@ mod tests {
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
-        );
-    }
-
-    #[test]
-    fn parser_parse_number_decimal_int() {
-        let mut parser = Parser::from_str("123");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Integer(v)) if &*v == b"123"
-        );
-
-        let mut parser = Parser::from_str("+123");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Integer(v)) if &*v == b"+123"
-        );
-
-        let mut parser = Parser::from_str("-123");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Integer(v)) if &*v == b"-123"
-        );
-
-        let mut parser = Parser::from_str("123_456_789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Integer(v)) if &*v == b"123456789"
-        );
-
-        let mut parser = Parser::from_str("_123_456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123_456_");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123__456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("e123");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("abc");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("+abc");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("-abc");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-    }
-
-    #[test]
-    #[allow(clippy::cognitive_complexity)]
-    fn parser_parse_number_decimal_float() {
-        let mut parser = Parser::from_str("123.456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"123.456"
-        );
-
-        let mut parser = Parser::from_str("+123.456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"+123.456"
-        );
-
-        let mut parser = Parser::from_str("-123.456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"-123.456"
-        );
-
-        let mut parser = Parser::from_str("123.456e+3");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"123.456e+3"
-        );
-
-        let mut parser = Parser::from_str("123.456e-3");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"123.456e-3"
-        );
-
-        let mut parser = Parser::from_str("123.456e3");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"123.456e3"
-        );
-
-        let mut parser = Parser::from_str("123_456.123_456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"123456.123456"
-        );
-
-        let mut parser = Parser::from_str("1.23e456_789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Ok(Value::Float(v)) if &*v == b"1.23e456789"
-        );
-
-        let mut parser = Parser::from_str("_123.456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123_.456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123._456");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123.456_");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123__456.789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123.456__789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("1.23e_456_789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("1.23e456_789_");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("1.23e456__789");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str(".123");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("123.");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        let mut parser = Parser::from_str("1.23e");
-        assert_matches!(
-            parser.parse_number_decimal(),
-            Err(Error(ErrorKind::InvalidNumber(..)))
         );
     }
 
