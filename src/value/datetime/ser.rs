@@ -1,5 +1,6 @@
 use serde::ser;
 use serde::ser::Error as _;
+use serde_bytes::Bytes;
 
 use super::{AnyDatetime, Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
@@ -9,12 +10,28 @@ impl ser::Serialize for AnyDatetime {
     where
         S: ser::Serializer,
     {
+        use ser::SerializeStruct as _;
+
+        let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
         match *self {
-            Self::OffsetDatetime(ref datetime) => datetime.serialize(serializer),
-            Self::LocalDatetime(ref datetime) => datetime.serialize(serializer),
-            Self::LocalDate(ref date) => date.serialize(serializer),
-            Self::LocalTime(ref time) => time.serialize(serializer),
-        }
+            Self::OffsetDatetime(ref datetime) => s.serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                &Bytes::new(datetime.to_encoded().as_slice()),
+            ),
+            Self::LocalDatetime(ref datetime) => s.serialize_field(
+                LocalDatetime::WRAPPER_FIELD,
+                &Bytes::new(datetime.to_encoded().as_slice()),
+            ),
+            Self::LocalDate(ref date) => s.serialize_field(
+                LocalDate::WRAPPER_FIELD,
+                &Bytes::new(date.to_encoded().as_slice()),
+            ),
+            Self::LocalTime(ref time) => s.serialize_field(
+                LocalTime::WRAPPER_FIELD,
+                &Bytes::new(time.to_encoded().as_slice()),
+            ),
+        }?;
+        s.end()
     }
 }
 
@@ -39,7 +56,10 @@ impl ser::Serialize for OffsetDatetime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(Self::WRAPPER_FIELD, self.to_string().as_str())?;
+        s.serialize_field(
+            Self::WRAPPER_FIELD,
+            &Bytes::new(self.to_encoded().as_slice()),
+        )?;
         s.end()
     }
 }
@@ -53,7 +73,10 @@ impl ser::Serialize for LocalDatetime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(Self::WRAPPER_FIELD, self.to_string().as_str())?;
+        s.serialize_field(
+            Self::WRAPPER_FIELD,
+            &Bytes::new(self.to_encoded().as_slice()),
+        )?;
         s.end()
     }
 }
@@ -67,7 +90,10 @@ impl ser::Serialize for LocalDate {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(Self::WRAPPER_FIELD, self.to_string().as_str())?;
+        s.serialize_field(
+            Self::WRAPPER_FIELD,
+            &Bytes::new(self.to_encoded().as_slice()),
+        )?;
         s.end()
     }
 }
@@ -81,7 +107,10 @@ impl ser::Serialize for LocalTime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(Self::WRAPPER_FIELD, self.to_string().as_str())?;
+        s.serialize_field(
+            Self::WRAPPER_FIELD,
+            &Bytes::new(self.to_encoded().as_slice()),
+        )?;
         s.end()
     }
 }
@@ -89,103 +118,185 @@ impl ser::Serialize for LocalTime {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use serde_test::{assert_ser_tokens, assert_ser_tokens_error, Token};
+
     use super::*;
 
     #[test]
     fn serialize_any_datetime() {
-        let result = serde_json::to_string(&AnyDatetime::EXAMPLE_OFFSET_DATETIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&AnyDatetime::EXAMPLE_OFFSET_DATETIME, tokens);
 
-        let result = serde_json::to_string(&AnyDatetime::EXAMPLE_LOCAL_DATETIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATETIME, tokens);
 
-        let result = serde_json::to_string(&AnyDatetime::EXAMPLE_LOCAL_DATE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDate::Wrapper::Field>":"2023-01-02"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATE, tokens);
 
-        let result = serde_json::to_string(&AnyDatetime::EXAMPLE_LOCAL_TIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalTime::Wrapper::Field>":"03:04:05.006"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_TIME, tokens);
     }
 
     #[test]
     fn serialize_datetime() {
-        let result = serde_json::to_string(&Datetime::EXAMPLE_OFFSET_DATETIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&Datetime::EXAMPLE_OFFSET_DATETIME, tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_DATETIME, tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_DATE, tokens);
+
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_TIME, tokens);
+
+        let tokens = &[];
+        assert_ser_tokens_error(
+            &Datetime::EXAMPLE_INVALID_1,
+            tokens,
+            "invalid value: invalid date-time (offset with neither date nor time), expected a valid date-time",
         );
 
-        let result = serde_json::to_string(&Datetime::EXAMPLE_LOCAL_DATETIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006"}"#
+        let tokens = &[];
+        assert_ser_tokens_error(
+            &Datetime::EXAMPLE_INVALID_2,
+            tokens,
+            "invalid value: invalid date-time (offset date without time), expected a valid date-time",
         );
 
-        let result = serde_json::to_string(&Datetime::EXAMPLE_LOCAL_DATE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDate::Wrapper::Field>":"2023-01-02"}"#
+        let tokens = &[];
+        assert_ser_tokens_error(
+            &Datetime::EXAMPLE_INVALID_3,
+            tokens,
+            "invalid value: invalid date-time (offset time without date), expected a valid date-time",
         );
 
-        let result = serde_json::to_string(&Datetime::EXAMPLE_LOCAL_TIME).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalTime::Wrapper::Field>":"03:04:05.006"}"#
+        let tokens = &[];
+        assert_ser_tokens_error(
+            &Datetime::EXAMPLE_INVALID_4,
+            tokens,
+            "invalid value: invalid date-time (no date, time, nor offset), expected a valid date-time",
         );
-
-        let result = serde_json::to_string(&Datetime {
-            date: None,
-            time: None,
-            offset: None,
-        });
-        // Since this is a serde_json error, we can't match the exact error
-        assert!(result.is_err());
     }
 
     #[test]
     fn serialize_offset_datetime() {
-        let result = serde_json::to_string(&OffsetDatetime::EXAMPLE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006+07:08"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&OffsetDatetime::EXAMPLE, tokens);
     }
 
     #[test]
     fn serialize_local_datetime() {
-        let result = serde_json::to_string(&LocalDatetime::EXAMPLE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDatetime::Wrapper::Field>":"2023-01-02T03:04:05.006"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDatetime::WRAPPER_FIELD),
+            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&LocalDatetime::EXAMPLE, tokens);
     }
 
     #[test]
     fn serialize_local_date() {
-        let result = serde_json::to_string(&LocalDate::EXAMPLE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalDate::Wrapper::Field>":"2023-01-02"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalDate::WRAPPER_FIELD),
+            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&LocalDate::EXAMPLE, tokens);
     }
 
     #[test]
     fn serialize_local_time() {
-        let result = serde_json::to_string(&LocalTime::EXAMPLE).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::LocalTime::Wrapper::Field>":"03:04:05.006"}"#
-        );
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(LocalTime::WRAPPER_FIELD),
+            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&LocalTime::EXAMPLE, tokens);
     }
 }
