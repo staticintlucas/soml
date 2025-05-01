@@ -1245,7 +1245,7 @@ mod tests {
         assert_eq!(value.to_string(), "true");
 
         let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert_eq!(value.to_string(), "2023-01-02T03:04:05.006+07:08");
+        assert_eq!(value.to_string(), OffsetDatetime::EXAMPLE_STR);
 
         let value = Value::Array(vec![
             Value::Integer(1),

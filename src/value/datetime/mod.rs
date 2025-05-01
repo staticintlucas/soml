@@ -338,6 +338,9 @@ impl OffsetDatetime {
     pub(crate) const EXAMPLE_ENCODED: &[u8; 14] =
         b"\x80\x8d\x5b\x00\x03\x04\x05\x00\xe7\x07\x01\x02\xac\x01";
 
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006+07:08";
+
     /// Parses a [`OffsetDatetime`] from a byte slice.
     ///
     /// # Errors
@@ -486,6 +489,9 @@ impl LocalDatetime {
     #[cfg(test)]
     pub(crate) const EXAMPLE_ENCODED: &[u8; 12] =
         b"\x80\x8d\x5b\x00\x03\x04\x05\x00\xe7\x07\x01\x02";
+
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006";
 
     /// Parses a [`LocalDatetime`] from a byte slice.
     ///
@@ -638,6 +644,9 @@ impl LocalDate {
 
     #[cfg(test)]
     pub(crate) const EXAMPLE_ENCODED: &[u8; 4] = b"\xe7\x07\x01\x02";
+
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_STR: &str = "2023-01-02";
 
     /// Parses a [`LocalDate`] from a byte slice.
     ///
@@ -823,6 +832,9 @@ impl LocalTime {
 
     #[cfg(test)]
     pub(crate) const EXAMPLE_ENCODED: &[u8; 8] = b"\x80\x8d\x5b\x00\x03\x04\x05\x00";
+
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_STR: &str = "03:04:05.006";
 
     /// Parses a [`LocalTime`] from a byte slice.
     ///
@@ -1214,16 +1226,16 @@ mod tests {
     #[test]
     fn any_datetime_display() {
         let datetime = AnyDatetime::EXAMPLE_OFFSET_DATETIME;
-        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006+07:08");
+        assert_eq!(datetime.to_string(), OffsetDatetime::EXAMPLE_STR);
 
         let datetime = AnyDatetime::EXAMPLE_LOCAL_DATETIME;
-        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006");
+        assert_eq!(datetime.to_string(), LocalDatetime::EXAMPLE_STR);
 
         let datetime = AnyDatetime::EXAMPLE_LOCAL_DATE;
-        assert_eq!(datetime.to_string(), "2023-01-02");
+        assert_eq!(datetime.to_string(), LocalDate::EXAMPLE_STR);
 
         let datetime = AnyDatetime::EXAMPLE_LOCAL_TIME;
-        assert_eq!(datetime.to_string(), "03:04:05.006");
+        assert_eq!(datetime.to_string(), LocalTime::EXAMPLE_STR);
     }
 
     #[test]
@@ -1333,16 +1345,16 @@ mod tests {
     #[test]
     fn datetime_display() {
         let datetime = Datetime::EXAMPLE_OFFSET_DATETIME;
-        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006+07:08");
+        assert_eq!(datetime.to_string(), OffsetDatetime::EXAMPLE_STR);
 
         let datetime = Datetime::EXAMPLE_LOCAL_DATETIME;
-        assert_eq!(datetime.to_string(), "2023-01-02T03:04:05.006");
+        assert_eq!(datetime.to_string(), LocalDatetime::EXAMPLE_STR);
 
         let datetime = Datetime::EXAMPLE_LOCAL_DATE;
-        assert_eq!(datetime.to_string(), "2023-01-02");
+        assert_eq!(datetime.to_string(), LocalDate::EXAMPLE_STR);
 
         let datetime = Datetime::EXAMPLE_LOCAL_TIME;
-        assert_eq!(datetime.to_string(), "03:04:05.006");
+        assert_eq!(datetime.to_string(), LocalTime::EXAMPLE_STR);
 
         // Invalid permutations
         let datetime = Datetime::EXAMPLE_INVALID_1;
@@ -1473,7 +1485,7 @@ mod tests {
     fn offset_datetime_display() {
         assert_eq!(
             OffsetDatetime::EXAMPLE.to_string(),
-            "2023-01-02T03:04:05.006+07:08"
+            OffsetDatetime::EXAMPLE_STR
         );
     }
 
@@ -1601,7 +1613,7 @@ mod tests {
     fn local_datetime_display() {
         assert_eq!(
             LocalDatetime::EXAMPLE.to_string(),
-            "2023-01-02T03:04:05.006"
+            LocalDatetime::EXAMPLE_STR
         );
     }
 
@@ -1781,7 +1793,7 @@ mod tests {
 
     #[test]
     fn local_date_display() {
-        assert_eq!(LocalDate::EXAMPLE.to_string(), "2023-01-02");
+        assert_eq!(LocalDate::EXAMPLE.to_string(), LocalDate::EXAMPLE_STR);
     }
 
     #[test]
@@ -1961,13 +1973,14 @@ mod tests {
 
     #[test]
     fn local_time_display() {
-        assert_eq!(LocalTime::EXAMPLE.to_string(), "03:04:05.006");
+        assert_eq!(LocalTime::EXAMPLE.to_string(), LocalTime::EXAMPLE_STR);
 
         let time_no_nanos = LocalTime {
             nanosecond: 0,
             ..LocalTime::EXAMPLE
         };
-        assert_eq!(time_no_nanos.to_string(), "03:04:05");
+        let str_no_nanos = LocalTime::EXAMPLE_STR.split('.').next().unwrap();
+        assert_eq!(time_no_nanos.to_string(), str_no_nanos);
     }
 
     #[test]

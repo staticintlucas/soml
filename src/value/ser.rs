@@ -878,10 +878,7 @@ mod tests {
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(
-                OffsetDatetime::WRAPPER_FIELD,
-                &"2023-01-02T03:04:05.006+07:08",
-            )
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, OffsetDatetime::EXAMPLE_STR)
             .unwrap();
         let result = serializer.end().unwrap();
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
@@ -889,7 +886,7 @@ mod tests {
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalDatetime::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(LocalDatetime::WRAPPER_FIELD, &"2023-01-02T03:04:05.006")
+            .serialize_field(LocalDatetime::WRAPPER_FIELD, LocalDatetime::EXAMPLE_STR)
             .unwrap();
         let result = serializer.end().unwrap();
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME));
@@ -897,7 +894,7 @@ mod tests {
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalDate::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(LocalDate::WRAPPER_FIELD, &"2023-01-02")
+            .serialize_field(LocalDate::WRAPPER_FIELD, LocalDate::EXAMPLE_STR)
             .unwrap();
         let result = serializer.end().unwrap();
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE));
@@ -905,7 +902,7 @@ mod tests {
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(1), LocalTime::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(LocalTime::WRAPPER_FIELD, &"03:04:05.006")
+            .serialize_field(LocalTime::WRAPPER_FIELD, LocalTime::EXAMPLE_STR)
             .unwrap();
         let result = serializer.end().unwrap();
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME));
@@ -932,16 +929,10 @@ mod tests {
         let mut serializer =
             ToValueTableOrDatetimeSerializer::start(Some(2), OffsetDatetime::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(
-                OffsetDatetime::WRAPPER_FIELD,
-                &"2023-01-02T03:04:05.006+07:08",
-            )
+            .serialize_field(OffsetDatetime::WRAPPER_FIELD, OffsetDatetime::EXAMPLE_STR)
             .unwrap();
         assert_matches!(
-            serializer.serialize_field(
-                OffsetDatetime::WRAPPER_FIELD,
-                &"2023-01-02T03:04:05.006+07:08"
-            ),
+            serializer.serialize_field(OffsetDatetime::WRAPPER_FIELD, OffsetDatetime::EXAMPLE_STR),
             Err(Error(ErrorKind::UnsupportedValue(..)))
         );
 
