@@ -1,5 +1,4 @@
 use core::str;
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io;
 use std::io::Read as _;
@@ -25,7 +24,7 @@ pub trait Reader<'a>: private::Sealed {
     /// # Errors
     ///
     /// Propagates any IO errors that occurred while reading from the source.
-    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
+    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>>;
 
     /// Gets the next char from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
@@ -58,7 +57,7 @@ pub trait Reader<'a>: private::Sealed {
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>>;
+    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>>;
 
     /// Peeks the next char from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
@@ -131,7 +130,7 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn next_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, [u8]>> {
+    fn next_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
         let result = self.peek_while(func)?;
         self.discard_n(result.len())?;
         Ok(result)
@@ -146,15 +145,10 @@ pub trait Reader<'a>: private::Sealed {
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn next_str_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, str>> {
-        match self.next_while(func)? {
-            Cow::Borrowed(bytes) => str::from_utf8(bytes)
-                .map(Cow::Borrowed)
-                .map_err(|_| ErrorKind::InvalidEncoding.into()),
-            Cow::Owned(vec) => String::from_utf8(vec)
-                .map(Cow::Owned)
-                .map_err(|_| ErrorKind::InvalidEncoding.into()),
-        }
+    fn next_str_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<String> {
+        self.next_while(func).and_then(|bytes| {
+            String::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding.into())
+        })
     }
 
     /// Peeks a slice of bytes from the stream where the closure returns `true`. Returns an empty
@@ -164,7 +158,7 @@ pub trait Reader<'a>: private::Sealed {
     ///
     /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, [u8]>>;
+    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>>;
 
     /// Consumes the next byte if it is equal to the expected value. Returns whether or not the
     /// byte was consumed.
@@ -195,7 +189,7 @@ pub trait Reader<'a>: private::Sealed {
     /// # Errors
     ///
     /// Propagates any IO errors that occurred while reading from the source.
-    fn end_seq(&mut self) -> Result<Cow<'a, [u8]>>;
+    fn end_seq(&mut self) -> Result<Vec<u8>>;
 }
 
 /// Read from a string
@@ -233,7 +227,7 @@ impl<'a> Reader<'a> for SliceReader<'a> {
     }
 
     #[inline]
-    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
         Ok(self.peek_n(n)?.inspect(|_| self.offset += n))
     }
 
@@ -243,11 +237,11 @@ impl<'a> Reader<'a> for SliceReader<'a> {
     }
 
     #[inline]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
         Ok(self
             .bytes
             .get(self.offset..self.offset + n)
-            .map(Cow::Borrowed))
+            .map(<[_]>::to_vec))
     }
 
     #[inline]
@@ -262,10 +256,10 @@ impl<'a> Reader<'a> for SliceReader<'a> {
     }
 
     #[inline]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, [u8]>> {
+    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
         let off = self.offset;
         let len = self.bytes[off..].iter().copied().take_while(func).count();
-        Ok(Cow::Borrowed(&self.bytes[off..off + len]))
+        Ok(self.bytes[off..off + len].to_vec())
     }
 
     #[inline]
@@ -284,11 +278,11 @@ impl<'a> Reader<'a> for SliceReader<'a> {
 
     #[allow(clippy::panic)]
     #[inline]
-    fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
+    fn end_seq(&mut self) -> Result<Vec<u8>> {
         let Some(start) = self.seq_start.take() else {
             panic!("SliceReader::end_seq called without calling SliceReader::start_seq first")
         };
-        Ok(Cow::Borrowed(&self.bytes[start..self.offset]))
+        Ok(self.bytes[start..self.offset].to_vec())
     }
 }
 
@@ -317,7 +311,7 @@ where
 
 impl<R> private::Sealed for IoReader<R> {}
 
-impl<'a, R> Reader<'a> for IoReader<R>
+impl<R> Reader<'_> for IoReader<R>
 where
     R: io::Read,
 {
@@ -336,7 +330,7 @@ where
     }
 
     #[inline]
-    fn next_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
         while self.peek.len() < n {
             match self.iter.next().transpose()? {
                 Some(ch) => self.peek.push_back(ch),
@@ -350,7 +344,7 @@ where
             seq.extend_from_slice(result.as_ref());
         }
 
-        Ok(Some(Cow::Owned(result)))
+        Ok(Some(result))
     }
 
     #[inline]
@@ -367,7 +361,7 @@ where
     }
 
     #[inline]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Cow<'a, [u8]>>> {
+    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
         while self.peek.len() < n {
             match self.iter.next().transpose()? {
                 Some(ch) => self.peek.push_back(ch),
@@ -377,7 +371,7 @@ where
 
         let result = self.peek.range(..n).copied().collect();
 
-        Ok(Some(Cow::Owned(result)))
+        Ok(Some(result))
     }
 
     #[inline]
@@ -419,7 +413,7 @@ where
     }
 
     #[inline]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Cow<'a, [u8]>> {
+    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
         if let Some(i) = self.peek.iter().position(|ch| !func(ch)) {
             Ok(self.peek.range(..i).copied().collect())
         } else {
@@ -471,11 +465,11 @@ where
 
     #[allow(clippy::panic)]
     #[inline]
-    fn end_seq(&mut self) -> Result<Cow<'a, [u8]>> {
+    fn end_seq(&mut self) -> Result<Vec<u8>> {
         let Some(seq) = self.seq.take() else {
             panic!("IoReader::end_seq called without calling IoReader::start_seq first")
         };
-        Ok(Cow::Owned(seq))
+        Ok(seq)
     }
 }
 

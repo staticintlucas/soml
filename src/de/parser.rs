@@ -1,5 +1,4 @@
 use core::{fmt, str};
-use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::io;
 use std::marker::PhantomData;
@@ -60,19 +59,19 @@ impl From<Type> for de::Unexpected<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum Value<'de> {
+pub(super) enum Value {
     // String; any escape sequences are already parsed
-    String(Cow<'de, str>),
+    String(String),
     // Decimal integer
-    Integer(Cow<'de, [u8]>),
+    Integer(Vec<u8>),
     // Binary integer (without the 0b prefix)
-    BinaryInt(Cow<'de, [u8]>),
+    BinaryInt(Vec<u8>),
     // Octal integer (without the 0o prefix)
-    OctalInt(Cow<'de, [u8]>),
+    OctalInt(Vec<u8>),
     // Hexadecimal integer (without the 0x prefix)
-    HexInt(Cow<'de, [u8]>),
+    HexInt(Vec<u8>),
     // Float
-    Float(Cow<'de, [u8]>),
+    Float(Vec<u8>),
     // Special float (inf, nan, etc)
     SpecialFloat(SpecialFloat),
     // Boolean
@@ -88,19 +87,19 @@ pub(super) enum Value<'de> {
     // Just a regular inline array
     Array(Vec<Self>),
     // Table defined by a table header. This is immutable aside from being able to add subtables
-    Table(Table<'de>),
+    Table(Table),
     // Super table created when parsing a subtable header. This can still be explicitly defined
     // later turning it into a `Table`
-    UndefinedTable(Table<'de>),
+    UndefinedTable(Table),
     // A table defined by dotted keys. This can be freely added to by other dotted keys
-    DottedKeyTable(Table<'de>),
+    DottedKeyTable(Table),
     // Inline table
-    InlineTable(Table<'de>),
+    InlineTable(Table),
     // Array of tables
-    ArrayOfTables(Vec<Table<'de>>),
+    ArrayOfTables(Vec<Table>),
 }
 
-impl Value<'_> {
+impl Value {
     #[inline]
     pub const fn typ(&self) -> Type {
         match *self {
@@ -123,7 +122,7 @@ impl Value<'_> {
     }
 }
 
-pub(super) type Table<'de> = std::collections::HashMap<Cow<'de, str>, Value<'de>>;
+pub(super) type Table = std::collections::HashMap<String, Value>;
 
 #[derive(Debug)]
 pub(super) struct Parser<'de, R: Reader<'de>> {
@@ -169,7 +168,7 @@ impl<'de, R> Parser<'de, R>
 where
     R: Reader<'de>,
 {
-    pub fn parse(&mut self) -> Result<Value<'de>> {
+    pub fn parse(&mut self) -> Result<Value> {
         let mut root = Table::with_capacity(10);
 
         // The currently opened table
@@ -268,7 +267,7 @@ where
         Ok(Value::Table(root))
     }
 
-    fn parse_array_header(&mut self) -> Result<Vec<Cow<'de, str>>> {
+    fn parse_array_header(&mut self) -> Result<Vec<String>> {
         self.skip_whitespace()?;
         let key = self.parse_dotted_key()?;
 
@@ -279,7 +278,7 @@ where
             .ok_or_else(|| ErrorKind::ExpectedToken("]] after dotted key".into()).into())
     }
 
-    fn parse_table_header(&mut self) -> Result<Vec<Cow<'de, str>>> {
+    fn parse_table_header(&mut self) -> Result<Vec<String>> {
         self.skip_whitespace()?;
         let key = self.parse_dotted_key()?;
 
@@ -290,7 +289,7 @@ where
             .ok_or_else(|| ErrorKind::ExpectedToken("] after dotted key".into()).into())
     }
 
-    fn parse_key_value_pair(&mut self) -> Result<(Vec<Cow<'de, str>>, Value<'de>)> {
+    fn parse_key_value_pair(&mut self) -> Result<(Vec<String>, Value)> {
         let path = self.parse_dotted_key()?;
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
@@ -304,7 +303,7 @@ where
         Ok((path, value))
     }
 
-    fn parse_dotted_key(&mut self) -> Result<Vec<Cow<'de, str>>> {
+    fn parse_dotted_key(&mut self) -> Result<Vec<String>> {
         let mut result = vec![self.parse_key()?];
 
         self.skip_whitespace()?;
@@ -318,7 +317,7 @@ where
         Ok(result)
     }
 
-    fn parse_key(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_key(&mut self) -> Result<String> {
         if self.reader.eat_char(b'"')? {
             if self.reader.eat_str(br#""""#)? {
                 // multiline strings are invalid as keys
@@ -338,7 +337,7 @@ where
         }
     }
 
-    fn parse_bare_key(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_bare_key(&mut self) -> Result<String> {
         let key = self.reader.next_str_while(is_toml_word)?;
 
         (!key.is_empty())
@@ -346,7 +345,7 @@ where
             .ok_or_else(|| ErrorKind::ExpectedToken("key".into()).into())
     }
 
-    fn parse_value(&mut self) -> Result<Value<'de>> {
+    fn parse_value(&mut self) -> Result<Value> {
         match self.reader.peek()? {
             // String
             Some(b'"' | b'\'') => self.parse_string().map(Value::String),
@@ -385,7 +384,7 @@ where
         }
     }
 
-    fn parse_string(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_string(&mut self) -> Result<String> {
         if self.reader.eat_char(b'"')? {
             if self.reader.eat_str(br#""""#)? {
                 self.parse_multiline_basic_str()
@@ -403,14 +402,14 @@ where
         }
     }
 
-    fn parse_basic_str(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_basic_str(&mut self) -> Result<String> {
         let mut str = self.reader.next_str_while(is_toml_basic_str_sans_escapes)?;
 
         loop {
             match self.reader.next()? {
                 Some(b'\\') => {
                     // Parse escape sequence
-                    str.to_mut().push(self.parse_escape_seq()?);
+                    str.push(self.parse_escape_seq()?);
                 }
                 Some(b'"') => {
                     break Ok(str);
@@ -423,12 +422,11 @@ where
                 }
             }
 
-            str.to_mut()
-                .push_str(&self.reader.next_str_while(is_toml_basic_str_sans_escapes)?);
+            str.push_str(&self.reader.next_str_while(is_toml_basic_str_sans_escapes)?);
         }
     }
 
-    fn parse_multiline_basic_str(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_multiline_basic_str(&mut self) -> Result<String> {
         // Newlines after the first """ are ignored
         let _ = self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?;
 
@@ -456,7 +454,7 @@ where
                         let _ws = self.reader.next_while(is_toml_whitespace_or_newline)?;
                     } else {
                         // Parse a regular escape sequence and continue
-                        str.to_mut().push(self.parse_escape_seq()?);
+                        str.push(self.parse_escape_seq()?);
                     }
                 }
                 Some(b'"') => {
@@ -465,15 +463,15 @@ where
                         // We can have up to 5 '"'s, 2 quotes inside the string right before the 3
                         // which close the string. So we check for 2 additional '"'s and push them
                         if self.reader.eat_char(b'"')? {
-                            str.to_mut().push('"');
+                            str.push('"');
                             if self.reader.eat_char(b'"')? {
-                                str.to_mut().push('"');
+                                str.push('"');
                             }
                         }
 
                         break Ok(str);
                     }
-                    str.to_mut().push('"');
+                    str.push('"');
                 }
                 None => {
                     break Err(ErrorKind::UnterminatedString.into());
@@ -484,7 +482,7 @@ where
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
 
-            str.to_mut().push_str(
+            str.push_str(
                 &self
                     .reader
                     .next_str_while(is_toml_multiline_basic_str_sans_escapes)?,
@@ -492,7 +490,7 @@ where
         }
     }
 
-    fn parse_literal_str(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_literal_str(&mut self) -> Result<String> {
         let str = self.reader.next_str_while(is_toml_literal_str)?;
 
         match self.reader.next()? {
@@ -502,7 +500,7 @@ where
         }
     }
 
-    fn parse_multiline_literal_str(&mut self) -> Result<Cow<'de, str>> {
+    fn parse_multiline_literal_str(&mut self) -> Result<String> {
         // Newlines after the first ''' are ignored
         let _ = self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?;
 
@@ -516,15 +514,15 @@ where
                         // We can have up to 5 '\''s, 2 quotes inside the string right before the 3
                         // which close the string. So we check for 2 additional '\''s and push them
                         if self.reader.eat_char(b'\'')? {
-                            str.to_mut().push('\'');
+                            str.push('\'');
                             if self.reader.eat_char(b'\'')? {
-                                str.to_mut().push('\'');
+                                str.push('\'');
                             }
                         }
 
                         break Ok(str);
                     }
-                    str.to_mut().push('\'');
+                    str.push('\'');
                 }
                 None => {
                     break Err(ErrorKind::UnterminatedString.into());
@@ -535,8 +533,7 @@ where
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
 
-            str.to_mut()
-                .push_str(&self.reader.next_str_while(is_toml_multiline_literal_str)?);
+            str.push_str(&self.reader.next_str_while(is_toml_multiline_literal_str)?);
         }
     }
 
@@ -591,24 +588,19 @@ where
         // Match against the whole word, don't just parse the first n characters so we don't
         // successfully parse e.g. true92864yhowkalgp98y
         let word = self.reader.next_while(is_toml_word)?;
-        let result = match word.as_ref() {
+
+        match &word[..] {
             b"true" => Ok(true),
             b"false" => Ok(false),
             _ => Err(ErrorKind::ExpectedToken("true/false".into()).into()),
-        };
-        result
+        }
     }
 
     // Parses anything that starts with a digit. Does not parse special floats or +/- values
-    fn parse_number_or_datetime(&mut self) -> Result<Value<'de>> {
-        fn remove_start(value: Cow<'_, [u8]>, n: usize) -> Cow<'_, [u8]> {
-            match value {
-                Cow::Borrowed(bytes) => Cow::Borrowed(&bytes[n..]),
-                Cow::Owned(mut bytes) => {
-                    bytes.drain(..n);
-                    Cow::Owned(bytes)
-                }
-            }
+    fn parse_number_or_datetime(&mut self) -> Result<Value> {
+        fn remove_start(mut bytes: Vec<u8>, n: usize) -> Vec<u8> {
+            bytes.drain(..n);
+            bytes
         }
 
         let value = self.reader.next_while(is_toml_number_or_datetime)?;
@@ -683,12 +675,12 @@ where
         }
     }
 
-    fn parse_number_decimal(&mut self) -> Result<Value<'de>> {
+    fn parse_number_decimal(&mut self) -> Result<Value> {
         let value = self.reader.next_while(is_toml_number_or_datetime)?;
         Self::normalize_number_decimal(value)
     }
 
-    fn normalize_number_decimal(digits: Cow<'de, [u8]>) -> Result<Value<'de>> {
+    fn normalize_number_decimal(digits: Vec<u8>) -> Result<Value> {
         fn split_at_byte(bytes: &[u8], pred: impl FnMut(&u8) -> bool) -> Option<(&[u8], &[u8])> {
             bytes
                 .iter()
@@ -755,10 +747,7 @@ where
         })
     }
 
-    fn normalize_number(
-        digits: Cow<'de, [u8]>,
-        is_digit: fn(&u8) -> bool,
-    ) -> Result<Cow<'de, [u8]>> {
+    fn normalize_number(digits: Vec<u8>, is_digit: fn(&u8) -> bool) -> Result<Vec<u8>> {
         Self::check_underscores(&digits)?;
         let digits = Self::strip_underscores(digits);
 
@@ -785,7 +774,7 @@ where
         Ok(())
     }
 
-    fn strip_underscores(digits: Cow<'de, [u8]>) -> Cow<'de, [u8]> {
+    fn strip_underscores(digits: Vec<u8>) -> Vec<u8> {
         if let Some(idx) = digits.iter().position(|&b| b == b'_') {
             let mut result = Vec::with_capacity(digits.len() - 1); // Upper bound
             result.extend_from_slice(&digits[..idx]);
@@ -795,7 +784,7 @@ where
                 digits = &digits[idx + 1..];
             }
             result.extend_from_slice(digits);
-            Cow::Owned(result)
+            result
         } else {
             digits
         }
@@ -807,7 +796,7 @@ where
         match self.reader.peek()? {
             Some(b'+') => {
                 self.reader.discard()?;
-                match self.reader.next_while(is_toml_word)?.as_ref() {
+                match &self.reader.next_while(is_toml_word)?[..] {
                     b"inf" => Ok(SpecialFloat::Infinity),
                     b"nan" => Ok(SpecialFloat::Nan),
                     _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
@@ -815,13 +804,13 @@ where
             }
             Some(b'-') => {
                 self.reader.discard()?;
-                match self.reader.next_while(is_toml_word)?.as_ref() {
+                match &self.reader.next_while(is_toml_word)?[..] {
                     b"inf" => Ok(SpecialFloat::NegInfinity),
                     b"nan" => Ok(SpecialFloat::NegNan),
                     _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
                 }
             }
-            _ => match self.reader.next_while(is_toml_word)?.as_ref() {
+            _ => match &self.reader.next_while(is_toml_word)?[..] {
                 b"inf" => Ok(SpecialFloat::Infinity),
                 b"nan" => Ok(SpecialFloat::Nan),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
@@ -829,7 +818,7 @@ where
         }
     }
 
-    fn parse_array(&mut self) -> Result<Vec<Value<'de>>> {
+    fn parse_array(&mut self) -> Result<Vec<Value>> {
         let mut result = vec![];
 
         loop {
@@ -854,7 +843,7 @@ where
         Ok(result)
     }
 
-    fn parse_inline_table(&mut self) -> Result<Table<'de>> {
+    fn parse_inline_table(&mut self) -> Result<Table> {
         let mut result = Table::with_capacity(10);
 
         self.skip_whitespace()?;
@@ -938,10 +927,7 @@ where
         Ok(())
     }
 
-    fn get_table_header<'a>(
-        parent: &'a mut Table<'de>,
-        path: &[Cow<'de, str>],
-    ) -> Option<&'a mut Table<'de>> {
+    fn get_table_header<'a>(parent: &'a mut Table, path: &[String]) -> Option<&'a mut Table> {
         let Some((key, path)) = path.split_last() else {
             return Some(parent);
         };
@@ -1005,10 +991,7 @@ where
         }
     }
 
-    fn get_array_header<'a>(
-        parent: &'a mut Table<'de>,
-        path: &[Cow<'de, str>],
-    ) -> Option<&'a mut Table<'de>> {
+    fn get_array_header<'a>(parent: &'a mut Table, path: &[String]) -> Option<&'a mut Table> {
         let Some((key, path)) = path.split_last() else {
             return Some(parent);
         };
@@ -1055,10 +1038,7 @@ where
         }
     }
 
-    fn get_dotted_key<'a>(
-        parent: &'a mut Table<'de>,
-        path: &[Cow<'de, str>],
-    ) -> Option<&'a mut Table<'de>> {
+    fn get_dotted_key<'a>(parent: &'a mut Table, path: &[String]) -> Option<&'a mut Table> {
         // Navigate to the table, converting any UndefinedTables to DottedKeyTables
         path.iter().try_fold(parent, |table, key| {
             let value = table
@@ -1080,10 +1060,7 @@ where
         })
     }
 
-    fn get_inline_subtable<'a>(
-        parent: &'a mut Table<'de>,
-        path: &[Cow<'de, str>],
-    ) -> Option<&'a mut Table<'de>> {
+    fn get_inline_subtable<'a>(parent: &'a mut Table, path: &[String]) -> Option<&'a mut Table> {
         // Navigate to the subtable with the given name for each element in the path
         path.iter().try_fold(parent, |table, key| {
             let entry = table
@@ -2317,24 +2294,18 @@ mod tests {
     fn parser_strip_underscores() {
         type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
 
-        assert_eq!(
-            Parser::strip_underscores(b"123456".into()),
-            Cow::<[u8]>::Borrowed(b"123456")
-        );
+        assert_eq!(Parser::strip_underscores(b"123456".into()), b"123456");
 
-        assert_eq!(
-            Parser::strip_underscores(b"123_456".into()),
-            Cow::<[u8]>::Owned(b"123456".to_vec())
-        );
+        assert_eq!(Parser::strip_underscores(b"123_456".into()), b"123456");
 
         assert_eq!(
             Parser::strip_underscores(b"123_456_789".into()),
-            Cow::<[u8]>::Owned(b"123456789".to_vec())
+            b"123456789"
         );
 
         assert_eq!(
             Parser::strip_underscores(b"123_456_789_abc".into()),
-            Cow::<[u8]>::Owned(b"123456789abc".to_vec())
+            b"123456789abc"
         );
     }
 

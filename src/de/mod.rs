@@ -1,7 +1,6 @@
 //! TOML deserialization functions and trait implementations.
 
 use core::str;
-use std::borrow::Cow;
 use std::io;
 use std::result::Result as StdResult;
 
@@ -128,18 +127,18 @@ where
 }
 
 #[derive(Debug)]
-struct ValueDeserializer<'de> {
-    value: ParsedValue<'de>,
+struct ValueDeserializer {
+    value: ParsedValue,
 }
 
-impl<'de> ValueDeserializer<'de> {
+impl ValueDeserializer {
     #[inline]
-    const fn new(value: ParsedValue<'de>) -> Self {
+    const fn new(value: ParsedValue) -> Self {
         Self { value }
     }
 }
 
-impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
+impl<'de> de::Deserializer<'de> for ValueDeserializer {
     type Error = Error;
 
     #[inline]
@@ -362,8 +361,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            ParsedValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_str(str),
-            ParsedValue::String(Cow::Owned(string)) => visitor.visit_string(string),
+            ParsedValue::String(string) => visitor.visit_string(string),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -382,8 +380,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.value {
-            ParsedValue::String(Cow::Borrowed(str)) => visitor.visit_borrowed_bytes(str.as_bytes()),
-            ParsedValue::String(Cow::Owned(string)) => visitor.visit_byte_buf(string.into_bytes()),
+            ParsedValue::String(string) => visitor.visit_byte_buf(string.into_bytes()),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
     }
@@ -585,7 +582,7 @@ impl<T> SeqAccess<T> {
 }
 
 // For regular arrays
-impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue> {
     type Error = Error;
 
     #[inline]
@@ -606,7 +603,7 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedValue<'de>> {
 }
 
 // Used for array of tables
-impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable<'de>> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable> {
     type Error = Error;
 
     #[inline]
@@ -628,14 +625,14 @@ impl<'de> de::SeqAccess<'de> for SeqAccess<ParsedTable<'de>> {
     }
 }
 
-struct MapAccess<'de> {
-    kv_pairs: <ParsedTable<'de> as IntoIterator>::IntoIter,
-    next_value: Option<ParsedValue<'de>>,
+struct MapAccess {
+    kv_pairs: <ParsedTable as IntoIterator>::IntoIter,
+    next_value: Option<ParsedValue>,
 }
 
-impl<'de> MapAccess<'de> {
+impl MapAccess {
     #[inline]
-    fn new(table: ParsedTable<'de>) -> Self {
+    fn new(table: ParsedTable) -> Self {
         Self {
             kv_pairs: table.into_iter(),
             next_value: None,
@@ -643,7 +640,7 @@ impl<'de> MapAccess<'de> {
     }
 }
 
-impl<'de> de::MapAccess<'de> for MapAccess<'de> {
+impl<'de> de::MapAccess<'de> for MapAccess {
     type Error = Error;
 
     #[inline]
@@ -697,14 +694,14 @@ impl<'de> de::MapAccess<'de> for MapAccess<'de> {
 }
 
 #[derive(Debug)]
-struct EnumAccess<'de> {
-    variant: Cow<'de, str>,
-    value: ParsedValue<'de>,
+struct EnumAccess {
+    variant: String,
+    value: ParsedValue,
 }
 
-impl<'de> EnumAccess<'de> {
+impl EnumAccess {
     #[inline]
-    fn new(table: ParsedTable<'de>) -> Result<Self> {
+    fn new(table: ParsedTable) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
             Error::invalid_value(
@@ -722,7 +719,7 @@ impl<'de> EnumAccess<'de> {
     }
 }
 
-impl<'de> de::EnumAccess<'de> for EnumAccess<'de> {
+impl<'de> de::EnumAccess<'de> for EnumAccess {
     type Error = Error;
     type Variant = Self;
 
@@ -736,7 +733,7 @@ impl<'de> de::EnumAccess<'de> for EnumAccess<'de> {
     }
 }
 
-impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
+impl<'de> de::VariantAccess<'de> for EnumAccess {
     type Error = Error;
 
     #[inline]
@@ -1635,10 +1632,10 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_char() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("A")));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("A".to_string()));
         assert_matches!(char::deserialize(deserializer), Ok('A'));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("A".into())));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("A".to_string()));
         assert_matches!(char::deserialize(deserializer), Ok('A'));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1656,11 +1653,8 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_str() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_matches!(<&str>::deserialize(deserializer), Ok("hello"));
-
         // TODO
-        // let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
+        // let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         // assert_matches!(<&str>::deserialize(deserializer), Ok("hello"));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
@@ -1672,10 +1666,7 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_string() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_matches!(String::deserialize(deserializer), Ok(s) if s == "hello");
-
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         assert_matches!(String::deserialize(deserializer), Ok(s) if s == "hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
@@ -1687,10 +1678,8 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_bytes() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_matches!(<&[u8]>::deserialize(deserializer), Ok(b"hello"));
-
-        // let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
+        // TODO
+        // let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         // assert_matches!(<&[u8]>::deserialize(deserializer), Ok(b"hello"));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
@@ -1702,10 +1691,7 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_byte_buf() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Borrowed("hello")));
-        assert_matches!(ByteBuf::deserialize(deserializer), Ok(b) if &*b == b"hello");
-
-        let deserializer = ValueDeserializer::new(ParsedValue::String(Cow::Owned("hello".into())));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         assert_matches!(ByteBuf::deserialize(deserializer), Ok(b) if &*b == b"hello");
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
@@ -1717,13 +1703,13 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_option() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
-        assert_matches!(Option::<&str>::deserialize(deserializer), Ok(Some(s)) if s == "hello");
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
+        assert_matches!(Option::<String>::deserialize(deserializer), Ok(Some(s)) if s == "hello");
     }
 
     #[test]
     fn value_deserializer_deserialize_unit() {
-        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         assert_matches!(
             <()>::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -2149,7 +2135,7 @@ mod tests {
             ParsedValue::Integer(b"456".into()),
             ParsedValue::Integer(b"789".into()),
         ];
-        let mut seq = SeqAccess::new(array.clone());
+        let mut seq = SeqAccess::new(array);
 
         assert_matches!(seq.next_element(), Ok(Some(123)));
         assert_matches!(seq.next_element(), Ok(Some(456)));
@@ -2161,7 +2147,7 @@ mod tests {
             hashmap! { "def".into() => ParsedValue::Integer(b"456".into()) },
             hashmap! { "ghi".into() => ParsedValue::Integer(b"789".into()) },
         ];
-        let mut seq = SeqAccess::new(array.clone());
+        let mut seq = SeqAccess::new(array);
 
         assert_matches!(
             seq.next_element::<HashMap<String, i32>>(),
