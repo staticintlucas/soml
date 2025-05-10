@@ -1,12 +1,10 @@
 use std::collections::hash_map::Entry;
-use std::marker::PhantomData;
-use std::{fmt, io, str};
+use std::{fmt, str};
 
 use serde::de;
 
 use super::error::{ErrorKind, Result};
-use super::reader::IoReader;
-use super::{Reader, SliceReader};
+use super::Reader;
 use crate::value::{LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,18 +151,16 @@ enum Line {
 }
 
 #[derive(Debug)]
-pub(super) struct Parser<'de, R: Reader<'de>> {
-    reader: R,
-    _phantom: PhantomData<&'de ()>,
+pub(super) struct Parser<'de> {
+    reader: Reader<'de>,
 }
 
-impl<'de> Parser<'de, SliceReader<'de>> {
+impl<'de> Parser<'de> {
     #[must_use]
     #[inline]
     pub fn from_str(str: &'de str) -> Self {
         Self {
-            reader: SliceReader::from_str(str),
-            _phantom: PhantomData,
+            reader: Reader::from_str(str),
         }
     }
 
@@ -172,30 +168,12 @@ impl<'de> Parser<'de, SliceReader<'de>> {
     #[inline]
     pub fn from_slice(bytes: &'de [u8]) -> Self {
         Self {
-            reader: SliceReader::from_slice(bytes),
-            _phantom: PhantomData,
+            reader: Reader::from_slice(bytes),
         }
     }
 }
 
-impl<R> Parser<'_, IoReader<R>>
-where
-    R: io::Read,
-{
-    #[must_use]
-    #[inline]
-    pub fn from_reader(read: R) -> Self {
-        Self {
-            reader: IoReader::from_reader(read),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'de, R> Parser<'de, R>
-where
-    R: Reader<'de>,
-{
+impl Parser<'_> {
     #[inline]
     pub fn parse(&mut self) -> Result<Value> {
         let mut root = Table::with_capacity(10);
@@ -252,7 +230,7 @@ where
         self.skip_comments_and_whitespace()?;
 
         // Parse array header
-        let result = if self.reader.eat_str(b"[[")? {
+        let result = if self.reader.eat_str(b"[[") {
             let key = self.parse_array_header()?;
             Some(Line::TableHeader {
                 key,
@@ -260,7 +238,7 @@ where
             })
         }
         // Parse table header
-        else if self.reader.eat_char(b'[')? {
+        else if self.reader.eat_char(b'[') {
             let key = self.parse_table_header()?;
             Some(Line::TableHeader {
                 key,
@@ -270,14 +248,14 @@ where
         // Parse key/value pair
         else if self
             .reader
-            .peek()?
+            .peek()
             .is_some_and(|ch| is_toml_word(&ch) || ch == b'"' || ch == b'\'')
         {
             let (key, value) = self.parse_key_value_pair()?;
             Some(Line::KeyValuePair { key, value })
         }
         // Anything else is unexpected
-        else if let Some(ch) = self.reader.next()? {
+        else if let Some(ch) = self.reader.next() {
             return Err(if is_toml_legal(&ch) {
                 ErrorKind::ExpectedToken("table header or key/value pair".into()).into()
             } else {
@@ -290,11 +268,11 @@ where
         };
 
         // Expect newline/comment after a line
-        self.skip_whitespace()?;
-        match self.reader.peek()? {
-            Some(b'\n') => self.reader.discard()?,
-            Some(b'\r') if self.reader.peek_at(1)?.is_some_and(|ch| ch == b'\n') => {
-                self.reader.discard_n(2)?; // b"\r\n"
+        self.skip_whitespace();
+        match self.reader.peek() {
+            Some(b'\n') => self.reader.discard(),
+            Some(b'\r') if self.reader.peek_at(1).is_some_and(|ch| ch == b'\n') => {
+                self.reader.discard_n(2); // b"\r\n"
             }
             Some(b'#') => {
                 self.skip_comment()?;
@@ -314,24 +292,24 @@ where
 
     #[inline]
     fn parse_array_header(&mut self) -> Result<Key> {
-        self.skip_whitespace()?;
+        self.skip_whitespace();
         let key = self.parse_dotted_key()?;
 
-        self.skip_whitespace()?;
+        self.skip_whitespace();
         self.reader
-            .eat_str(b"]]")?
+            .eat_str(b"]]")
             .then_some(key)
             .ok_or_else(|| ErrorKind::ExpectedToken("]] after dotted key".into()).into())
     }
 
     #[inline]
     fn parse_table_header(&mut self) -> Result<Key> {
-        self.skip_whitespace()?;
+        self.skip_whitespace();
         let key = self.parse_dotted_key()?;
 
-        self.skip_whitespace()?;
+        self.skip_whitespace();
         self.reader
-            .eat_char(b']')?
+            .eat_char(b']')
             .then_some(key)
             .ok_or_else(|| ErrorKind::ExpectedToken("] after dotted key".into()).into())
     }
@@ -341,10 +319,10 @@ where
         let path = self.parse_dotted_key()?;
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
-        if !self.reader.eat_char(b'=')? {
+        if !self.reader.eat_char(b'=') {
             return Err(ErrorKind::ExpectedToken("= after key".into()).into());
         }
-        self.skip_whitespace()?;
+        self.skip_whitespace();
 
         let value = self.parse_value()?;
 
@@ -355,12 +333,12 @@ where
     fn parse_dotted_key(&mut self) -> Result<Key> {
         let mut path = vec![self.parse_key()?];
 
-        self.skip_whitespace()?;
+        self.skip_whitespace();
 
-        while self.reader.eat_char(b'.')? {
-            self.skip_whitespace()?;
+        while self.reader.eat_char(b'.') {
+            self.skip_whitespace();
             path.push(self.parse_key()?);
-            self.skip_whitespace()?;
+            self.skip_whitespace();
         }
 
         let name = path.pop().unwrap_or_else(|| unreachable!());
@@ -370,15 +348,15 @@ where
 
     #[inline]
     fn parse_key(&mut self) -> Result<String> {
-        if self.reader.eat_char(b'"')? {
-            if self.reader.eat_str(br#""""#)? {
+        if self.reader.eat_char(b'"') {
+            if self.reader.eat_str(br#""""#) {
                 // multiline strings are invalid as keys
                 Err(ErrorKind::ExpectedToken("key".into()).into())
             } else {
                 self.parse_basic_str()
             }
-        } else if self.reader.eat_char(b'\'')? {
-            if self.reader.eat_str(b"''")? {
+        } else if self.reader.eat_char(b'\'') {
+            if self.reader.eat_str(b"''") {
                 // multiline strings are invalid as keys
                 Err(ErrorKind::ExpectedToken("key".into()).into())
             } else {
@@ -400,7 +378,7 @@ where
 
     #[inline]
     fn parse_value(&mut self) -> Result<Value> {
-        match self.reader.peek()? {
+        match self.reader.peek() {
             // String
             Some(b'"' | b'\'') => self.parse_string().map(Value::String),
             // Boolean
@@ -409,7 +387,7 @@ where
             Some(b'0'..=b'9') => self.parse_number_or_datetime(),
             // Number (either int/float or special float)
             Some(b'+' | b'-') => {
-                match self.reader.peek_at(1)? {
+                match self.reader.peek_at(1) {
                     // Number
                     Some(ch) if ch.is_ascii_digit() => self.parse_number_decimal(),
                     // Special float
@@ -422,12 +400,12 @@ where
             Some(b'i' | b'n') => self.parse_number_special().map(Value::SpecialFloat),
             // Array
             Some(b'[') => {
-                self.reader.discard()?; // We consume the opening delimiter
+                self.reader.discard(); // We consume the opening delimiter
                 self.parse_array().map(Value::Array)
             }
             // Table
             Some(b'{') => {
-                self.reader.discard()?; // We consume the opening delimiter
+                self.reader.discard(); // We consume the opening delimiter
                 self.parse_inline_table().map(Value::InlineTable)
             }
             Some(ch) if is_toml_legal(&ch) => {
@@ -440,14 +418,14 @@ where
 
     #[inline]
     fn parse_string(&mut self) -> Result<String> {
-        if self.reader.eat_char(b'"')? {
-            if self.reader.eat_str(br#""""#)? {
+        if self.reader.eat_char(b'"') {
+            if self.reader.eat_str(br#""""#) {
                 self.parse_multiline_basic_str()
             } else {
                 self.parse_basic_str()
             }
-        } else if self.reader.eat_char(b'\'')? {
-            if self.reader.eat_str(b"''")? {
+        } else if self.reader.eat_char(b'\'') {
+            if self.reader.eat_str(b"''") {
                 self.parse_multiline_literal_str()
             } else {
                 self.parse_literal_str()
@@ -462,7 +440,7 @@ where
         let mut str = self.reader.next_str_while(is_toml_basic_str_sans_escapes)?;
 
         loop {
-            match self.reader.next()? {
+            match self.reader.next() {
                 Some(b'\\') => {
                     // Parse escape sequence
                     str.push(self.parse_escape_seq()?);
@@ -485,30 +463,30 @@ where
     #[inline]
     fn parse_multiline_basic_str(&mut self) -> Result<String> {
         // Newlines after the first """ are ignored
-        let _ = self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?;
+        let _ = self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n");
 
         let mut str = self
             .reader
             .next_str_while(is_toml_multiline_basic_str_sans_escapes)?;
 
         loop {
-            match self.reader.next()? {
+            match self.reader.next() {
                 Some(b'\\') => {
                     // Trailing '\' means eat all whitespace and newlines
-                    if self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")? {
-                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline)?;
+                    if self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n") {
+                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline);
                     }
                     // If there's space after the \ we assume a trailing \ with trailing whitespace,
                     // but we need to verify there's only whitespace chars before the next newline
-                    else if let Some(char) = self.reader.next_if(is_toml_whitespace)? {
-                        let _ws = self.reader.next_while(is_toml_whitespace)?;
-                        if !(self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?) {
+                    else if let Some(char) = self.reader.next_if(is_toml_whitespace) {
+                        let _ws = self.reader.next_while(is_toml_whitespace);
+                        if !(self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n")) {
                             return Err(ErrorKind::InvalidEscape(
                                 format!("{:?}", char::from(char)).into(),
                             )
                             .into());
                         }
-                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline)?;
+                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline);
                     } else {
                         // Parse a regular escape sequence and continue
                         str.push(self.parse_escape_seq()?);
@@ -516,12 +494,12 @@ where
                 }
                 Some(b'"') => {
                     // Check for 2 more '"'s
-                    if self.reader.eat_str(b"\"\"")? {
+                    if self.reader.eat_str(b"\"\"") {
                         // We can have up to 5 '"'s, 2 quotes inside the string right before the 3
                         // which close the string. So we check for 2 additional '"'s and push them
-                        if self.reader.eat_char(b'"')? {
+                        if self.reader.eat_char(b'"') {
                             str.push('"');
-                            if self.reader.eat_char(b'"')? {
+                            if self.reader.eat_char(b'"') {
                                 str.push('"');
                             }
                         }
@@ -533,7 +511,7 @@ where
                 None => {
                     break Err(ErrorKind::UnterminatedString.into());
                 }
-                Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
+                Some(b'\r') if matches!(self.reader.peek(), Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                 }
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
@@ -551,7 +529,7 @@ where
     fn parse_literal_str(&mut self) -> Result<String> {
         let str = self.reader.next_str_while(is_toml_literal_str)?;
 
-        match self.reader.next()? {
+        match self.reader.next() {
             Some(b'\'') => Ok(str),
             None | Some(b'\r' | b'\n') => Err(ErrorKind::UnterminatedString.into()),
             Some(char) => Err(ErrorKind::IllegalChar(char).into()),
@@ -561,20 +539,20 @@ where
     #[inline]
     fn parse_multiline_literal_str(&mut self) -> Result<String> {
         // Newlines after the first ''' are ignored
-        let _ = self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")?;
+        let _ = self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n");
 
         let mut str = self.reader.next_str_while(is_toml_multiline_literal_str)?;
 
         loop {
-            match self.reader.next()? {
+            match self.reader.next() {
                 Some(b'\'') => {
                     // Check for 2 more '\''s
-                    if self.reader.eat_str(b"''")? {
+                    if self.reader.eat_str(b"''") {
                         // We can have up to 5 '\''s, 2 quotes inside the string right before the 3
                         // which close the string. So we check for 2 additional '\''s and push them
-                        if self.reader.eat_char(b'\'')? {
+                        if self.reader.eat_char(b'\'') {
                             str.push('\'');
-                            if self.reader.eat_char(b'\'')? {
+                            if self.reader.eat_char(b'\'') {
                                 str.push('\'');
                             }
                         }
@@ -586,7 +564,7 @@ where
                 None => {
                     break Err(ErrorKind::UnterminatedString.into());
                 }
-                Some(b'\r') if matches!(self.reader.peek()?, Some(b'\n')) => {
+                Some(b'\r') if matches!(self.reader.peek(), Some(b'\n')) => {
                     // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
                 }
                 Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
@@ -598,24 +576,42 @@ where
 
     #[inline]
     fn parse_escape_seq(&mut self) -> Result<char> {
-        let Some(char) = self.reader.peek()? else {
+        let Some(char) = self.reader.peek() else {
             return Err(ErrorKind::UnterminatedString.into());
         };
 
         match char {
-            b'b' => self.reader.discard().map(|()| '\x08'),
-            b't' => self.reader.discard().map(|()| '\t'),
-            b'n' => self.reader.discard().map(|()| '\n'),
-            b'f' => self.reader.discard().map(|()| '\x0c'),
-            b'r' => self.reader.discard().map(|()| '\r'),
-            b'"' => self.reader.discard().map(|()| '"'),
-            b'\\' => self.reader.discard().map(|()| '\\'),
+            b'b' => {
+                self.reader.discard();
+                Ok('\x08')
+            }
+            b't' => {
+                self.reader.discard();
+                Ok('\t')
+            }
+            b'n' => {
+                self.reader.discard();
+                Ok('\n')
+            }
+            b'f' => {
+                self.reader.discard();
+                Ok('\x0c')
+            }
+            b'r' => {
+                self.reader.discard();
+                Ok('\r')
+            }
+            b'"' => {
+                self.reader.discard();
+                Ok('"')
+            }
+            b'\\' => {
+                self.reader.discard();
+                Ok('\\')
+            }
             b'u' => {
-                self.reader.discard()?;
-                let bytes = self
-                    .reader
-                    .next_n(4)?
-                    .ok_or(ErrorKind::UnterminatedString)?;
+                self.reader.discard();
+                let bytes = self.reader.next_n(4).ok_or(ErrorKind::UnterminatedString)?;
                 let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
                 u32::from_str_radix(str, 16)
                     .ok()
@@ -623,11 +619,8 @@ where
                     .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()).into())
             }
             b'U' => {
-                self.reader.discard()?;
-                let bytes = self
-                    .reader
-                    .next_n(8)?
-                    .ok_or(ErrorKind::UnterminatedString)?;
+                self.reader.discard();
+                let bytes = self.reader.next_n(8).ok_or(ErrorKind::UnterminatedString)?;
                 let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
                 u32::from_str_radix(str, 16)
                     .ok()
@@ -648,7 +641,7 @@ where
     fn parse_bool(&mut self) -> Result<bool> {
         // Match against the whole word, don't just parse the first n characters so we don't
         // successfully parse e.g. true92864yhowkalgp98y
-        let word = self.reader.next_while(is_toml_word)?;
+        let word = self.reader.next_while(is_toml_word);
 
         match &word[..] {
             b"true" => Ok(true),
@@ -665,7 +658,7 @@ where
             bytes
         }
 
-        let value = self.reader.next_while(is_toml_number_or_datetime)?;
+        let value = self.reader.next_while(is_toml_number_or_datetime);
         match *value {
             // Hex literal starts with "0x"
             [b'0', b'x', ..] => {
@@ -698,15 +691,15 @@ where
                     // read part of, so check for space followed by a digit
                     else if self
                         .reader
-                        .peek_n(2)?
+                        .peek_n(2)
                         .is_some_and(|b| b[0] == b' ' && b[1].is_ascii_digit())
                     {
                         // Discard the space
-                        self.reader.discard()?;
+                        self.reader.discard();
                         // Read in the time
                         (
                             &value[..],
-                            &*self.reader.next_while(is_toml_number_or_datetime)?,
+                            &*self.reader.next_while(is_toml_number_or_datetime),
                         )
                     }
                     // Else we definitely just have a LocalDate
@@ -739,7 +732,7 @@ where
 
     #[inline]
     fn parse_number_decimal(&mut self) -> Result<Value> {
-        let value = self.reader.next_while(is_toml_number_or_datetime)?;
+        let value = self.reader.next_while(is_toml_number_or_datetime);
         Self::normalize_number_decimal(value)
     }
 
@@ -861,24 +854,24 @@ where
     fn parse_number_special(&mut self) -> Result<SpecialFloat> {
         // In each case we match against the whole word, don't just parse the first n characters so
         // we don't successfully parse e.g. inf92864yhowkalgp98y
-        match self.reader.peek()? {
+        match self.reader.peek() {
             Some(b'+') => {
-                self.reader.discard()?;
-                match &self.reader.next_while(is_toml_word)?[..] {
+                self.reader.discard();
+                match &self.reader.next_while(is_toml_word)[..] {
                     b"inf" => Ok(SpecialFloat::Infinity),
                     b"nan" => Ok(SpecialFloat::Nan),
                     _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
                 }
             }
             Some(b'-') => {
-                self.reader.discard()?;
-                match &self.reader.next_while(is_toml_word)?[..] {
+                self.reader.discard();
+                match &self.reader.next_while(is_toml_word)[..] {
                     b"inf" => Ok(SpecialFloat::NegInfinity),
                     b"nan" => Ok(SpecialFloat::NegNan),
                     _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
                 }
             }
-            _ => match &self.reader.next_while(is_toml_word)?[..] {
+            _ => match &self.reader.next_while(is_toml_word)[..] {
                 b"inf" => Ok(SpecialFloat::Infinity),
                 b"nan" => Ok(SpecialFloat::Nan),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
@@ -893,7 +886,7 @@ where
         loop {
             self.skip_comments_and_whitespace()?;
 
-            if self.reader.eat_char(b']')? {
+            if self.reader.eat_char(b']') {
                 break; // End of array
             }
 
@@ -901,10 +894,10 @@ where
 
             self.skip_comments_and_whitespace()?;
 
-            if self.reader.eat_char(b']')? {
+            if self.reader.eat_char(b']') {
                 break; // End of array
             }
-            if !self.reader.eat_char(b',')? {
+            if !self.reader.eat_char(b',') {
                 return Err(ErrorKind::ExpectedToken(", or ] after value in array".into()).into());
             }
         }
@@ -916,9 +909,9 @@ where
     fn parse_inline_table(&mut self) -> Result<Table> {
         let mut result = Table::with_capacity(10);
 
-        self.skip_whitespace()?;
+        self.skip_whitespace();
 
-        if self.reader.eat_char(b'}')? {
+        if self.reader.eat_char(b'}') {
             return Ok(result); // End of table
         }
 
@@ -940,14 +933,14 @@ where
             }
             subtable.insert(key.name.clone(), value);
 
-            self.skip_whitespace()?;
+            self.skip_whitespace();
 
-            if self.reader.eat_char(b'}')? {
+            if self.reader.eat_char(b'}') {
                 break; // End of array
-            } else if self.reader.eat_char(b',')? {
-                self.skip_whitespace()?;
+            } else if self.reader.eat_char(b',') {
+                self.skip_whitespace();
             } else {
-                return Err(if self.reader.next()?.is_some() {
+                return Err(if self.reader.next().is_some() {
                     ErrorKind::ExpectedToken(", or } after key/value pair in inline table".into())
                         .into()
                 } else {
@@ -960,17 +953,16 @@ where
     }
 
     #[inline]
-    fn skip_whitespace(&mut self) -> Result<()> {
-        while self.reader.next_if(is_toml_whitespace)?.is_some() {}
-        Ok(())
+    fn skip_whitespace(&mut self) {
+        while self.reader.next_if(is_toml_whitespace).is_some() {}
     }
 
     #[inline]
     fn skip_comment(&mut self) -> Result<()> {
-        if self.reader.eat_char(b'#')? {
+        if self.reader.eat_char(b'#') {
             // Skip validating comments with feature = "fast"
             if cfg!(feature = "fast") {
-                let _comment = self.reader.next_while(|&ch| ch != b'\n')?;
+                let _comment = self.reader.next_while(|&ch| ch != b'\n');
             } else {
                 // next_str_while will validate UTF-8
                 let comment = self.reader.next_str_while(|&ch| ch != b'\n')?;
@@ -987,10 +979,10 @@ where
 
     #[inline]
     fn skip_comments_and_whitespace(&mut self) -> Result<()> {
-        self.skip_whitespace()?;
+        self.skip_whitespace();
         self.skip_comment()?;
-        while self.reader.eat_char(b'\n')? || self.reader.eat_str(b"\r\n")? {
-            self.skip_whitespace()?;
+        while self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n") {
+            self.skip_whitespace();
             self.skip_comment()?;
         }
         Ok(())
@@ -1271,21 +1263,14 @@ mod tests {
     #[test]
     fn parser_from_str() {
         let mut parser = Parser::from_str("foo = 123");
-        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
+        assert_matches!(parser.reader.next_while(|_| true), b if &*b == b"foo = 123"
         );
     }
 
     #[test]
     fn parser_from_slice() {
         let mut parser = Parser::from_slice(b"foo = 123");
-        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
-        );
-    }
-
-    #[test]
-    fn parser_from_reader() {
-        let mut parser = Parser::from_reader(b"foo = 123".as_slice());
-        assert_matches!(parser.reader.next_while(|_| true), Ok(b) if &*b == b"foo = 123"
+        assert_matches!(parser.reader.next_while(|_| true), b if &*b == b"foo = 123"
         );
     }
 
@@ -2162,8 +2147,6 @@ mod tests {
     #[test]
     #[allow(clippy::cognitive_complexity)]
     fn parser_normalize_number_decimal() {
-        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
-
         assert_matches!(
             Parser::normalize_number_decimal(b"123_456".into()),
             Ok(Value::Integer(v)) if &*v == b"123456"
@@ -2267,8 +2250,6 @@ mod tests {
 
     #[test]
     fn parser_normalize_number() {
-        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
-
         assert_matches!(
             Parser::normalize_number(b"123_456".into(), u8::is_ascii_digit),
             Ok(v) if &*v == b"123456"
@@ -2292,8 +2273,6 @@ mod tests {
 
     #[test]
     fn parser_check_underscores() {
-        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
-
         assert!(Parser::check_underscores(b"123_456").is_ok());
 
         assert_matches!(
@@ -2319,8 +2298,6 @@ mod tests {
 
     #[test]
     fn parser_strip_underscores() {
-        type Parser<'a> = super::Parser<'a, SliceReader<'a>>;
-
         assert_eq!(Parser::strip_underscores(b"123456".into()), b"123456");
 
         assert_eq!(Parser::strip_underscores(b"123_456".into()), b"123456");
@@ -2580,32 +2557,32 @@ mod tests {
     #[test]
     fn parser_skip_whitespace() {
         let mut parser = Parser::from_str("   ");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(None));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), None);
 
         let mut parser = Parser::from_str("   \t");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(None));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), None);
 
         let mut parser = Parser::from_str("   abc");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), Some(b'a'));
 
         let mut parser = Parser::from_str("   \t   abc");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), Some(b'a'));
 
         let mut parser = Parser::from_str("   \t   # comment");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'#')));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), Some(b'#'));
 
         let mut parser = Parser::from_str("abc");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), Some(b'a'));
 
         let mut parser = Parser::from_str("");
-        assert!(parser.skip_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(None));
+        parser.skip_whitespace();
+        assert_matches!(parser.reader.peek(), None);
     }
 
     #[test]
@@ -2613,19 +2590,19 @@ mod tests {
     fn parser_skip_comment() {
         let mut parser = Parser::from_str("# comment");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Ok(None));
+        assert_matches!(parser.reader.peek(), None);
 
         let mut parser = Parser::from_str("# comment\n");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Ok(Some(b'\n')));
+        assert_matches!(parser.reader.peek(), Some(b'\n'));
 
         let mut parser = Parser::from_str("# comment\r\n");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Ok(Some(b'\n')));
+        assert_matches!(parser.reader.peek(), Some(b'\n'));
 
         let mut parser = Parser::from_str("abc");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        assert_matches!(parser.reader.peek(), Some(b'a'));
 
         if cfg!(not(feature = "fast")) {
             let mut parser = Parser::from_slice(b"# comment\xff");
@@ -2651,11 +2628,11 @@ mod tests {
             abc
         "});
         assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        assert_matches!(parser.reader.peek(), Some(b'a'));
 
         let mut parser = Parser::from_str("# comment\r\n\tabc");
         assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Ok(Some(b'a')));
+        assert_matches!(parser.reader.peek(), Some(b'a'));
     }
 
     // #[test]

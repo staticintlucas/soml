@@ -11,7 +11,7 @@ use serde::{de, Deserialize};
 pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
 use self::parser::{Parser, SpecialFloat, Table as ParsedTable, Value as ParsedValue};
-use self::reader::{IoReader, Reader, SliceReader};
+use self::reader::Reader;
 use crate::value::datetime::{
     LocalDateAccess, LocalDatetimeAccess, LocalTimeAccess, OffsetDatetimeAccess,
 };
@@ -53,24 +53,23 @@ where
 ///
 /// This function will return an error if the source is not valid TOML.
 #[inline]
-pub fn from_reader<R, T>(read: R) -> Result<T>
+pub fn from_reader<R, T>(mut read: R) -> Result<T>
 where
     R: io::Read,
     T: DeserializeOwned,
 {
-    T::deserialize(Deserializer::from_reader(read))
+    let mut bytes = Vec::new();
+    read.read_to_end(&mut bytes)?;
+    T::deserialize(Deserializer::from_slice(&bytes))
 }
 
 /// A deserializer for a TOML document.
 #[derive(Debug)]
-pub struct Deserializer<'de, R>
-where
-    R: Reader<'de>,
-{
-    parser: Parser<'de, R>,
+pub struct Deserializer<'de> {
+    parser: Parser<'de>,
 }
 
-impl<'de> Deserializer<'de, SliceReader<'de>> {
+impl<'de> Deserializer<'de> {
     /// Create a new deserializer from a string slice.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
@@ -91,24 +90,7 @@ impl<'de> Deserializer<'de, SliceReader<'de>> {
     }
 }
 
-impl<R> Deserializer<'_, IoReader<R>>
-where
-    R: io::Read,
-{
-    /// Create a new deserializer from an [`io::Read`] source.
-    #[must_use]
-    #[inline]
-    pub fn from_reader(read: R) -> Self {
-        Self {
-            parser: Parser::from_reader(read),
-        }
-    }
-}
-
-impl<'de, R> de::Deserializer<'de> for Deserializer<'de, R>
-where
-    R: Reader<'de>,
-{
+impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     type Error = Error;
 
     #[inline]
@@ -1200,18 +1182,6 @@ mod tests {
     #[test]
     fn deserializer_from_slice() {
         let mut deserializer = Deserializer::from_slice(b"abc = 123");
-
-        assert_matches!(
-            deserializer.parser.parse(),
-            Ok(ParsedValue::Table(t)) if t == hashmap! {
-                "abc".into() => ParsedValue::Integer(b"123".into()),
-            }
-        );
-    }
-
-    #[test]
-    fn deserializer_from_reader() {
-        let mut deserializer = Deserializer::from_reader(b"abc = 123".as_ref());
 
         assert_matches!(
             deserializer.parser.parse(),

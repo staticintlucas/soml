@@ -1,77 +1,87 @@
 use core::str;
-use std::collections::VecDeque;
-use std::io;
-use std::io::Read as _;
 
 use super::error::{ErrorKind, Result};
 
-mod private {
-    pub trait Sealed {}
+/// Read from a string
+#[derive(Debug, Clone)]
+pub struct Reader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
 }
 
-pub trait Reader<'a>: private::Sealed {
-    /// Gets the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
+impl<'a> Reader<'a> {
+    /// Create a TOML reader from a string slice.
     #[doc(hidden)]
-    fn next(&mut self) -> Result<Option<u8>>;
+    #[inline]
+    pub const fn from_str(str: &'a str) -> Self {
+        Self::from_slice(str.as_bytes())
+    }
+
+    /// Create a TOML reader from a byte slice.
+    #[doc(hidden)]
+    #[inline]
+    pub const fn from_slice(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    /// Gets the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
+    #[doc(hidden)]
+    #[inline]
+    pub fn next(&mut self) -> Option<u8> {
+        self.peek().inspect(|_| self.offset += 1)
+    }
 
     /// Gets `n` bytes from the source. Returns `Ok(None)` if the end of the source is reached
     /// before `n` bytes are read.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
-    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>>;
+    #[doc(hidden)]
+    #[inline]
+    pub fn next_n(&mut self, n: usize) -> Option<Vec<u8>> {
+        self.peek_n(n).inspect(|_| self.offset += n)
+    }
 
     /// Gets the next char from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
     /// # Errors
     ///
     /// Raises an encoding error if the bytes are not UTF-8 encoded.
-    /// Propagates any IO errors that occurred while reading from the source.
+    #[doc(hidden)]
     #[inline]
-    fn next_char(&mut self) -> Result<Option<char>> {
-        Ok(if let Some(char) = self.peek_char()? {
-            self.discard_n(char.len_utf8())?;
-            Some(char)
-        } else {
-            None
-        })
+    pub fn next_char(&mut self) -> Result<Option<char>> {
+        Ok((self.peek_char()?).inspect(|char| {
+            self.discard_n(char.len_utf8());
+        }))
     }
 
     /// Peeks the next byte from the source. Returns `Ok(None)` if the end of the source is reached.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek(&mut self) -> Result<Option<u8>>;
+    #[inline]
+    pub fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.offset).copied()
+    }
 
     /// Peeks the next `n` bytes from the source. Returns `Ok(None)` if the end of the source is
     /// reached before `n`  bytes are read.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>>;
+    #[inline]
+    pub fn peek_n(&self, n: usize) -> Option<Vec<u8>> {
+        self.bytes
+            .get(self.offset..self.offset + n)
+            .map(<[_]>::to_vec)
+    }
 
     /// Peeks the next char from the source. Returns `Ok(None)` if the end of the source is reached.
     ///
     /// # Errors
     ///
     /// Raises an encoding error if the bytes are not UTF-8 encoded.
-    /// Propagates any IO errors that occurred while reading from the source.
+    #[doc(hidden)]
     #[inline]
-    fn peek_char(&mut self) -> Result<Option<char>> {
-        let Some(first) = self.peek()? else {
+    pub fn peek_char(&self) -> Result<Option<char>> {
+        let Some(first) = self.peek() else {
             return Ok(None);
         };
         Ok(str::from_utf8(
-            self.peek_n(utf8_len(first).ok_or(ErrorKind::InvalidEncoding)?)?
+            self.peek_n(utf8_len(first).ok_or(ErrorKind::InvalidEncoding)?)
                 .ok_or(ErrorKind::InvalidEncoding)?
                 .as_ref(),
         )
@@ -82,58 +92,47 @@ pub trait Reader<'a>: private::Sealed {
 
     /// Peeks the byte at `pos` bytes from the current location in the source. If the end of the
     /// source is reached, returns `Ok(None)`.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
-    #[doc(hidden)]
-    fn peek_at(&mut self, pos: usize) -> Result<Option<u8>>;
-
-    /// Discards a byte from the source.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn discard(&mut self) -> Result<()> {
-        self.discard_n(1)
+    pub fn peek_at(&self, pos: usize) -> Option<u8> {
+        self.bytes.get(self.offset + pos).copied()
+    }
+
+    /// Discards a byte from the source.
+    #[doc(hidden)]
+    #[inline]
+    pub fn discard(&mut self) {
+        self.discard_n(1);
     }
 
     /// Discards `n` bytes from the source.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
-    #[doc(hidden)]
-    fn discard_n(&mut self, n: usize) -> Result<()>;
-
-    /// Gets the next byte from the source if the closure `true`. Otherwise returns `Ok(None)`
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn next_if(&mut self, func: impl FnOnce(&u8) -> bool) -> Result<Option<u8>> {
-        match self.peek()? {
-            Some(ch) if func(&ch) => self.discard().map(|()| Some(ch)),
-            _ => Ok(None),
+    pub fn discard_n(&mut self, n: usize) {
+        self.offset = usize::min(self.offset + n, self.bytes.len());
+    }
+
+    /// Gets the next byte from the source if the closure `true`. Otherwise returns `Ok(None)`
+    #[doc(hidden)]
+    #[inline]
+    pub fn next_if(&mut self, func: impl FnOnce(&u8) -> bool) -> Option<u8> {
+        match self.peek() {
+            Some(ch) if func(&ch) => {
+                self.discard();
+                Some(ch)
+            }
+            _ => None,
         }
     }
 
     /// Gets a slice of bytes from the stream where the closure returns `true`. Returns an empty
     /// slice if no bytes matched.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn next_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
-        let result = self.peek_while(func)?;
-        self.discard_n(result.len())?;
-        Ok(result)
+    pub fn next_while(&mut self, func: impl Fn(&u8) -> bool) -> Vec<u8> {
+        let result = self.peek_while(func);
+        self.discard_n(result.len());
+        result
     }
 
     /// Gets an string from the stream where the closure returns `true`. Returns an empty slice if
@@ -142,334 +141,40 @@ pub trait Reader<'a>: private::Sealed {
     /// # Errors
     ///
     /// Raises an encoding error if the bytes are not UTF-8 encoded.
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn next_str_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<String> {
-        self.next_while(func).and_then(|bytes| {
-            String::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding.into())
-        })
+    pub fn next_str_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<String> {
+        String::from_utf8(self.next_while(func)).map_err(|_| ErrorKind::InvalidEncoding.into())
     }
 
     /// Peeks a slice of bytes from the stream where the closure returns `true`. Returns an empty
     /// slice if no bytes matched.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>>;
+    #[inline]
+    pub fn peek_while(&self, func: impl Fn(&u8) -> bool) -> Vec<u8> {
+        let off = self.offset;
+        let len = self.bytes[off..].iter().copied().take_while(func).count();
+        self.bytes[off..off + len].to_vec()
+    }
 
     /// Consumes the next byte if it is equal to the expected value. Returns whether or not the
     /// byte was consumed.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
     #[inline]
-    fn eat_char(&mut self, expected: u8) -> Result<bool> {
-        Ok(self.next_if(|&ch| ch == expected)?.is_some())
+    pub fn eat_char(&mut self, expected: u8) -> bool {
+        self.next_if(|&ch| ch == expected).is_some()
     }
 
     /// Consumes a slice if it matches the expected value. Returns whether or not the
     /// byte was consumed.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
     #[doc(hidden)]
-    fn eat_str(&mut self, str: &'_ [u8]) -> Result<bool>;
-
-    /// Start collecting consumed bytes as they are parsed.
-    fn start_seq(&mut self);
-
-    /// Stop collecting bytes and returns the collected sequence.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any IO errors that occurred while reading from the source.
-    fn end_seq(&mut self) -> Result<Vec<u8>>;
-}
-
-/// Read from a string
-#[derive(Debug, Clone)]
-pub struct SliceReader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    seq_start: Option<usize>,
-}
-
-impl<'a> SliceReader<'a> {
-    /// Create a TOML reader from a string slice.
     #[inline]
-    pub const fn from_str(str: &'a str) -> Self {
-        Self::from_slice(str.as_bytes())
-    }
-
-    /// Create a TOML reader from a byte slice.
-    #[inline]
-    pub const fn from_slice(bytes: &'a [u8]) -> Self {
-        Self {
-            bytes,
-            offset: 0,
-            seq_start: None,
-        }
-    }
-}
-
-impl private::Sealed for SliceReader<'_> {}
-
-impl<'a> Reader<'a> for SliceReader<'a> {
-    #[inline]
-    fn next(&mut self) -> Result<Option<u8>> {
-        Ok(self.peek()?.inspect(|_| self.offset += 1))
-    }
-
-    #[inline]
-    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
-        Ok(self.peek_n(n)?.inspect(|_| self.offset += n))
-    }
-
-    #[inline]
-    fn peek(&mut self) -> Result<Option<u8>> {
-        Ok(self.bytes.get(self.offset).copied())
-    }
-
-    #[inline]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .bytes
-            .get(self.offset..self.offset + n)
-            .map(<[_]>::to_vec))
-    }
-
-    #[inline]
-    fn peek_at(&mut self, pos: usize) -> Result<Option<u8>> {
-        Ok(self.bytes.get(self.offset + pos).copied())
-    }
-
-    #[inline]
-    fn discard_n(&mut self, n: usize) -> Result<()> {
-        self.offset = usize::min(self.offset + n, self.bytes.len());
-        Ok(())
-    }
-
-    #[inline]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
-        let off = self.offset;
-        let len = self.bytes[off..].iter().copied().take_while(func).count();
-        Ok(self.bytes[off..off + len].to_vec())
-    }
-
-    #[inline]
-    fn eat_str(&mut self, str: &'_ [u8]) -> Result<bool> {
+    pub fn eat_str(&mut self, str: &'_ [u8]) -> bool {
         let result = self.bytes[self.offset..].starts_with(str);
         if result {
             self.offset += str.len();
         }
-        Ok(result)
-    }
-
-    #[inline]
-    fn start_seq(&mut self) {
-        self.seq_start = Some(self.offset);
-    }
-
-    #[allow(clippy::panic)]
-    #[inline]
-    fn end_seq(&mut self) -> Result<Vec<u8>> {
-        let Some(start) = self.seq_start.take() else {
-            panic!("SliceReader::end_seq called without calling SliceReader::start_seq first")
-        };
-        Ok(self.bytes[start..self.offset].to_vec())
-    }
-}
-
-/// Read from a string
-#[derive(Debug)]
-pub struct IoReader<R> {
-    iter: io::Bytes<io::BufReader<R>>,
-    peek: VecDeque<u8>,
-    seq: Option<Vec<u8>>,
-}
-
-impl<R> IoReader<R>
-where
-    R: io::Read,
-{
-    /// Create a JSON reader from a [`io::Read`].
-    #[inline]
-    pub fn from_reader(read: R) -> Self {
-        Self {
-            iter: io::BufReader::new(read).bytes(),
-            peek: VecDeque::with_capacity(16),
-            seq: None,
-        }
-    }
-}
-
-impl<R> private::Sealed for IoReader<R> {}
-
-impl<R> Reader<'_> for IoReader<R>
-where
-    R: io::Read,
-{
-    #[inline]
-    fn next(&mut self) -> Result<Option<u8>> {
-        let result = match self.peek.pop_front() {
-            Some(ch) => Some(ch),
-            None => self.iter.next().transpose()?,
-        };
-
-        if let Some((ch, seq)) = result.zip(self.seq.as_mut()) {
-            seq.push(ch);
-        }
-
-        Ok(result)
-    }
-
-    #[inline]
-    fn next_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
-        while self.peek.len() < n {
-            match self.iter.next().transpose()? {
-                Some(ch) => self.peek.push_back(ch),
-                None => return Ok(None), // return None if we can't get n bytes
-            }
-        }
-
-        let result: Vec<_> = self.peek.drain(..n).collect();
-
-        if let Some(seq) = self.seq.as_mut() {
-            seq.extend_from_slice(result.as_ref());
-        }
-
-        Ok(Some(result))
-    }
-
-    #[inline]
-    fn peek(&mut self) -> Result<Option<u8>> {
-        if let Some(ch) = self.peek.front() {
-            Ok(Some(*ch))
-        } else {
-            let Some(ch) = self.iter.next().transpose()? else {
-                return Ok(None);
-            };
-            self.peek.push_back(ch);
-            Ok(Some(ch))
-        }
-    }
-
-    #[inline]
-    fn peek_n(&mut self, n: usize) -> Result<Option<Vec<u8>>> {
-        while self.peek.len() < n {
-            match self.iter.next().transpose()? {
-                Some(ch) => self.peek.push_back(ch),
-                None => return Ok(None),
-            }
-        }
-
-        let result = self.peek.range(..n).copied().collect();
-
-        Ok(Some(result))
-    }
-
-    #[inline]
-    fn peek_at(&mut self, pos: usize) -> Result<Option<u8>> {
-        while self.peek.len() < pos + 1 {
-            match self.iter.next().transpose()? {
-                Some(ch) => self.peek.push_back(ch),
-                None => break,
-            }
-        }
-
-        Ok(self.peek.get(pos).copied())
-    }
-
-    #[inline]
-    fn discard_n(&mut self, n: usize) -> Result<()> {
-        if let Some(seq) = self.seq.as_mut() {
-            seq.reserve(n);
-        }
-
-        let peeked_n = n.min(self.peek.len());
-        let peeked = self.peek.drain(..peeked_n);
-        if let Some(seq) = self.seq.as_mut() {
-            seq.extend(peeked);
-        }
-
-        for _ in peeked_n..n {
-            match self.iter.next().transpose()? {
-                Some(ch) => {
-                    if let Some(seq) = self.seq.as_mut() {
-                        seq.push(ch);
-                    }
-                }
-                None => break,
-            }
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn peek_while(&mut self, func: impl Fn(&u8) -> bool) -> Result<Vec<u8>> {
-        if let Some(i) = self.peek.iter().position(|ch| !func(ch)) {
-            Ok(self.peek.range(..i).copied().collect())
-        } else {
-            loop {
-                match self.iter.next().transpose()? {
-                    Some(ch) if func(&ch) => {
-                        self.peek.push_back(ch);
-                    }
-                    Some(ch) => {
-                        // Collect before pushing the non-matching char
-                        let result = self.peek.iter().copied().collect();
-                        // But make sure to push it after so we don't lose a char
-                        self.peek.push_back(ch);
-
-                        break Ok(result);
-                    }
-                    None => break Ok(self.peek.iter().copied().collect()),
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn eat_str(&mut self, str: &'_ [u8]) -> Result<bool> {
-        while self.peek.len() < str.len() {
-            match self.iter.next().transpose()? {
-                Some(ch) => self.peek.push_back(ch),
-                None => return Ok(false),
-            }
-        }
-
-        let result = str.iter().zip(self.peek.iter()).all(|(a, b)| a == b);
-
-        if result {
-            self.peek.drain(..str.len());
-
-            if let Some(seq) = self.seq.as_mut() {
-                seq.extend_from_slice(str);
-            }
-        }
-
-        Ok(result)
-    }
-
-    #[inline]
-    fn start_seq(&mut self) {
-        self.seq = Some(Vec::with_capacity(16));
-    }
-
-    #[allow(clippy::panic)]
-    #[inline]
-    fn end_seq(&mut self) -> Result<Vec<u8>> {
-        let Some(seq) = self.seq.take() else {
-            panic!("IoReader::end_seq called without calling IoReader::start_seq first")
-        };
-        Ok(seq)
+        result
     }
 }
 
@@ -487,8 +192,6 @@ const fn utf8_len(byte: u8) -> Option<usize> {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
-    use std::io::Read as _;
-
     use assert_matches::assert_matches;
 
     use super::*;
@@ -502,11 +205,10 @@ mod tests {
             c = 2
             d = 3
         ";
-        let r = SliceReader::from_str(s);
+        let r = Reader::from_str(s);
 
         assert_eq!(r.bytes, s.as_bytes());
         assert_eq!(r.offset, 0);
-        assert_eq!(r.seq_start, None);
     }
 
     #[test]
@@ -517,293 +219,273 @@ mod tests {
             c = 2
             d = 3
         ";
-        let r = SliceReader::from_slice(s);
+        let r = Reader::from_slice(s);
 
         assert_eq!(r.bytes, s);
         assert_eq!(r.offset, 0);
-        assert_eq!(r.seq_start, None);
     }
 
     #[test]
     fn slice_reader_next() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.next(), Ok(Some(b'f')));
+        assert_matches!(reader.next(), Some(b'f'));
         assert_eq!(reader.offset, 1);
 
-        assert_matches!(reader.next(), Ok(Some(b'o')));
+        assert_matches!(reader.next(), Some(b'o'));
         assert_eq!(reader.offset, 2);
 
-        assert_matches!(reader.next(), Ok(Some(b'o')));
+        assert_matches!(reader.next(), Some(b'o'));
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.next(), Ok(None));
+        assert_matches!(reader.next(), None);
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.next(), Ok(None));
+        assert_matches!(reader.next(), None);
         assert_eq!(reader.offset, 3);
     }
 
     #[test]
     fn slice_reader_next_n() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo bar baz",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.next_n(2), Ok(Some(b)) if &*b == b"fo");
+        assert_matches!(reader.next_n(2), Some(b) if &*b == b"fo");
         assert_eq!(reader.offset, 2);
 
-        assert_matches!(reader.next_n(5), Ok(Some(b)) if &*b == b"o bar");
+        assert_matches!(reader.next_n(5), Some(b) if &*b == b"o bar");
         assert_eq!(reader.offset, 7);
 
-        assert_matches!(reader.next_n(5), Ok(None));
+        assert_matches!(reader.next_n(5), None);
         assert_eq!(reader.offset, 7);
 
-        assert_matches!(reader.next_n(4), Ok(Some(b)) if &*b == b" baz");
+        assert_matches!(reader.next_n(4), Some(b) if &*b == b" baz");
         assert_eq!(reader.offset, 11);
     }
 
     #[test]
     fn slice_reader_next_char() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"f",
             offset: 0,
-            seq_start: None,
         };
 
         assert_matches!(reader.next_char(), Ok(Some('f')));
         assert_matches!(reader.next_char(), Ok(None));
 
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"\xff",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"\xcf\xff",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"\xcf",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
     fn slice_reader_peek() {
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.peek(), Ok(Some(b'f')));
+        assert_matches!(reader.peek(), Some(b'f'));
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek(), Ok(Some(b'f')));
+        assert_matches!(reader.peek(), Some(b'f'));
         assert_eq!(reader.offset, 0);
     }
 
     #[test]
     fn slice_reader_peek_n() {
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.peek_n(2), Ok(Some(b)) if &*b == b"fo");
+        assert_matches!(reader.peek_n(2), Some(b) if &*b == b"fo");
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_n(4), Ok(None));
+        assert_matches!(reader.peek_n(4), None);
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"foo");
+        assert_matches!(reader.peek_n(3), Some(b) if &*b == b"foo");
         assert_eq!(reader.offset, 0);
     }
 
     #[test]
     fn slice_reader_peek_char() {
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
         assert_matches!(reader.peek_char(), Ok(Some('f')));
         assert_eq!(reader.offset, 0);
 
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"",
             offset: 0,
-            seq_start: None,
         };
 
         assert_matches!(reader.peek_char(), Ok(None));
 
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"\xff",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"\xcf\xff",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
 
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"\xcf",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
     }
 
     #[test]
     fn slice_reader_peek_at() {
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"bar",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.peek_at(1), Ok(Some(b'a')));
+        assert_matches!(reader.peek_at(1), Some(b'a'));
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_at(3), Ok(None));
+        assert_matches!(reader.peek_at(3), None);
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_at(2), Ok(Some(b'r')));
+        assert_matches!(reader.peek_at(2), Some(b'r'));
         assert_eq!(reader.offset, 0);
     }
 
     #[test]
     fn slice_reader_discard() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        reader.discard().unwrap();
+        reader.discard();
         assert_eq!(reader.offset, 1);
 
-        reader.discard().unwrap();
+        reader.discard();
         assert_eq!(reader.offset, 2);
 
-        reader.discard().unwrap();
+        reader.discard();
         assert_eq!(reader.offset, 3);
 
-        reader.discard().unwrap();
+        reader.discard();
         assert_eq!(reader.offset, 3);
 
-        reader.discard().unwrap();
+        reader.discard();
         assert_eq!(reader.offset, 3);
     }
 
     #[test]
     fn slice_reader_discard_n() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo bar baz",
             offset: 0,
-            seq_start: None,
         };
 
-        reader.discard_n(2).unwrap();
+        reader.discard_n(2);
         assert_eq!(reader.offset, 2);
 
-        reader.discard_n(5).unwrap();
+        reader.discard_n(5);
         assert_eq!(reader.offset, 7);
 
-        reader.discard_n(12).unwrap();
+        reader.discard_n(12);
         assert_eq!(reader.offset, 11);
     }
 
     #[test]
     fn slice_reader_next_if() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(Some(b'f')));
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), Some(b'f'));
         assert_eq!(reader.offset, 1);
 
-        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(None));
+        assert_matches!(reader.next_if(|&ch| ch == b'f'), None);
         assert_eq!(reader.offset, 1);
 
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Some(b'o'));
         assert_eq!(reader.offset, 2);
 
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), Some(b'o'));
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(None));
+        assert_matches!(reader.next_if(|&ch| ch == b'o'), None);
         assert_eq!(reader.offset, 3);
     }
 
     #[test]
     #[allow(clippy::cognitive_complexity)]
     fn slice_reader_next_while() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"bbbbaaaaaaararrrrrrr",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if &*b == b"bbbb");
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), b if &*b == b"bbbb");
         assert_eq!(reader.offset, 4);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'b'), b if b.is_empty());
         assert_eq!(reader.offset, 4);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"aaaaaaa");
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), b if &*b == b"aaaaaaa");
         assert_eq!(reader.offset, 11);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), b if b.is_empty());
         assert_eq!(reader.offset, 11);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"r");
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), b if &*b == b"r");
         assert_eq!(reader.offset, 12);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), b if b.is_empty());
         assert_eq!(reader.offset, 12);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"a");
+        assert_matches!(reader.next_while(|&ch| ch == b'a'), b if &*b == b"a");
         assert_eq!(reader.offset, 13);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"rrrrrrr");
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), b if &*b == b"rrrrrrr");
         assert_eq!(reader.offset, 20);
 
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
+        assert_matches!(reader.next_while(|&ch| ch == b'r'), b if b.is_empty());
         assert_eq!(reader.offset, 20);
     }
 
     #[test]
     #[allow(clippy::cognitive_complexity)]
     fn slice_reader_next_str_while() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"bbbbaaaaaaararrrrrrr",
             offset: 0,
-            seq_start: None,
         };
 
         assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s == "bbbb");
@@ -833,10 +515,9 @@ mod tests {
         assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
         assert_eq!(reader.offset, 20);
 
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"\xff\xff\xff\xff",
             offset: 0,
-            seq_start: None,
         };
         assert_matches!(
             reader.next_str_while(|&ch| ch == b'\xff'),
@@ -846,506 +527,68 @@ mod tests {
 
     #[test]
     fn slice_reader_peek_while() {
-        let mut reader = SliceReader {
+        let reader = Reader {
             bytes: b"foo bar baz",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.peek_while(|&ch| ch == b'f'), Ok(b) if &*b == b"f");
+        assert_matches!(reader.peek_while(|&ch| ch == b'f'), b if &*b == b"f");
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_while(|&ch| ch == b'o'), Ok(b) if &*b == b"");
+        assert_matches!(reader.peek_while(|&ch| ch == b'o'), b if &*b == b"");
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_while(|&ch| !ch.is_ascii_whitespace()), Ok(b) if &*b == b"foo");
+        assert_matches!(reader.peek_while(|&ch| !ch.is_ascii_whitespace()), b if &*b == b"foo");
         assert_eq!(reader.offset, 0);
 
-        assert_matches!(reader.peek_while(|&ch| ch.is_ascii()), Ok(b) if &*b == b"foo bar baz");
+        assert_matches!(reader.peek_while(|&ch| ch.is_ascii()), b if &*b == b"foo bar baz");
         assert_eq!(reader.offset, 0);
     }
 
     #[test]
     fn slice_reader_eat_char() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foo",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.eat_char(b'f'), Ok(true));
+        assert_matches!(reader.eat_char(b'f'), true);
         assert_eq!(reader.offset, 1);
 
-        assert_matches!(reader.eat_char(b'f'), Ok(false));
+        assert_matches!(reader.eat_char(b'f'), false);
         assert_eq!(reader.offset, 1);
 
-        assert_matches!(reader.eat_char(b'o'), Ok(true));
+        assert_matches!(reader.eat_char(b'o'), true);
         assert_eq!(reader.offset, 2);
 
-        assert_matches!(reader.eat_char(b'o'), Ok(true));
+        assert_matches!(reader.eat_char(b'o'), true);
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.eat_char(b'o'), Ok(false));
+        assert_matches!(reader.eat_char(b'o'), false);
         assert_eq!(reader.offset, 3);
     }
 
     #[test]
     fn slice_reader_eat_str() {
-        let mut reader = SliceReader {
+        let mut reader = Reader {
             bytes: b"foobar",
             offset: 0,
-            seq_start: None,
         };
 
-        assert_matches!(reader.eat_str(b"foo"), Ok(true));
+        assert_matches!(reader.eat_str(b"foo"), true);
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.eat_str(b"foo"), Ok(false));
+        assert_matches!(reader.eat_str(b"foo"), false);
         assert_eq!(reader.offset, 3);
 
-        assert_matches!(reader.eat_str(b"bar"), Ok(true));
+        assert_matches!(reader.eat_str(b"bar"), true);
         assert_eq!(reader.offset, 6);
 
-        assert_matches!(reader.eat_str(b"bar"), Ok(false));
+        assert_matches!(reader.eat_str(b"bar"), false);
         assert_eq!(reader.offset, 6);
 
-        assert_matches!(reader.eat_str(b"baz"), Ok(false));
+        assert_matches!(reader.eat_str(b"baz"), false);
         assert_eq!(reader.offset, 6);
-    }
-
-    #[test]
-    fn slice_reader_seq() {
-        let mut reader = SliceReader {
-            bytes: b"foo bar baz",
-            offset: 0,
-            seq_start: None,
-        };
-
-        let _f = reader.next().unwrap().unwrap();
-
-        reader.start_seq();
-
-        let _oo = reader.next_while(|ch| *ch == b'o').unwrap();
-        let _space = reader.next_if(u8::is_ascii_whitespace).unwrap().unwrap();
-        let _bar = reader.next_while(|ch| !ch.is_ascii_whitespace()).unwrap();
-        reader.discard().unwrap();
-        let _ba = reader.next_n(2).unwrap();
-
-        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar ba");
-    }
-
-    #[test]
-    #[should_panic = "SliceReader::end_seq called without calling SliceReader::start_seq first"]
-    fn slice_reader_end_seq_without_starting() {
-        let mut reader = SliceReader {
-            bytes: b"foo bar baz",
-            offset: 0,
-            seq_start: None,
-        };
-
-        let _result = reader.end_seq();
-    }
-
-    #[test]
-    fn io_reader_from_reader() {
-        let s = br"
-            [a]
-            b = 1
-            c = 2
-            d = 3
-        ";
-        let r = IoReader::from_reader(s.as_slice());
-
-        assert_eq!(r.peek.len(), 0);
-        assert_eq!(r.seq, None);
-    }
-
-    #[test]
-    fn io_reader_next() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next(), Ok(Some(b'f')));
-        assert_matches!(reader.next(), Ok(Some(b'o')));
-
-        assert_matches!(reader.peek(), Ok(Some(b'o')));
-        assert_matches!(reader.next(), Ok(Some(b'o')));
-
-        assert_matches!(reader.next(), Ok(None));
-        assert_matches!(reader.next(), Ok(None));
-    }
-
-    #[test]
-    fn io_reader_next_n() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next_n(2), Ok(Some(b)) if &*b == b"fo");
-        assert_matches!(reader.next_n(5), Ok(Some(b)) if &*b == b"o bar");
-        assert_matches!(reader.next_n(5), Ok(None));
-        assert_matches!(reader.next_n(4), Ok(Some(b)) if &*b == b" baz");
-    }
-
-    #[test]
-    fn io_reader_next_char() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"f".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next_char(), Ok(Some('f')));
-        assert_matches!(reader.next_char(), Ok(None));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.next_char(), Err(Error(ErrorKind::InvalidEncoding)));
-    }
-
-    #[test]
-    fn io_reader_peek() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek(), Ok(Some(b'f')));
-        assert_eq!(reader.peek.len(), 1);
-        assert_matches!(reader.peek(), Ok(Some(b'f')));
-        assert_eq!(reader.peek.len(), 1);
-    }
-
-    #[test]
-    fn io_reader_peek_n() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek_n(2), Ok(Some(b)) if &*b == b"fo");
-        assert_eq!(reader.peek.len(), 2);
-        assert_matches!(reader.peek_n(4), Ok(None));
-        assert_eq!(reader.peek.len(), 3);
-        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"foo");
-        assert_eq!(reader.peek.len(), 3);
-    }
-
-    #[test]
-    fn io_reader_peek_char() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.peek_char(), Ok(Some('f')));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.peek_char(), Ok(None));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xff".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xcf\xff".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xcf".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-        assert_matches!(reader.peek_char(), Err(Error(ErrorKind::InvalidEncoding)));
-    }
-
-    #[test]
-    fn io_reader_peek_at() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"bar".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek_at(1), Ok(Some(b'a')));
-        assert_eq!(reader.peek.len(), 2);
-        assert_matches!(reader.peek_at(3), Ok(None));
-        assert_eq!(reader.peek.len(), 3);
-        assert_matches!(reader.peek_at(2), Ok(Some(b'r')));
-        assert_eq!(reader.peek.len(), 3);
-    }
-
-    #[test]
-    fn io_reader_discard() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        reader.discard().unwrap();
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek(), Ok(Some(b'o')));
-        assert_eq!(reader.peek.len(), 1);
-        assert!(reader.discard().is_ok());
-        assert_eq!(reader.peek.len(), 0);
-        assert!(reader.discard().is_ok());
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek(), Ok(None));
-        assert_eq!(reader.peek.len(), 0);
-        assert!(reader.discard().is_ok());
-        assert_eq!(reader.peek.len(), 0);
-        assert!(reader.discard().is_ok());
-    }
-
-    #[test]
-    fn io_reader_discard_n() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        reader.discard_n(2).unwrap();
-        assert_eq!(reader.peek.len(), 0);
-        assert_matches!(reader.peek_n(7), Ok(Some(b)) if &*b == b"o bar b");
-        assert_eq!(reader.peek.len(), 7);
-        assert!(reader.discard_n(5).is_ok());
-        assert_eq!(reader.peek.len(), 2);
-        assert!(reader.discard_n(12).is_ok());
-        assert_eq!(reader.peek.len(), 0);
-    }
-
-    #[test]
-    fn io_reader_next_if() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(Some(b'f')));
-        assert_matches!(reader.next_if(|&ch| ch == b'f'), Ok(None));
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(Some(b'o')));
-        assert_matches!(reader.next_if(|&ch| ch == b'o'), Ok(None));
-    }
-
-    #[test]
-    fn io_reader_next_while() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"bbbbaaaaaaararrrrrrr".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if &*b == b"bbbb");
-        assert_matches!(reader.next_while(|&ch| ch == b'b'), Ok(b) if b.is_empty());
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"aaaaaaa");
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if b.is_empty());
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"r");
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
-        assert_matches!(reader.next_while(|&ch| ch == b'a'), Ok(b) if &*b == b"a");
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if &*b == b"rrrrrrr");
-        assert_matches!(reader.next_while(|&ch| ch == b'r'), Ok(b) if b.is_empty());
-    }
-
-    #[test]
-    fn io_reader_next_str_while() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"bbbbaaaaaaararrrrrrr".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s == "bbbb");
-        assert_matches!(reader.next_str_while(|&ch| ch == b'b'), Ok(s) if s.is_empty());
-        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "aaaaaaa");
-        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s.is_empty());
-        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "r");
-        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
-        assert_matches!(reader.next_str_while(|&ch| ch == b'a'), Ok(s) if s == "a");
-        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s == "rrrrrrr");
-        assert_matches!(reader.next_str_while(|&ch| ch == b'r'), Ok(s) if s.is_empty());
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"\xff\xff\xff\xff".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(
-            reader.next_str_while(|&ch| ch == b'\xff'),
-            Err(Error(ErrorKind::InvalidEncoding))
-        );
-    }
-
-    #[test]
-    fn io_reader_peek_while() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.peek_while(|&ch| ch == b'f'), Ok(b) if &*b == b"f");
-        assert_matches!(reader.peek_while(|&ch| ch == b'o'), Ok(b) if b.is_empty());
-        assert_matches!(reader.peek_while(|&ch| !ch.is_ascii_whitespace()), Ok(b) if &*b == b"foo");
-        assert_matches!(reader.peek_while(|&ch| ch.is_ascii()), Ok(b) if &*b == b"foo bar baz");
-    }
-
-    #[test]
-    fn io_reader_eat_char() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.eat_char(b'f'), Ok(true));
-        assert_matches!(reader.eat_char(b'f'), Ok(false));
-        assert_matches!(reader.eat_char(b'o'), Ok(true));
-        assert_matches!(reader.eat_char(b'o'), Ok(true));
-        assert_matches!(reader.eat_char(b'o'), Ok(false));
-    }
-
-    #[test]
-    fn io_reader_eat_str() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foobar".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.eat_str(b"foo"), Ok(true));
-        assert_matches!(reader.eat_str(b"foo"), Ok(false));
-        assert_matches!(reader.peek_n(3), Ok(Some(b)) if &*b == b"bar");
-        assert_eq!(reader.peek.len(), 3);
-        assert_matches!(reader.eat_str(b"bar"), Ok(true));
-        assert_matches!(reader.eat_str(b"bar"), Ok(false));
-        assert_matches!(reader.eat_str(b"baz"), Ok(false));
-    }
-
-    #[test]
-    fn io_reader_seq() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        let _f = reader.next().unwrap().unwrap();
-
-        reader.start_seq();
-
-        let _oo = reader.next_while(|ch| *ch == b'o').unwrap();
-        let _space = reader.next_if(u8::is_ascii_whitespace).unwrap().unwrap();
-        let _bar = reader.next_while(|ch| !ch.is_ascii_whitespace()).unwrap();
-        reader.discard().unwrap();
-        let _ba = reader.next_n(2).unwrap();
-
-        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar ba");
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        let _f = reader.next().unwrap().unwrap();
-
-        reader.start_seq();
-
-        let _o = reader.next().unwrap();
-        reader.discard_n(3).unwrap();
-        let _ar = reader.eat_str(b"ar").unwrap();
-
-        assert_matches!(reader.end_seq(), Ok(b) if &*b == b"oo bar");
-    }
-
-    #[test]
-    #[should_panic = "IoReader::end_seq called without calling IoReader::start_seq first"]
-    fn io_reader_end_seq_without_starting() {
-        let mut reader = IoReader {
-            iter: io::BufReader::new(b"foo bar baz".as_slice()).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        let _result = reader.end_seq();
-    }
-
-    #[test]
-    fn io_reader_error() {
-        struct ErrReader;
-
-        impl io::Read for ErrReader {
-            fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-                Err(io::Error::other("foo"))
-            }
-        }
-
-        let mut reader = IoReader {
-            iter: io::BufReader::new(ErrReader).bytes(),
-            peek: VecDeque::new(),
-            seq: None,
-        };
-
-        assert_matches!(reader.next(), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.next_n(4), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.peek(), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.peek_n(4), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.peek_at(1), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.discard(), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.discard_n(4), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.next_if(|_| true), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.next_while(|_| true), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(
-            reader.next_str_while(|_| true),
-            Err(Error(ErrorKind::Io(..)))
-        );
-        assert_matches!(reader.peek_while(|_| true), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.eat_char(b'a'), Err(Error(ErrorKind::Io(..))));
-        assert_matches!(reader.eat_str(b"foo"), Err(Error(ErrorKind::Io(..))));
     }
 
     #[test]
