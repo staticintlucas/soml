@@ -42,18 +42,18 @@
 //!
 //! Crate | Version | Size &ast; | Maintained | TOML version
 //! :----:|:-------:|:----------:|:----------:|:-----------:
-//! [soml] | 0.1.0 | 415 kB | ✅ | 1.0
-//! [toml] | 0.8.20 | 569 kB | ✅ | 1.0
-//! [toml] | 0.5.11 | 399 kB | ❌ | 0.5
-//! [basic-toml] | 0.1.10 | 397 kB | ❌ | 0.5 (partial †)
+//! [soml] | 0.1.0 | 399 KiB | ✅ | 1.0
+//! [toml] | 0.8.22 | 561 KiB | ✅ | 1.0
+//! [toml] | 0.5.11 | 391 KiB | ❌ | 0.5
+//! [basic-toml] | 0.1.10 | 389 KiB | ❌ | 0.5 (partial †)
 //!
 //! &ast; *Refers to the size of the `.text` section of a simple round-trip parse-then-write binary.
 //! This is calculated using [`cargo-bloat`] with the release profile.* \
 //! † *Does not support TOML date-time types.*
 //!
-//! [toml]: https://crates.io/crates/toml
 //! [soml]: https://crates.io/crates/soml
 //! [basic-toml]: https://crates.io/crates/basic-toml
+//! [toml]: https://crates.io/crates/toml
 //!
 //! [`scripts/size-test.py`]: https://github.com/staticintlucas/soml/blob/v0.1.0/scripts/size-test.py
 //! [`cargo-bloat`]: https://crates.io/crates/cargo-bloat

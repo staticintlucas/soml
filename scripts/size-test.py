@@ -87,7 +87,7 @@ for crate in crates:
     row = {
       "name": crate["package"],
       "version": dep["version"],
-      "size": f"{size / 1000:.0f} kB",
+      "size": f"{size / 1024:.0f} KiB",
       "maintained": "✅" if crate["maintained"] else "❌",
       "toml-ver": crate["toml-ver"].replace("\n", "<br>"),
       "url": crate["url"],
