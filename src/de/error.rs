@@ -113,8 +113,6 @@ pub enum ErrorKind {
     // Parser errors
     /// File is not UTF-8 encoded
     InvalidEncoding,
-    /// End of file
-    UnexpectedEof,
     /// Illegal control character
     IllegalChar(u8),
     /// Unterminated string
@@ -169,7 +167,6 @@ impl fmt::Display for ErrorKind {
 
         match *self {
             InvalidEncoding => write!(f, "file contains invalid UTF-8 bytes"),
-            UnexpectedEof => write!(f, "unexpected end of file"),
             IllegalChar(ch) => write!(f, "illegal character: {:?}", char::from(ch)),
             UnterminatedString => write!(f, "unterminated string"),
             InvalidEscape(ref seq) => write!(f, "invalid escape sequence: {seq}"),
@@ -375,9 +372,6 @@ mod tests {
     fn error_kind_display() {
         let kind = ErrorKind::InvalidEncoding;
         assert_eq!(kind.to_string(), "file contains invalid UTF-8 bytes");
-
-        let kind = ErrorKind::UnexpectedEof;
-        assert_eq!(kind.to_string(), "unexpected end of file");
 
         let kind = ErrorKind::IllegalChar(b'a');
         assert_eq!(kind.to_string(), "illegal character: 'a'");

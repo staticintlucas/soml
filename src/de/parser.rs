@@ -4,7 +4,7 @@ use std::{fmt, str};
 use serde::de;
 
 use super::error::{ErrorKind, Result};
-use super::Reader;
+use super::{reader, Reader};
 use crate::value::{LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,11 +148,13 @@ enum HeaderKind {
 enum Line {
     TableHeader { key: Key, kind: HeaderKind },
     KeyValuePair { key: Key, value: Value },
+    Empty, // Blank line or comment
 }
 
 #[derive(Debug)]
 pub(super) struct Parser<'de> {
     reader: Reader<'de>,
+    line: &'de [u8],
 }
 
 impl<'de> Parser<'de> {
@@ -161,6 +163,7 @@ impl<'de> Parser<'de> {
     pub fn from_str(str: &'de str) -> Self {
         Self {
             reader: Reader::from_str(str),
+            line: b"",
         }
     }
 
@@ -169,6 +172,7 @@ impl<'de> Parser<'de> {
     pub fn from_slice(bytes: &'de [u8]) -> Self {
         Self {
             reader: Reader::from_slice(bytes),
+            line: b"",
         }
     }
 }
@@ -219,6 +223,7 @@ impl Parser<'_> {
                     }
                     subtable.insert(key.name.clone(), value);
                 }
+                Line::Empty => {}
             }
         }
 
@@ -227,67 +232,54 @@ impl Parser<'_> {
 
     #[inline]
     fn parse_line(&mut self) -> Result<Option<Line>> {
-        self.skip_comments_and_whitespace()?;
-
-        // Parse array header
-        let result = if self.reader.eat_str(b"[[") {
-            let key = self.parse_array_header()?;
-            Some(Line::TableHeader {
-                key,
-                kind: HeaderKind::Array,
-            })
-        }
-        // Parse table header
-        else if self.reader.eat_char(b'[') {
-            let key = self.parse_table_header()?;
-            Some(Line::TableHeader {
-                key,
-                kind: HeaderKind::Table,
-            })
-        }
-        // Parse key/value pair
-        else if self
-            .reader
-            .peek()
-            .is_some_and(|ch| is_toml_word(&ch) || ch == b'"' || ch == b'\'')
-        {
-            let (key, value) = self.parse_key_value_pair()?;
-            Some(Line::KeyValuePair { key, value })
-        }
-        // Anything else is unexpected
-        else if let Some(ch) = self.reader.next() {
-            return Err(if is_toml_legal(&ch) {
-                ErrorKind::ExpectedToken("table header or key/value pair".into()).into()
-            } else {
-                ErrorKind::IllegalChar(ch).into()
-            });
-        }
-        // Or if there was no more input
-        else {
+        if self.next_line().is_none() {
             return Ok(None);
+        }
+
+        self.skip_whitespace();
+
+        let result = match *self.line {
+            // Array header
+            [b'[', b'[', ref rest @ ..] => {
+                self.line = rest;
+                let key = self.parse_array_header()?;
+                Line::TableHeader {
+                    key,
+                    kind: HeaderKind::Array,
+                }
+            }
+            // Table header
+            [b'[', ref rest @ ..] => {
+                self.line = rest;
+                let key = self.parse_table_header()?;
+                Line::TableHeader {
+                    key,
+                    kind: HeaderKind::Table,
+                }
+            }
+            // Key/value pair
+            [b, ..] if b.is_toml_word() || b == b'"' || b == b'\'' => {
+                let (key, value) = self.parse_key_value_pair()?;
+                Line::KeyValuePair { key, value }
+            }
+            // Anything else should be comments or whitespace, or errors (handled below)
+            _ => Line::Empty,
         };
 
-        // Expect newline/comment after a line
+        // Expect whitespace/comments after a line
         self.skip_whitespace();
-        match self.reader.peek() {
-            Some(b'\n') => self.reader.discard(),
-            Some(b'\r') if self.reader.peek_at(1).is_some_and(|ch| ch == b'\n') => {
-                self.reader.discard_n(2); // b"\r\n"
-            }
-            Some(b'#') => {
-                self.skip_comment()?;
-            }
-            Some(ch) => {
-                return Err(if is_toml_legal(&ch) {
-                    ErrorKind::ExpectedToken("end of line".into()).into()
-                } else {
-                    ErrorKind::IllegalChar(ch).into()
-                });
-            }
-            None => {}
+        self.skip_comment()?;
+
+        // Anything left unparsed at this point is unexpected/illegal
+        if let Some(&b) = self.line.first() {
+            return Err(if b.is_toml_legal() {
+                ErrorKind::ExpectedToken("end of line".into()).into()
+            } else {
+                ErrorKind::IllegalChar(b).into()
+            });
         }
 
-        Ok(result)
+        Ok(Some(result))
     }
 
     #[inline]
@@ -296,10 +288,12 @@ impl Parser<'_> {
         let key = self.parse_dotted_key()?;
 
         self.skip_whitespace();
-        self.reader
-            .eat_str(b"]]")
-            .then_some(key)
-            .ok_or_else(|| ErrorKind::ExpectedToken("]] after dotted key".into()).into())
+        if let Some(rest) = self.line.strip_prefix(b"]]") {
+            self.line = rest;
+            Ok(key)
+        } else {
+            Err(ErrorKind::ExpectedToken("]] after dotted key".into()).into())
+        }
     }
 
     #[inline]
@@ -308,10 +302,12 @@ impl Parser<'_> {
         let key = self.parse_dotted_key()?;
 
         self.skip_whitespace();
-        self.reader
-            .eat_char(b']')
-            .then_some(key)
-            .ok_or_else(|| ErrorKind::ExpectedToken("] after dotted key".into()).into())
+        if let Some(rest) = self.line.strip_prefix(b"]") {
+            self.line = rest;
+            Ok(key)
+        } else {
+            Err(ErrorKind::ExpectedToken("] after dotted key".into()).into())
+        }
     }
 
     #[inline]
@@ -319,7 +315,9 @@ impl Parser<'_> {
         let path = self.parse_dotted_key()?;
 
         // Whitespace should already have been consumed by parse_dotted_key looking for another '.'
-        if !self.reader.eat_char(b'=') {
+        if let Some(rest) = self.line.strip_prefix(b"=") {
+            self.line = rest;
+        } else {
             return Err(ErrorKind::ExpectedToken("= after key".into()).into());
         }
         self.skip_whitespace();
@@ -335,7 +333,8 @@ impl Parser<'_> {
 
         self.skip_whitespace();
 
-        while self.reader.eat_char(b'.') {
+        while let Some(rest) = self.line.strip_prefix(b".") {
+            self.line = rest;
             self.skip_whitespace();
             path.push(self.parse_key()?);
             self.skip_whitespace();
@@ -348,363 +347,399 @@ impl Parser<'_> {
 
     #[inline]
     fn parse_key(&mut self) -> Result<String> {
-        if self.reader.eat_char(b'"') {
-            if self.reader.eat_str(br#""""#) {
+        match *self.line {
+            [b'"', b'"', b'"', ..] | [b'\'', b'\'', b'\'', ..] => {
                 // multiline strings are invalid as keys
                 Err(ErrorKind::ExpectedToken("key".into()).into())
-            } else {
+            }
+            [b'"', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_basic_str()
             }
-        } else if self.reader.eat_char(b'\'') {
-            if self.reader.eat_str(b"''") {
-                // multiline strings are invalid as keys
-                Err(ErrorKind::ExpectedToken("key".into()).into())
-            } else {
+            [b'\'', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_literal_str()
             }
-        } else {
-            self.parse_bare_key()
+            _ => self.parse_bare_key(),
         }
     }
 
     #[inline]
     fn parse_bare_key(&mut self) -> Result<String> {
-        let key = self.reader.next_str_while(is_toml_word)?;
+        let idx = self
+            .line
+            .iter()
+            .position(|b| !b.is_toml_word())
+            .unwrap_or(self.line.len());
+        let (key, rest) = self.line.split_at(idx);
 
-        (!key.is_empty())
-            .then_some(key)
-            .ok_or_else(|| ErrorKind::ExpectedToken("key".into()).into())
+        if key.is_empty() {
+            Err(ErrorKind::ExpectedToken("key".into()).into())
+        } else {
+            let result = str::from_utf8(key)
+                .map_err(|_| ErrorKind::InvalidEncoding)?
+                .to_string();
+            self.line = rest;
+            Ok(result)
+        }
     }
 
     #[inline]
     fn parse_value(&mut self) -> Result<Value> {
-        match self.reader.peek() {
+        match *self.line {
             // String
-            Some(b'"' | b'\'') => self.parse_string().map(Value::String),
+            [b'"' | b'\'', ..] => self.parse_string().map(Value::String),
             // Boolean
-            Some(b't' | b'f') => self.parse_bool().map(Value::Boolean),
+            [b't' | b'f', ..] => self.parse_bool().map(Value::Boolean),
             // Digit could mean either number or datetime
-            Some(b'0'..=b'9') => self.parse_number_or_datetime(),
-            // Number (either int/float or special float)
-            Some(b'+' | b'-') => {
-                match self.reader.peek_at(1) {
-                    // Number
-                    Some(ch) if ch.is_ascii_digit() => self.parse_number_decimal(),
-                    // Special float
-                    Some(b'i' | b'n') => self.parse_number_special().map(Value::SpecialFloat),
-                    // Invalid
-                    _ => Err(ErrorKind::InvalidNumber("missing digits".into()).into()),
-                }
+            [b'0'..=b'9', ..] => self.parse_number_or_datetime(),
+            // Number
+            [b'+' | b'-', ch, ..] if ch.is_ascii_digit() => self.parse_number_decimal(),
+            // Special float
+            [b'+' | b'-', b'i' | b'n', ..] | [b'i' | b'n', ..] => {
+                self.parse_number_special().map(Value::SpecialFloat)
             }
-            // Special float (inf or nan)
-            Some(b'i' | b'n') => self.parse_number_special().map(Value::SpecialFloat),
+            // Invalid
+            [b'+' | b'-', ..] => Err(ErrorKind::InvalidNumber("missing digits".into()).into()),
             // Array
-            Some(b'[') => {
-                self.reader.discard(); // We consume the opening delimiter
+            [b'[', ref rest @ ..] => {
+                // We consume the opening delimiter
+                self.line = rest;
                 self.parse_array().map(Value::Array)
             }
             // Table
-            Some(b'{') => {
-                self.reader.discard(); // We consume the opening delimiter
+            [b'{', ref rest @ ..] => {
+                // We consume the opening delimiter
+                self.line = rest;
                 self.parse_inline_table().map(Value::InlineTable)
             }
-            Some(ch) if is_toml_legal(&ch) => {
-                Err(ErrorKind::ExpectedToken("a value".into()).into())
-            }
-            Some(ch) => Err(ErrorKind::IllegalChar(ch).into()),
-            None => Err(ErrorKind::UnexpectedEof.into()),
+            [ch, ..] if !ch.is_toml_legal() => Err(ErrorKind::IllegalChar(ch).into()),
+            _ => Err(ErrorKind::ExpectedToken("a value".into()).into()),
         }
     }
 
     #[inline]
     fn parse_string(&mut self) -> Result<String> {
-        if self.reader.eat_char(b'"') {
-            if self.reader.eat_str(br#""""#) {
+        match *self.line {
+            [b'"', b'"', b'"', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_multiline_basic_str()
-            } else {
+            }
+            [b'"', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_basic_str()
             }
-        } else if self.reader.eat_char(b'\'') {
-            if self.reader.eat_str(b"''") {
+            [b'\'', b'\'', b'\'', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_multiline_literal_str()
-            } else {
+            }
+            [b'\'', ref rest @ ..] => {
+                self.line = rest;
                 self.parse_literal_str()
             }
-        } else {
-            Err(ErrorKind::ExpectedToken("string".into()).into())
+            _ => Err(ErrorKind::ExpectedToken("string".into()).into()),
         }
     }
 
     #[inline]
     fn parse_basic_str(&mut self) -> Result<String> {
-        let mut str = self.reader.next_str_while(is_toml_basic_str_sans_escapes)?;
+        let mut str = String::new();
 
         loop {
-            match self.reader.next() {
-                Some(b'\\') => {
-                    // Parse escape sequence
-                    str.push(self.parse_escape_seq()?);
-                }
-                Some(b'"') => {
-                    break Ok(str);
-                }
-                None | Some(b'\r' | b'\n') => {
-                    break Err(ErrorKind::UnterminatedString.into());
-                }
-                Some(char) => {
-                    break Err(ErrorKind::IllegalChar(char).into());
-                }
-            }
+            let orig = self.line;
+            let idx = orig
+                .iter()
+                .position(|b| !b.is_toml_basic_str_sans_escapes())
+                .ok_or(ErrorKind::UnterminatedString)?;
+            self.line = &orig[idx + 1..];
 
-            str.push_str(&self.reader.next_str_while(is_toml_basic_str_sans_escapes)?);
+            str.push_str(str::from_utf8(&orig[..idx]).map_err(|_| ErrorKind::InvalidEncoding)?);
+            match orig[idx] {
+                b'\\' => str.push(self.parse_escape_seq()?),
+                b'"' => break Ok(str),
+                char => break Err(ErrorKind::IllegalChar(char).into()),
+            }
         }
     }
 
     #[inline]
     fn parse_multiline_basic_str(&mut self) -> Result<String> {
-        // Newlines after the first """ are ignored
-        let _ = self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n");
+        // Newlines after the first """ are ignored. So if line is empty just populate the next one
+        if self.line.is_empty() {
+            self.next_line().ok_or(ErrorKind::UnterminatedString)?;
+        }
 
-        let mut str = self
-            .reader
-            .next_str_while(is_toml_multiline_basic_str_sans_escapes)?;
+        let mut str = String::new();
 
         loop {
-            match self.reader.next() {
-                Some(b'\\') => {
-                    // Trailing '\' means eat all whitespace and newlines
-                    if self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n") {
-                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline);
-                    }
-                    // If there's space after the \ we assume a trailing \ with trailing whitespace,
-                    // but we need to verify there's only whitespace chars before the next newline
-                    else if let Some(char) = self.reader.next_if(is_toml_whitespace) {
-                        let _ws = self.reader.next_while(is_toml_whitespace);
-                        if !(self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n")) {
-                            return Err(ErrorKind::InvalidEscape(
-                                format!("{:?}", char::from(char)).into(),
-                            )
-                            .into());
-                        }
-                        let _ws = self.reader.next_while(is_toml_whitespace_or_newline);
-                    } else {
-                        // Parse a regular escape sequence and continue
-                        str.push(self.parse_escape_seq()?);
-                    }
-                }
-                Some(b'"') => {
-                    // Check for 2 more '"'s
-                    if self.reader.eat_str(b"\"\"") {
-                        // We can have up to 5 '"'s, 2 quotes inside the string right before the 3
-                        // which close the string. So we check for 2 additional '"'s and push them
-                        if self.reader.eat_char(b'"') {
-                            str.push('"');
-                            if self.reader.eat_char(b'"') {
-                                str.push('"');
-                            }
-                        }
+            // Find the first char we can't directly copy
+            let idx = self
+                .line
+                .iter()
+                .position(|b| !b.is_toml_multiline_basic_str_sans_escapes())
+                .unwrap_or(self.line.len());
 
-                        break Ok(str);
+            // Copy everything until idx
+            str.push_str(
+                str::from_utf8(&self.line[..idx]).map_err(|_| ErrorKind::InvalidEncoding)?,
+            );
+            self.line = &self.line[idx..];
+
+            match *self.line {
+                // Trailing '\'
+                [b'\\', ref rest @ ..] if rest.iter().all(TomlByte::is_toml_whitespace) => loop {
+                    self.next_line().ok_or(ErrorKind::UnterminatedString)?;
+                    self.skip_whitespace();
+                    if !self.line.is_empty() {
+                        break;
                     }
+                },
+                // Regular escape seq
+                [b'\\', ref rest @ ..] => {
+                    self.line = rest;
+                    str.push(self.parse_escape_seq()?);
+                }
+                // End of string """
+                [b'"', b'"', b'"', ref rest @ ..] => {
+                    self.line = rest;
+
+                    // We can have up to 5 '"'s, 2 quotes inside the string right before the 3
+                    // which close the string. So we check for 2 additional '"'s and push them
+                    if let Some(rest) = self.line.strip_prefix(b"\"") {
+                        self.line = rest;
+                        str.push('"');
+                        if let Some(rest) = self.line.strip_prefix(b"\"") {
+                            self.line = rest;
+                            str.push('"');
+                        }
+                    }
+
+                    break Ok(str);
+                }
+                // Just a regular '"'
+                [b'"', ref rest @ ..] => {
+                    self.line = rest;
                     str.push('"');
                 }
-                None => {
-                    break Err(ErrorKind::UnterminatedString.into());
+                // Any other char is illegal
+                [char, ..] => break Err(ErrorKind::IllegalChar(char).into()),
+                // End of line
+                [] => {
+                    str.push('\n');
+                    self.next_line().ok_or(ErrorKind::UnterminatedString)?;
                 }
-                Some(b'\r') if matches!(self.reader.peek(), Some(b'\n')) => {
-                    // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
-                }
-                Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
-
-            str.push_str(
-                &self
-                    .reader
-                    .next_str_while(is_toml_multiline_basic_str_sans_escapes)?,
-            );
         }
     }
 
     #[inline]
     fn parse_literal_str(&mut self) -> Result<String> {
-        let str = self.reader.next_str_while(is_toml_literal_str)?;
+        let orig = self.line;
+        let idx = orig
+            .iter()
+            .position(|b| !b.is_toml_literal_str())
+            .ok_or(ErrorKind::UnterminatedString)?;
+        self.line = &orig[idx + 1..];
 
-        match self.reader.next() {
-            Some(b'\'') => Ok(str),
-            None | Some(b'\r' | b'\n') => Err(ErrorKind::UnterminatedString.into()),
-            Some(char) => Err(ErrorKind::IllegalChar(char).into()),
+        let result = str::from_utf8(&orig[..idx]).map_err(|_| ErrorKind::InvalidEncoding)?;
+        match orig[idx] {
+            b'\'' => Ok(result.to_string()),
+            char => Err(ErrorKind::IllegalChar(char).into()),
         }
     }
 
     #[inline]
     fn parse_multiline_literal_str(&mut self) -> Result<String> {
-        // Newlines after the first ''' are ignored
-        let _ = self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n");
+        // Newlines after the first ''' are ignored. So if line is empty just populate the next one
+        if self.line.is_empty() {
+            self.next_line().ok_or(ErrorKind::UnterminatedString)?;
+        }
 
-        let mut str = self.reader.next_str_while(is_toml_multiline_literal_str)?;
+        let mut str = String::new();
 
         loop {
-            match self.reader.next() {
-                Some(b'\'') => {
-                    // Check for 2 more '\''s
-                    if self.reader.eat_str(b"''") {
-                        // We can have up to 5 '\''s, 2 quotes inside the string right before the 3
-                        // which close the string. So we check for 2 additional '\''s and push them
-                        if self.reader.eat_char(b'\'') {
-                            str.push('\'');
-                            if self.reader.eat_char(b'\'') {
-                                str.push('\'');
-                            }
-                        }
+            // Find the first char we can't directly copy
+            let idx = self
+                .line
+                .iter()
+                .position(|b| !b.is_toml_multiline_literal_str())
+                .unwrap_or(self.line.len());
 
-                        break Ok(str);
+            // Copy everything until idx
+            str.push_str(
+                str::from_utf8(&self.line[..idx]).map_err(|_| ErrorKind::InvalidEncoding)?,
+            );
+            self.line = &self.line[idx..];
+
+            match *self.line {
+                // End of string '''
+                [b'\'', b'\'', b'\'', ref rest @ ..] => {
+                    self.line = rest;
+
+                    // We can have up to 5 '\''s, 2 quotes inside the string right before the 3
+                    // which close the string. So we check for 2 additional '\''s and push them
+                    if let Some(rest) = self.line.strip_prefix(b"'") {
+                        self.line = rest;
+                        str.push('\'');
+                        if let Some(rest) = self.line.strip_prefix(b"'") {
+                            self.line = rest;
+                            str.push('\'');
+                        }
                     }
+
+                    break Ok(str);
+                }
+                // Just a regular '\''
+                [b'\'', ref rest @ ..] => {
+                    self.line = rest;
                     str.push('\'');
                 }
-                None => {
-                    break Err(ErrorKind::UnterminatedString.into());
+                // Any other char is illegal
+                [char, ..] => break Err(ErrorKind::IllegalChar(char).into()),
+                // End of line
+                [] => {
+                    str.push('\n');
+                    self.next_line().ok_or(ErrorKind::UnterminatedString)?;
                 }
-                Some(b'\r') if matches!(self.reader.peek(), Some(b'\n')) => {
-                    // Ignore '\r' followed by '\n', else it's handled by the illegal char branch
-                }
-                Some(char) => break Err(ErrorKind::IllegalChar(char).into()),
             }
-
-            str.push_str(&self.reader.next_str_while(is_toml_multiline_literal_str)?);
         }
     }
 
     #[inline]
     fn parse_escape_seq(&mut self) -> Result<char> {
-        let Some(char) = self.reader.peek() else {
+        let Some((&esc, rest)) = self.line.split_first() else {
             return Err(ErrorKind::UnterminatedString.into());
         };
+        let orig = self.line;
+        self.line = rest;
 
-        match char {
-            b'b' => {
-                self.reader.discard();
-                Ok('\x08')
-            }
-            b't' => {
-                self.reader.discard();
-                Ok('\t')
-            }
-            b'n' => {
-                self.reader.discard();
-                Ok('\n')
-            }
-            b'f' => {
-                self.reader.discard();
-                Ok('\x0c')
-            }
-            b'r' => {
-                self.reader.discard();
-                Ok('\r')
-            }
-            b'"' => {
-                self.reader.discard();
-                Ok('"')
-            }
-            b'\\' => {
-                self.reader.discard();
-                Ok('\\')
-            }
+        match esc {
+            b'b' => Ok('\x08'),
+            b't' => Ok('\t'),
+            b'n' => Ok('\n'),
+            b'f' => Ok('\x0c'),
+            b'r' => Ok('\r'),
+            b'"' => Ok('"'),
+            b'\\' => Ok('\\'),
             b'u' => {
-                self.reader.discard();
-                let bytes = self.reader.next_n(4).ok_or(ErrorKind::UnterminatedString)?;
-                let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
-                u32::from_str_radix(str, 16)
+                let (bytes, rest) = rest
+                    .split_at_checked(4)
+                    .ok_or(ErrorKind::UnterminatedString)?;
+                let str = str::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
+                let result = u32::from_str_radix(str, 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()).into())
+                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\u{str}").into()))?;
+                self.line = rest;
+                Ok(result)
             }
             b'U' => {
-                self.reader.discard();
-                let bytes = self.reader.next_n(8).ok_or(ErrorKind::UnterminatedString)?;
-                let str = str::from_utf8(&bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
-                u32::from_str_radix(str, 16)
+                let (bytes, rest) = rest
+                    .split_at_checked(8)
+                    .ok_or(ErrorKind::UnterminatedString)?;
+                let str = str::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
+                let result = u32::from_str_radix(str, 16)
                     .ok()
                     .and_then(char::from_u32)
-                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\U{str}").into()).into())
+                    .ok_or_else(|| ErrorKind::InvalidEscape(format!("\\U{str}").into()))?;
+                self.line = rest;
+                Ok(result)
             }
-            _ => Err(ErrorKind::InvalidEscape(
-                self.reader
-                    .next_char()? // We want a char here, not just a byte
-                    .ok_or(ErrorKind::UnterminatedString)
-                    .map(|ch| format!("\\{ch}").into())?,
-            )
-            .into()),
+            _ => {
+                // We want a char here, not just a byte
+                let char = reader::utf8_len(esc)
+                    .and_then(|len| str::from_utf8(&orig[..len]).ok())
+                    .and_then(|l| l.chars().next())
+                    .ok_or(ErrorKind::InvalidEncoding)?;
+
+                Err(ErrorKind::InvalidEscape(format!("\\{char}").into()).into())
+            }
         }
     }
 
     #[inline]
     fn parse_bool(&mut self) -> Result<bool> {
-        // Match against the whole word, don't just parse the first n characters so we don't
-        // successfully parse e.g. true92864yhowkalgp98y
-        let word = self.reader.next_while(is_toml_word);
-
-        match &word[..] {
-            b"true" => Ok(true),
-            b"false" => Ok(false),
-            _ => Err(ErrorKind::ExpectedToken("true/false".into()).into()),
+        if let Some(rest) = self.line.strip_prefix(b"true") {
+            self.line = rest;
+            Ok(true)
+        } else if let Some(rest) = self.line.strip_prefix(b"false") {
+            self.line = rest;
+            Ok(false)
+        } else {
+            Err(ErrorKind::ExpectedToken("true/false".into()).into())
         }
     }
 
     // Parses anything that starts with a digit. Does not parse special floats or +/- values
     #[inline]
     fn parse_number_or_datetime(&mut self) -> Result<Value> {
-        fn remove_start(mut bytes: Vec<u8>, n: usize) -> Vec<u8> {
-            bytes.drain(..n);
-            bytes
-        }
-
-        let value = self.reader.next_while(is_toml_number_or_datetime);
-        match *value {
+        match *self.line {
             // Hex literal starts with "0x"
-            [b'0', b'x', ..] => {
-                let digits = remove_start(value, 2);
-                Self::normalize_number(digits, u8::is_ascii_hexdigit).map(Value::HexInt)
+            [b'0', b'x', ref rest @ ..] => {
+                self.line = rest;
+                self.parse_digits(u8::is_ascii_hexdigit).map(Value::HexInt)
             }
             // Octal literal starts with "0o"
-            [b'0', b'o', ..] => {
-                let digits = remove_start(value, 2);
-                Self::normalize_number(digits, |&b| matches!(b, b'0'..=b'7')).map(Value::OctalInt)
+            [b'0', b'o', ref rest @ ..] => {
+                self.line = rest;
+                self.parse_digits(|&b| matches!(b, b'0'..=b'7'))
+                    .map(Value::OctalInt)
             }
             // Binary literal starts with "0b"
-            [b'0', b'b', ..] => {
-                let digits = remove_start(value, 2);
-                Self::normalize_number(digits, |&b| matches!(b, b'0' | b'1')).map(Value::BinaryInt)
+            [b'0', b'b', ref rest @ ..] => {
+                self.line = rest;
+                self.parse_digits(|&b| matches!(b, b'0' | b'1'))
+                    .map(Value::BinaryInt)
             }
             // LocalTime has a ':' at index 2
             #[cfg(feature = "datetime")]
-            [_, _, b':', ..] => LocalTime::from_slice(&value).map(Value::LocalTime),
+            [_, _, b':', ..] => {
+                let idx = self
+                    .line
+                    .iter()
+                    .position(|b| !b.is_toml_datetime())
+                    .unwrap_or(self.line.len());
+                let result = LocalTime::from_slice(&self.line[..idx])?;
+                self.line = &self.line[idx..];
+                Ok(Value::LocalTime(result))
+            }
             // OffsetDateTime, LocalDateTime, or LocalDate have '-' at index 4
             // Also need to check for only digits before to rule out float literals (e.g. 120e-2)
             #[cfg(feature = "datetime")]
             [b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'-', ..] => {
+                let idx = self
+                    .line
+                    .iter()
+                    .position(|b| !b.is_toml_datetime())
+                    .unwrap_or(self.line.len());
+                let value = &self.line[..idx];
+                self.line = &self.line[idx..];
+
                 // If we have a 'T' split the date and time
                 let (date, time) =
                     if let Some(idx) = value.iter().position(|&b| matches!(b, b'T' | b't')) {
                         (&value[..idx], &value[idx + 1..])
                     }
-                    // If we don't have a 'T' we might have a space-delimited datetime which we have only
-                    // read part of, so check for space followed by a digit
-                    else if self
-                        .reader
-                        .peek_n(2)
-                        .is_some_and(|b| b[0] == b' ' && b[1].is_ascii_digit())
-                    {
+                    // If we don't have a 'T' we might have a space-delimited datetime of which
+                    // `value` is the first half, so check for space followed by a digit
+                    else if matches!(*self.line, [b' ', b'0'..=b'9', ..]) {
                         // Discard the space
-                        self.reader.discard();
-                        // Read in the time
-                        (
-                            &value[..],
-                            &*self.reader.next_while(is_toml_number_or_datetime),
-                        )
+                        self.line = &self.line[1..];
+
+                        // Get the time
+                        let idx = self
+                            .line
+                            .iter()
+                            .position(|b| !b.is_toml_datetime())
+                            .unwrap_or(self.line.len());
+                        let tvalue = &self.line[..idx];
+                        self.line = &self.line[idx..];
+
+                        (value, tvalue)
                     }
                     // Else we definitely just have a LocalDate
                     else {
-                        return LocalDate::from_slice(&value).map(Value::LocalDate);
+                        return LocalDate::from_slice(value).map(Value::LocalDate);
                     };
 
                 if let Some(idx) = time
@@ -726,178 +761,176 @@ impl Parser<'_> {
                 }
             }
             // Just a plain ol' decimal
-            [..] => Self::normalize_number_decimal(value),
+            [..] => self.parse_number_decimal(),
         }
     }
 
     #[inline]
     fn parse_number_decimal(&mut self) -> Result<Value> {
-        let value = self.reader.next_while(is_toml_number_or_datetime);
-        Self::normalize_number_decimal(value)
-    }
+        let mut float = false;
+        let mut buf = Vec::new();
 
-    #[inline]
-    fn normalize_number_decimal(digits: Vec<u8>) -> Result<Value> {
-        fn split_at_byte(bytes: &[u8], pred: impl FnMut(&u8) -> bool) -> Option<(&[u8], &[u8])> {
-            bytes
-                .iter()
-                .position(pred)
-                .map(|i| (&bytes[..i], &bytes[i + 1..]))
+        // Check for the sign
+        if let Some((&b @ (b'+' | b'-'), rest)) = self.line.split_first() {
+            buf.push(b);
+            self.line = rest;
         }
 
-        let mut float = false;
-
-        // Split the number into integer, fraction, and exponent parts (if present)
-        let (integer, fraction, exponent) =
-            if let Some((i, rest)) = split_at_byte(&digits, |&b| b == b'.') {
-                let (f, e) = split_at_byte(rest, |&b| matches!(b, b'e' | b'E'))
-                    .map_or((Some(rest), None), |(f, e)| (Some(f), Some(e)));
-                (i, f, e)
-            } else {
-                let (i, e) = split_at_byte(&digits, |&b| matches!(b, b'e' | b'E'))
-                    .map_or((&*digits, None), |(i, e)| (i, Some(e)));
-                (i, None, e)
-            };
-
-        // Validate each part
-        let integer = if matches!(integer.first().copied(), Some(b'+' | b'-')) {
-            &integer[1..]
-        } else {
-            integer
-        };
-        Self::check_underscores(integer)?;
-        if integer.len() > 1 && integer[0] == b'0' {
-            // Only fail for len > 1; we allow "0", "0.123", etc
+        // Check for invalid leading zero, but allow "0", "0.123", etc
+        if matches!(
+            *self.line,
+            [b'0', b'0'..=b'9', ..] | [b'0', b'_', b'0'..=b'9', ..]
+        ) {
             return Err(ErrorKind::InvalidNumber("leading zero".into()).into());
         }
-        if !integer.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
-            return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
+        // Parse the integer portion
+        self.parse_digits_into(u8::is_ascii_digit, &mut buf)?;
+
+        if let Some(rest) = self.line.strip_prefix(b".") {
+            float = true;
+
+            buf.push(b'.');
+            self.line = rest;
+
+            // Parse the fractional portion
+            self.parse_digits_into(u8::is_ascii_digit, &mut buf)?;
         }
 
-        if let Some(fraction) = fraction {
+        if let Some((&b'e' | &b'E', rest)) = self.line.split_first() {
             float = true;
-            Self::check_underscores(fraction)?;
-            if !fraction.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
-                return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
-            }
-        }
-        if let Some(exponent) = exponent {
-            float = true;
-            let exponent = if matches!(exponent.first().copied(), Some(b'+' | b'-')) {
-                &exponent[1..]
-            } else {
-                exponent
-            };
-            Self::check_underscores(exponent)?;
-            if !exponent.iter().all(|&b| matches!(b, b'0'..=b'9' | b'_')) {
-                return Err(ErrorKind::InvalidNumber("invalid digit".into()).into());
-            }
-        }
 
-        // Now we can just strip the underscores
-        let number = Self::strip_underscores(digits);
+            buf.push(b'e');
+            self.line = rest;
+
+            // Check for the sign
+            if let Some((&b @ (b'+' | b'-'), rest)) = self.line.split_first() {
+                buf.push(b);
+                self.line = rest;
+            }
+
+            // Parse the exponent portion
+            self.parse_digits_into(u8::is_ascii_digit, &mut buf)?;
+        }
 
         Ok(if float {
-            Value::Float(number)
+            Value::Float(buf)
         } else {
-            Value::Integer(number)
+            Value::Integer(buf)
         })
     }
 
     #[inline]
-    fn normalize_number(digits: Vec<u8>, is_digit: fn(&u8) -> bool) -> Result<Vec<u8>> {
-        Self::check_underscores(&digits)?;
-        let digits = Self::strip_underscores(digits);
-
-        if digits.iter().all(is_digit) {
-            Ok(digits)
-        } else {
-            Err(ErrorKind::InvalidNumber("invalid digit".into()).into())
-        }
+    fn parse_digits(&mut self, is_digit: fn(&u8) -> bool) -> Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.parse_digits_into(is_digit, &mut buf)?;
+        Ok(buf)
     }
 
     #[inline]
-    fn check_underscores(digits: &[u8]) -> Result<()> {
-        if digits.is_empty() {
-            return Err(ErrorKind::InvalidNumber("no digits".into()).into());
+    fn parse_digits_into(&mut self, is_digit: fn(&u8) -> bool, buf: &mut Vec<u8>) -> Result<()> {
+        // Find the first non-digit char
+        let idx = self
+            .line
+            .iter()
+            .position(|b| !is_digit(b))
+            .unwrap_or(self.line.len());
+
+        if idx == 0 {
+            return Err(ErrorKind::InvalidNumber(
+                match self.line.get(idx).copied() {
+                    Some(b'_') => "leading underscore",
+                    _ => "no digits",
+                }
+                .into(),
+            )
+            .into());
         }
-        if digits.starts_with(b"_") {
-            return Err(ErrorKind::InvalidNumber("leading underscore".into()).into());
+
+        buf.extend_from_slice(&self.line[..idx]);
+        self.line = &self.line[idx..];
+
+        while let Some(rest) = self.line.strip_prefix(b"_") {
+            self.line = rest;
+
+            let idx = self
+                .line
+                .iter()
+                .position(|b| !is_digit(b))
+                .unwrap_or(self.line.len());
+
+            if idx == 0 {
+                return Err(ErrorKind::InvalidNumber(
+                    match self.line.get(idx).copied() {
+                        Some(b'_') => "double underscore",
+                        _ => "trailing underscore",
+                    }
+                    .into(),
+                )
+                .into());
+            }
+
+            buf.extend_from_slice(&self.line[..idx]);
+            self.line = &self.line[idx..];
         }
-        if digits.ends_with(b"_") {
-            return Err(ErrorKind::InvalidNumber("trailing underscore".into()).into());
-        }
-        if digits.windows(2).any(|w| w == b"__") {
-            return Err(ErrorKind::InvalidNumber("double underscore".into()).into());
-        }
+
         Ok(())
     }
 
     #[inline]
-    fn strip_underscores(digits: Vec<u8>) -> Vec<u8> {
-        if let Some(idx) = digits.iter().position(|&b| b == b'_') {
-            let mut result = Vec::with_capacity(digits.len() - 1); // Upper bound
-            result.extend_from_slice(&digits[..idx]);
-            let mut digits = &digits[idx + 1..];
-            while let Some(idx) = digits.iter().position(|&b| b == b'_') {
-                result.extend_from_slice(&digits[..idx]);
-                digits = &digits[idx + 1..];
-            }
-            result.extend_from_slice(digits);
-            result
-        } else {
-            digits
-        }
-    }
-
-    #[inline]
     fn parse_number_special(&mut self) -> Result<SpecialFloat> {
-        // In each case we match against the whole word, don't just parse the first n characters so
-        // we don't successfully parse e.g. inf92864yhowkalgp98y
-        match self.reader.peek() {
-            Some(b'+') => {
-                self.reader.discard();
-                match &self.reader.next_while(is_toml_word)[..] {
-                    b"inf" => Ok(SpecialFloat::Infinity),
-                    b"nan" => Ok(SpecialFloat::Nan),
-                    _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
-                }
-            }
-            Some(b'-') => {
-                self.reader.discard();
-                match &self.reader.next_while(is_toml_word)[..] {
-                    b"inf" => Ok(SpecialFloat::NegInfinity),
-                    b"nan" => Ok(SpecialFloat::NegNan),
-                    _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
-                }
-            }
-            _ => match &self.reader.next_while(is_toml_word)[..] {
-                b"inf" => Ok(SpecialFloat::Infinity),
-                b"nan" => Ok(SpecialFloat::Nan),
+        match *self.line {
+            [b'-', ref rest @ ..] => match rest.split_at_checked(3) {
+                Some((b"inf", rest)) => Ok((SpecialFloat::NegInfinity, rest)),
+                Some((b"nan", rest)) => Ok((SpecialFloat::NegNan, rest)),
+                _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
+            },
+            [b'+', ref rest @ ..] | ref rest => match rest.split_at_checked(3) {
+                Some((b"inf", rest)) => Ok((SpecialFloat::Infinity, rest)),
+                Some((b"nan", rest)) => Ok((SpecialFloat::Nan, rest)),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
             },
         }
+        .map(|(result, rest)| {
+            self.line = rest;
+            result
+        })
     }
 
     #[inline]
     fn parse_array(&mut self) -> Result<Vec<Value>> {
+        fn skip_comments_and_whitespace(slf: &mut Parser<'_>) -> Result<()> {
+            slf.skip_whitespace();
+            slf.skip_comment()?;
+            while slf.line.is_empty() {
+                slf.next_line().ok_or(ErrorKind::UnterminatedString)?;
+                slf.skip_whitespace();
+                slf.skip_comment()?;
+            }
+            Ok(())
+        }
+
         let mut result = vec![];
 
         loop {
-            self.skip_comments_and_whitespace()?;
+            skip_comments_and_whitespace(self)?;
 
-            if self.reader.eat_char(b']') {
+            if let Some(rest) = self.line.strip_prefix(b"]") {
+                self.line = rest;
                 break; // End of array
             }
 
             result.push(self.parse_value()?);
 
-            self.skip_comments_and_whitespace()?;
+            skip_comments_and_whitespace(self)?;
 
-            if self.reader.eat_char(b']') {
+            if let Some(rest) = self.line.strip_prefix(b"]") {
+                self.line = rest;
                 break; // End of array
             }
-            if !self.reader.eat_char(b',') {
+
+            if let Some(rest) = self.line.strip_prefix(b",") {
+                self.line = rest;
+            } else {
                 return Err(ErrorKind::ExpectedToken(", or ] after value in array".into()).into());
             }
         }
@@ -911,7 +944,8 @@ impl Parser<'_> {
 
         self.skip_whitespace();
 
-        if self.reader.eat_char(b'}') {
+        if let Some(rest) = self.line.strip_prefix(b"}") {
+            self.line = rest;
             return Ok(result); // End of table
         }
 
@@ -935,17 +969,19 @@ impl Parser<'_> {
 
             self.skip_whitespace();
 
-            if self.reader.eat_char(b'}') {
-                break; // End of array
-            } else if self.reader.eat_char(b',') {
+            if let Some(rest) = self.line.strip_prefix(b"}") {
+                self.line = rest;
+                break; // End of table
+            }
+
+            if let Some(rest) = self.line.strip_prefix(b",") {
+                self.line = rest;
                 self.skip_whitespace();
             } else {
-                return Err(if self.reader.next().is_some() {
-                    ErrorKind::ExpectedToken(", or } after key/value pair in inline table".into())
-                        .into()
-                } else {
-                    ErrorKind::UnexpectedEof.into()
-                });
+                return Err(ErrorKind::ExpectedToken(
+                    ", or } after key/value pair in inline table".into(),
+                )
+                .into());
             }
         }
 
@@ -954,38 +990,36 @@ impl Parser<'_> {
 
     #[inline]
     fn skip_whitespace(&mut self) {
-        while self.reader.next_if(is_toml_whitespace).is_some() {}
+        let idx = self
+            .line
+            .iter()
+            .position(|b| !b.is_toml_whitespace())
+            .unwrap_or(self.line.len());
+        self.line = &self.line[idx..];
     }
 
     #[inline]
     fn skip_comment(&mut self) -> Result<()> {
-        if self.reader.eat_char(b'#') {
-            // Skip validating comments with feature = "fast"
-            if cfg!(feature = "fast") {
-                let _comment = self.reader.next_while(|&ch| ch != b'\n');
-            } else {
-                // next_str_while will validate UTF-8
-                let comment = self.reader.next_str_while(|&ch| ch != b'\n')?;
-                // Trim trailing \r (since \r\n is valid)
-                let comment = comment.strip_suffix('\r').unwrap_or(&comment);
+        if let Some(rest) = self.line.strip_prefix(b"#") {
+            // Only validate comments without feature = "fast"
+            if cfg!(not(feature = "fast")) {
+                // validate UTF-8
+                _ = str::from_utf8(rest).map_err(|_| ErrorKind::InvalidEncoding)?;
                 // Check for any invalid characters in the comment
-                if let Some(ch) = comment.bytes().find(|c| !is_toml_comment(c)) {
+                if let Some(ch) = rest.iter().copied().find(|ch| !ch.is_toml_comment()) {
                     return Err(ErrorKind::IllegalChar(ch).into());
                 }
             }
+            self.line = &self.line[self.line.len()..];
         }
+
         Ok(())
     }
 
     #[inline]
-    fn skip_comments_and_whitespace(&mut self) -> Result<()> {
-        self.skip_whitespace();
-        self.skip_comment()?;
-        while self.reader.eat_char(b'\n') || self.reader.eat_str(b"\r\n") {
-            self.skip_whitespace();
-            self.skip_comment()?;
-        }
-        Ok(())
+    fn next_line(&mut self) -> Option<()> {
+        self.line = self.reader.next_line()?;
+        Some(())
     }
 }
 
@@ -1093,76 +1127,75 @@ impl TomlTable for Table {
     }
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_whitespace(char: &u8) -> bool {
-    matches!(*char, b'\t' | b' ')
+trait TomlByte {
+    /// If the byte is TOML whitespace (space or tab)
+    fn is_toml_whitespace(&self) -> bool;
+    /// If the byte is a TOML word (ASCII alphanumeric or hyphen or underscore)
+    fn is_toml_word(&self) -> bool;
+    /// If the byte is present in a datetime (ASCII numeric, plus, minus, period, colon, T, t, Z, z)
+    fn is_toml_datetime(&self) -> bool;
+    /// If the byte is valid in a TOML comment (disallows all ASCII control chars except for tab)
+    fn is_toml_comment(&self) -> bool;
+    /// If the byte is valid in a basic string, excluding the escape character '\'
+    fn is_toml_basic_str_sans_escapes(&self) -> bool;
+    /// If the byte is valid in a multiline basic string, excluding the escape character '\'
+    fn is_toml_multiline_basic_str_sans_escapes(&self) -> bool;
+    /// If the byte is valid in a literal string
+    fn is_toml_literal_str(&self) -> bool;
+    /// If the byte is valid in a multiline literal string
+    fn is_toml_multiline_literal_str(&self) -> bool;
+    /// If the byte is legal in a TOML document
+    fn is_toml_legal(&self) -> bool;
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_whitespace_or_newline(char: &u8) -> bool {
-    matches!(*char, b'\t' | b' ' | b'\r' | b'\n')
-}
+impl TomlByte for u8 {
+    #[inline]
+    fn is_toml_whitespace(&self) -> bool {
+        matches!(*self, b'\t' | b' ')
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_word(char: &u8) -> bool {
-    matches!(*char, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
-}
+    #[inline]
+    fn is_toml_word(&self) -> bool {
+        matches!(*self, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_number_or_datetime(char: &u8) -> bool {
-    matches!(
-        *char,
-        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'+' | b'-' | b'.' | b':'
-    )
-}
+    #[inline]
+    fn is_toml_datetime(&self) -> bool {
+        matches!(
+            *self,
+            b'0'..=b'9' | b'+' | b'-' | b'.' | b':' | b'T' | b't' | b'Z' | b'z'
+        )
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_comment(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09)
-    matches!(*char, 0x09 | 0x20..=0x7e | 0x80..)
-}
+    #[inline]
+    fn is_toml_comment(&self) -> bool {
+        matches!(*self, 0x09 | 0x20..=0x7e | 0x80..)
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_basic_str_sans_escapes(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09), the delimiter '"' (0x22), and escape
-    // char '\' (0x5c)
-    matches!(*char, 0x09 | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
-}
+    #[inline]
+    fn is_toml_basic_str_sans_escapes(&self) -> bool {
+        matches!(*self, 0x09 | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_multiline_basic_str_sans_escapes(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), the delimiter '"' (0x22),
-    // and escape char '\' (0x5c)
-    matches!(*char, 0x09 | 0x0a | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
-}
+    #[inline]
+    fn is_toml_multiline_basic_str_sans_escapes(&self) -> bool {
+        matches!(*self, 0x09 | 0x0a | 0x20 | 0x21 | 0x23..=0x5b | 0x5d..=0x7e | 0x80..)
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_literal_str(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09), and the delimiter '\'' (0x27)
-    matches!(*char, 0x09 | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
-}
+    #[inline]
+    fn is_toml_literal_str(&self) -> bool {
+        matches!(*self, 0x09 | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_multiline_literal_str(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09), '\n' (0x0a), and the delimiter '\''
-    // (0x27)
-    matches!(*char, 0x09 | 0x0a | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
-}
+    #[inline]
+    fn is_toml_multiline_literal_str(&self) -> bool {
+        matches!(*self, 0x09 | 0x0a | 0x20..=0x26 | 0x28..=0x7e | 0x80..)
+    }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // this makes it more ergonomic to use these
-#[inline]
-const fn is_toml_legal(char: &u8) -> bool {
-    // Disallow ASCII control chars except tab (0x09), carriage return (0x0d) and newline (0x0a)
-    matches!(*char, 0x09 | 0x0a | 0x0d | 0x20..=0x7e | 0x80..)
+    #[inline]
+    fn is_toml_legal(&self) -> bool {
+        matches!(*self, 0x09 | 0x0a | 0x0d | 0x20..=0x7e | 0x80..)
+    }
 }
 
 #[cfg(test)]
@@ -1174,6 +1207,13 @@ mod tests {
 
     use super::*;
     use crate::de::Error;
+
+    fn start_parser(bytes: &[u8]) -> Parser<'_> {
+        let mut reader = Reader::from_slice(bytes);
+        let line = reader.next_line().unwrap_or(b"");
+
+        Parser { reader, line }
+    }
 
     #[test]
     fn type_to_str() {
@@ -1187,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn type_to_string() {
+    fn type_display() {
         assert_eq!(Type::String.to_string(), "string");
         assert_eq!(Type::Integer.to_string(), "integer");
         assert_eq!(Type::Float.to_string(), "float");
@@ -1261,23 +1301,48 @@ mod tests {
     }
 
     #[test]
+    fn key_display() {
+        let key = Key {
+            path: vec!["a".to_string(), "b".to_string()],
+            name: "c".to_string(),
+        };
+        assert_eq!(key.to_string(), "a.b.c");
+
+        let key = Key {
+            path: vec!["a".to_string()],
+            name: "b".to_string(),
+        };
+        assert_eq!(key.to_string(), "a.b");
+
+        let key = Key {
+            path: vec![],
+            name: "a".to_string(),
+        };
+        assert_eq!(key.to_string(), "a");
+    }
+
+    #[test]
     fn parser_from_str() {
         let mut parser = Parser::from_str("foo = 123");
-        assert_matches!(parser.reader.next_while(|_| true), b if &*b == b"foo = 123"
-        );
+        assert_matches!(parser.line, b"");
+        // Can't check the reader directly, so check it line by line
+        assert_matches!(parser.reader.next_line(), Some(b"foo = 123"));
+        assert_matches!(parser.reader.next_line(), None);
     }
 
     #[test]
     fn parser_from_slice() {
         let mut parser = Parser::from_slice(b"foo = 123");
-        assert_matches!(parser.reader.next_while(|_| true), b if &*b == b"foo = 123"
-        );
+        assert_matches!(parser.line, b"");
+        // Can't check the reader directly, so check it line by line
+        assert_matches!(parser.reader.next_line(), Some(b"foo = 123"));
+        assert_matches!(parser.reader.next_line(), None);
     }
 
     #[allow(clippy::too_many_lines)]
     #[test]
     fn parser_parse() {
-        let mut parser = Parser::from_str("a = 1\nb = 2");
+        let mut parser = Parser::from_slice(b"a = 1\nb = 2");
         assert_matches!(
             parser.parse(),
             Ok(Value::Table(t)) if t == hashmap! {
@@ -1286,7 +1351,7 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_str("a = 1\r\nb = 2");
+        let mut parser = Parser::from_slice(b"a = 1\r\nb = 2");
         assert_matches!(
             parser.parse(),
             Ok(Value::Table(t)) if t == hashmap! {
@@ -1295,7 +1360,7 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = Parser::from_slice(indoc! {br#"
             # This is a TOML document.
 
             title = "TOML Example"
@@ -1403,13 +1468,13 @@ mod tests {
 
     #[test]
     fn parser_parse_invalid() {
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             a = 123
             a = 456
         "});
         assert_matches!(parser.parse(), Err(Error(ErrorKind::DuplicateKey(..))));
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             a = 123
 
             [a]
@@ -1420,7 +1485,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidTableHeader(..)))
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             a = 123
 
             [[a]]
@@ -1431,13 +1496,13 @@ mod tests {
             Err(Error(ErrorKind::InvalidTableHeader(..)))
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             a = 123
             a.b = 456
         "});
         assert_matches!(parser.parse(), Err(Error(ErrorKind::InvalidKeyPath(..))));
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             [a.b]
             c = 123
 
@@ -1446,35 +1511,86 @@ mod tests {
         "});
         assert_matches!(parser.parse(), Err(Error(ErrorKind::InvalidKeyPath(..))));
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = Parser::from_slice(indoc! {br"
             [table]
             a.b = 123
             a.b = 456
         "});
         assert_matches!(parser.parse(), Err(Error(ErrorKind::DuplicateKey(..))));
 
-        let mut parser = Parser::from_str("a = 123 $");
+        let mut parser = Parser::from_slice(b"a = 123 $");
         assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
 
-        let mut parser = Parser::from_str("a = 123 \0");
+        let mut parser = Parser::from_slice(b"a = 123 \0");
         assert_matches!(parser.parse(), Err(Error(ErrorKind::IllegalChar(..))));
 
-        let mut parser = Parser::from_str("$");
+        let mut parser = Parser::from_slice(b"$");
         assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
 
-        let mut parser = Parser::from_str("\0");
+        let mut parser = Parser::from_slice(b"\0");
         assert_matches!(parser.parse(), Err(Error(ErrorKind::IllegalChar(..))));
 
-        let mut parser = Parser::from_str("a = 1\rb = 2");
+        let mut parser = Parser::from_slice(b"a = 1\rb = 2");
         assert_matches!(parser.parse(), Err(Error(ErrorKind::ExpectedToken(..))));
     }
 
     #[test]
+    fn parser_parse_line() {
+        let mut parser = Parser::from_slice(b"[[a]]");
+        assert_matches!(
+            parser.parse_line(),
+            Ok(Some(Line::TableHeader { key, kind: HeaderKind::Array })) if key.to_string() == "a"
+        );
+
+        let mut parser = Parser::from_slice(b"[a]");
+        assert_matches!(
+            parser.parse_line(),
+            Ok(Some(Line::TableHeader { key, kind: HeaderKind::Table })) if key.to_string() == "a"
+        );
+
+        let mut parser = Parser::from_slice(b"a = 1");
+        assert_matches!(
+            parser.parse_line(),
+            Ok(Some(Line::KeyValuePair { key, value })) if key.to_string() == "a" && value == Value::Integer(b"1".to_vec())
+        );
+
+        let mut parser = Parser::from_slice(b"'a' = 1");
+        assert_matches!(
+            parser.parse_line(),
+            Ok(Some(Line::KeyValuePair { key, value })) if key.to_string() == "a" && value == Value::Integer(b"1".to_vec())
+        );
+
+        let mut parser = Parser::from_slice(br#""a" = 1"#);
+        assert_matches!(
+            parser.parse_line(),
+            Ok(Some(Line::KeyValuePair { key, value })) if key.to_string() == "a" && value == Value::Integer(b"1".to_vec())
+        );
+
+        let mut parser = Parser::from_slice(b"\n");
+        assert_matches!(parser.parse_line(), Ok(Some(Line::Empty)));
+
+        let mut parser = Parser::from_slice(b"a = 1 # comment");
+        assert_matches!(parser.parse_line(), Ok(Some(Line::KeyValuePair { .. })));
+
+        let mut parser = Parser::from_slice(b"");
+        assert_matches!(parser.parse_line(), Ok(None));
+
+        let mut parser = Parser::from_slice(b"a = 1 blah");
+        assert_matches!(
+            parser.parse_line(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
+
+        let mut parser = Parser::from_slice(b"a = 1 \0");
+        assert_matches!(parser.parse_line(), Err(Error(ErrorKind::IllegalChar(..))));
+    }
+
+    #[test]
     fn parser_parse_array_header() {
-        let mut parser = Parser::from_str(r#" a .b. "..c"]]"#);
+        let mut parser = start_parser(br#" a .b. "..c"]]"#);
         assert_matches!(parser.parse_array_header(), Ok(s) if s.path == ["a", "b"] && s.name == "..c");
 
-        let mut parser = Parser::from_str(r#""]]""#);
+        let mut parser = start_parser(br#""]]""#);
         assert_matches!(
             parser.parse_array_header(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -1483,10 +1599,10 @@ mod tests {
 
     #[test]
     fn parser_parse_table_header() {
-        let mut parser = Parser::from_str(r#" a .b. "..c"]"#);
+        let mut parser = start_parser(br#" a .b. "..c"]"#);
         assert_matches!(parser.parse_table_header(), Ok(s) if s.path == ["a", "b"] && s.name == "..c");
 
-        let mut parser = Parser::from_str(r#""]""#);
+        let mut parser = start_parser(br#""]""#);
         assert_matches!(
             parser.parse_table_header(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -1495,13 +1611,13 @@ mod tests {
 
     #[test]
     fn parser_parse_key_value_pair() {
-        let mut parser = Parser::from_str(r"a = 123");
+        let mut parser = start_parser(br"a = 123");
         assert_matches!(
             parser.parse_key_value_pair(),
             Ok((k, Value::Integer(v))) if k.path.is_empty() && k.name == "a" && &*v == b"123"
         );
 
-        let mut parser = Parser::from_str(r#""a = 123""#);
+        let mut parser = start_parser(br#""a = 123""#);
         assert_matches!(
             parser.parse_key_value_pair(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -1510,16 +1626,16 @@ mod tests {
 
     #[test]
     fn parser_parse_dotted_key() {
-        let mut parser = Parser::from_str(r#"a .b. "..c""#);
+        let mut parser = start_parser(br#"a .b. "..c""#);
         assert_matches!(parser.parse_dotted_key(), Ok(s) if s.path == ["a", "b"] && s.name == "..c");
 
-        let mut parser = Parser::from_str(".");
+        let mut parser = start_parser(b".");
         assert_matches!(
             parser.parse_dotted_key(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("a..b");
+        let mut parser = start_parser(b"a..b");
         assert_matches!(
             parser.parse_dotted_key(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -1528,53 +1644,59 @@ mod tests {
 
     #[test]
     fn parser_parse_key() {
-        let mut parser = Parser::from_str("abc");
+        let mut parser = start_parser(b"abc");
         assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
-        let mut parser = Parser::from_str(r#""abc""#);
+        let mut parser = start_parser(br#""abc""#);
         assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
-        let mut parser = Parser::from_str("'abc'");
+        let mut parser = start_parser(b"'abc'");
         assert_matches!(parser.parse_key(), Ok(k) if k == "abc");
 
-        let mut parser = Parser::from_str(r#""""abc""""#);
+        let mut parser = start_parser(br#""""abc""""#);
         assert_matches!(parser.parse_key(), Err(Error(ErrorKind::ExpectedToken(..))));
 
-        let mut parser = Parser::from_str("'''abc'''");
+        let mut parser = start_parser(b"'''abc'''");
         assert_matches!(parser.parse_key(), Err(Error(ErrorKind::ExpectedToken(..))));
     }
 
     #[test]
     fn parser_parse_bare_key() {
-        let mut parser = Parser::from_str("abc");
+        let mut parser = start_parser(b"abc");
         assert_matches!(parser.parse_bare_key(), Ok(k) if k == "abc");
 
-        let mut parser = Parser::from_str("123");
+        let mut parser = start_parser(b"123");
         assert_matches!(parser.parse_bare_key(), Ok(k) if k == "123");
 
-        let mut parser = Parser::from_str("-");
+        let mut parser = start_parser(b"-");
         assert_matches!(parser.parse_bare_key(), Ok(k) if k == "-");
 
-        let mut parser = Parser::from_str("_");
+        let mut parser = start_parser(b"_");
         assert_matches!(parser.parse_bare_key(), Ok(k) if k == "_");
+
+        let mut parser = start_parser(b"[key]");
+        assert_matches!(
+            parser.parse_bare_key(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn parser_parse_value() {
-        let mut parser = Parser::from_str(r#""hello""#);
+        let mut parser = start_parser(br#""hello""#);
         assert_matches!(parser.parse_value(), Ok(Value::String(s)) if &*s == "hello");
 
-        let mut parser = Parser::from_str("true");
+        let mut parser = start_parser(b"true");
         assert_matches!(parser.parse_value(), Ok(Value::Boolean(true)));
 
-        let mut parser = Parser::from_str("0.2");
+        let mut parser = start_parser(b"0.2");
         assert_matches!(parser.parse_value(), Ok(Value::Float(b)) if &*b == b"0.2");
 
-        let mut parser = Parser::from_str("0x123abc");
+        let mut parser = start_parser(b"0x123abc");
         assert_matches!(parser.parse_value(), Ok(Value::HexInt(v)) if &*v == b"123abc");
 
-        let mut parser = Parser::from_str("0001-01-01");
+        let mut parser = start_parser(b"0001-01-01");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::LocalDate(LocalDate {
@@ -1584,7 +1706,7 @@ mod tests {
             }))
         );
 
-        let mut parser = Parser::from_str("00:00:00");
+        let mut parser = start_parser(b"00:00:00");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::LocalTime(LocalTime {
@@ -1595,16 +1717,16 @@ mod tests {
             }))
         );
 
-        let mut parser = Parser::from_str("0");
+        let mut parser = start_parser(b"0");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"0");
 
-        let mut parser = Parser::from_str("12");
+        let mut parser = start_parser(b"12");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"12");
 
-        let mut parser = Parser::from_str("1234");
+        let mut parser = start_parser(b"1234");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"1234");
 
-        let mut parser = Parser::from_str("1234-05-06");
+        let mut parser = start_parser(b"1234-05-06");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::LocalDate(LocalDate {
@@ -1614,7 +1736,7 @@ mod tests {
             }))
         );
 
-        let mut parser = Parser::from_str("12:34:56");
+        let mut parser = start_parser(b"12:34:56");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::LocalTime(LocalTime {
@@ -1625,37 +1747,37 @@ mod tests {
             }))
         );
 
-        let mut parser = Parser::from_str("-123");
+        let mut parser = start_parser(b"-123");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(v)) if &*v == b"-123");
 
-        let mut parser = Parser::from_str("+123");
+        let mut parser = start_parser(b"+123");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(v)) if &*v == b"+123");
 
-        let mut parser = Parser::from_str("+inf");
+        let mut parser = start_parser(b"+inf");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::SpecialFloat(SpecialFloat::Infinity))
         );
 
-        let mut parser = Parser::from_str("-nan");
+        let mut parser = start_parser(b"-nan");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::SpecialFloat(SpecialFloat::NegNan))
         );
 
-        let mut parser = Parser::from_str("inf");
+        let mut parser = start_parser(b"inf");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::SpecialFloat(SpecialFloat::Infinity))
         );
 
-        let mut parser = Parser::from_str("nan");
+        let mut parser = start_parser(b"nan");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::SpecialFloat(SpecialFloat::Nan))
         );
 
-        let mut parser = Parser::from_str("[123, 456, 789]");
+        let mut parser = start_parser(b"[123, 456, 789]");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::Array(a)) if a == [
@@ -1665,7 +1787,7 @@ mod tests {
             ]
         );
 
-        let mut parser = Parser::from_str("{ a = 123, b = 456, c = 789 }");
+        let mut parser = start_parser(b"{ a = 123, b = 456, c = 789 }");
         assert_matches!(
             parser.parse_value(),
             Ok(Value::InlineTable(t)) if t == hashmap! {
@@ -1678,64 +1800,67 @@ mod tests {
 
     #[test]
     fn parser_parse_value_invalid() {
-        let mut parser = Parser::from_str("01");
+        let mut parser = start_parser(b"01");
         assert_matches!(
             parser.parse_value(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
-        let mut parser = Parser::from_str("0123");
+        let mut parser = start_parser(b"0123");
         assert_matches!(
             parser.parse_value(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
-        let mut parser = Parser::from_str("+");
+        let mut parser = start_parser(b"+");
         assert_matches!(
             parser.parse_value(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
-        let mut parser = Parser::from_str("blah");
+        let mut parser = start_parser(b"blah");
         assert_matches!(
             parser.parse_value(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("\0");
+        let mut parser = start_parser(b"\0");
         assert_matches!(parser.parse_value(), Err(Error(ErrorKind::IllegalChar(..))));
 
-        let mut parser = Parser::from_str("");
-        assert_matches!(parser.parse_value(), Err(Error(ErrorKind::UnexpectedEof)));
+        let mut parser = start_parser(b"");
+        assert_matches!(
+            parser.parse_value(),
+            Err(Error(ErrorKind::ExpectedToken(..)))
+        );
     }
 
     #[test]
     fn parser_parse_string() {
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             "hello"
         "#});
         assert_matches!(parser.parse_string(), Ok(s) if s == "hello");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             """
             hello
             """
         "#});
         assert_matches!(parser.parse_string(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             'hello'
         "});
         assert_matches!(parser.parse_string(), Ok(s) if s == "hello");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             '''
             hello
             '''
         "});
         assert_matches!(parser.parse_string(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             "hello'
         "#});
         assert_matches!(
@@ -1743,7 +1868,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             """
             hello
             "
@@ -1753,7 +1878,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             """
             hello
             '''
@@ -1763,7 +1888,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             'hello"
         "#});
         assert_matches!(
@@ -1771,7 +1896,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             '''
             hello
             "
@@ -1781,7 +1906,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             '''
             hello
             """
@@ -1791,7 +1916,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("hello");
+        let mut parser = start_parser(b"hello");
         assert_matches!(
             parser.parse_string(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -1800,12 +1925,12 @@ mod tests {
 
     #[test]
     fn parser_parse_basic_str() {
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello\n"
         "#});
         assert_matches!(parser.parse_basic_str(), Ok(s) if s =="hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello\"
         "#});
         assert_matches!(
@@ -1813,7 +1938,7 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello\0"
         "#});
         assert_matches!(
@@ -1821,7 +1946,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidEscape(..)))
         );
 
-        let mut parser = Parser::from_str("hello\0\"");
+        let mut parser = start_parser(b"hello\0\"");
         assert_matches!(
             parser.parse_basic_str(),
             Err(Error(ErrorKind::IllegalChar(..)))
@@ -1830,65 +1955,61 @@ mod tests {
 
     #[test]
     fn parser_parse_multiline_basic_str() {
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello
             """
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello
             """"
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello
             """""
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\"");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello
             """"""
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\""); // Still only 2 "s
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello
             ""
             """
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n\"\"\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello\t
             """
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\t\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(indoc! {br#"
             hello \
             world
             """
         "#});
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello world\n");
 
-        let mut parser = Parser::from_str(concat!(
-            indoc! {r#"
-            hello \             "#}, // Use concat to avoid trimming trailing space after the \
-            indoc! {r#"
-
-                world
-                """
-            "#}
-        ));
+        let mut parser = start_parser(b"\nhello \\             \n   \nworld\n\"\"\"");
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello world\n");
 
-        let mut parser = Parser::from_str("hello\r\n\"\"\"");
+        let mut parser = start_parser(b"hello\r\n\"\"\"");
         assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        // \n after opening """ is trimmed
+        let mut parser = start_parser(b"\nhello\n\"\"\"");
+        assert_matches!(parser.parse_multiline_basic_str(), Ok(s) if s == "hello\n");
+
+        let mut parser = start_parser(indoc! {br#"
             hello
             ""
         "#});
@@ -1897,7 +2018,13 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str(indoc! {r#"
+        let mut parser = start_parser(b"\n");
+        assert_matches!(
+            parser.parse_multiline_basic_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
+
+        let mut parser = start_parser(indoc! {br#"
             hello\    \
             """
         "#});
@@ -1906,7 +2033,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidEscape(..)))
         );
 
-        let mut parser = Parser::from_str("hello\0\"");
+        let mut parser = start_parser(b"hello\0\"");
         assert_matches!(
             parser.parse_multiline_basic_str(),
             Err(Error(ErrorKind::IllegalChar(..)))
@@ -1915,16 +2042,16 @@ mod tests {
 
     #[test]
     fn parser_parse_literal_str() {
-        let mut parser = Parser::from_str("hello\\n'");
+        let mut parser = start_parser(b"hello\\n'");
         assert_matches!(parser.parse_literal_str(), Ok(s) if s == "hello\\n");
 
-        let mut parser = Parser::from_str("hello\n'");
+        let mut parser = start_parser(b"hello\n'");
         assert_matches!(
             parser.parse_literal_str(),
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("hello\0'");
+        let mut parser = start_parser(b"hello\0'");
         assert_matches!(
             parser.parse_literal_str(),
             Err(Error(ErrorKind::IllegalChar(..)))
@@ -1933,41 +2060,45 @@ mod tests {
 
     #[test]
     fn parser_parse_multiline_literal_str() {
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             hello
             '''
         "});
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             hello
             ''''
         "});
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n'");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             hello
             '''''
         "});
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             hello
             ''''''
         "});
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''"); // Still only 2 's
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
             hello
             ''
             '''
         "});
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n''\n");
 
-        let mut parser = Parser::from_str("hello\r\n'''");
+        let mut parser = start_parser(b"hello\r\n'''");
         assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n");
 
-        let mut parser = Parser::from_str(indoc! {r"
+        // \n after opening ''' is trimmed
+        let mut parser = start_parser(b"\nhello\n'''");
+        assert_matches!(parser.parse_multiline_literal_str(), Ok(s) if s == "hello\n");
+
+        let mut parser = start_parser(indoc! {br"
             hello
             ''
         "});
@@ -1976,7 +2107,13 @@ mod tests {
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("hello\0'");
+        let mut parser = start_parser(b"\n");
+        assert_matches!(
+            parser.parse_multiline_literal_str(),
+            Err(Error(ErrorKind::UnterminatedString))
+        );
+
+        let mut parser = start_parser(b"hello\0'");
         assert_matches!(
             parser.parse_multiline_literal_str(),
             Err(Error(ErrorKind::IllegalChar(..)))
@@ -1986,101 +2123,95 @@ mod tests {
     #[test]
     #[allow(clippy::cognitive_complexity)]
     fn parser_parse_escape_seq() {
-        let mut parser = Parser::from_str("b");
+        let mut parser = start_parser(b"b");
         assert_matches!(parser.parse_escape_seq(), Ok('\x08'));
 
-        let mut parser = Parser::from_str("t");
+        let mut parser = start_parser(b"t");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\t');
 
-        let mut parser = Parser::from_str("n");
+        let mut parser = start_parser(b"n");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\n');
 
-        let mut parser = Parser::from_str("f");
+        let mut parser = start_parser(b"f");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\x0c');
 
-        let mut parser = Parser::from_str("r");
+        let mut parser = start_parser(b"r");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\r');
 
-        let mut parser = Parser::from_str("\"");
+        let mut parser = start_parser(b"\"");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '"');
 
-        let mut parser = Parser::from_str("\\");
+        let mut parser = start_parser(b"\\");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '\\');
 
-        let mut parser = Parser::from_str("u20ac");
+        let mut parser = start_parser(b"u20ac");
         assert_matches!(parser.parse_escape_seq(), Ok(s) if s == '€');
 
-        let mut parser = Parser::from_str("u2");
+        let mut parser = start_parser(b"u2");
         assert_matches!(
             parser.parse_escape_seq(),
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("ulmao");
+        let mut parser = start_parser(b"ulmao");
         assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\ulmao");
 
-        let mut parser = Parser::from_slice(b"u\xff\xff\xff\xff");
+        let mut parser = start_parser(b"u\xff\xff\xff\xff");
         assert_matches!(
             parser.parse_escape_seq(),
             Err(Error(ErrorKind::InvalidEncoding))
         );
 
-        let mut parser = Parser::from_str("U0001f60e");
+        let mut parser = start_parser(b"U0001f60e");
         assert_matches!(parser.parse_escape_seq(), Ok('😎'));
 
-        let mut parser = Parser::from_str("U2");
+        let mut parser = start_parser(b"U2");
         assert_matches!(
             parser.parse_escape_seq(),
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("UROFLCOPTER");
+        let mut parser = start_parser(b"UROFLCOPTER");
         assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\UROFLCOPT");
 
-        let mut parser = Parser::from_slice(b"U\xff\xff\xff\xff\xff\xff\xff\xff");
+        let mut parser = start_parser(b"U\xff\xff\xff\xff\xff\xff\xff\xff");
         assert_matches!(
             parser.parse_escape_seq(),
             Err(Error(ErrorKind::InvalidEncoding))
         );
 
-        let mut parser = Parser::from_slice(b"");
+        let mut parser = start_parser(b"");
         assert_matches!(
             parser.parse_escape_seq(),
             Err(Error(ErrorKind::UnterminatedString))
         );
 
-        let mut parser = Parser::from_str("p");
+        let mut parser = start_parser(b"p");
         assert_matches!(parser.parse_escape_seq(), Err(Error(ErrorKind::InvalidEscape(esc))) if &*esc == "\\p");
     }
 
     #[test]
     #[allow(clippy::bool_assert_comparison)]
     fn parser_parse_bool() {
-        let mut parser = Parser::from_str("true");
+        let mut parser = start_parser(b"true");
         assert_matches!(parser.parse_bool(), Ok(true));
 
-        let mut parser = Parser::from_str("false");
+        let mut parser = start_parser(b"false");
         assert_matches!(parser.parse_bool(), Ok(false));
 
-        let mut parser = Parser::from_str("TRUE");
+        let mut parser = start_parser(b"TRUE");
         assert_matches!(
             parser.parse_bool(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("f");
+        let mut parser = start_parser(b"f");
         assert_matches!(
             parser.parse_bool(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("1");
-        assert_matches!(
-            parser.parse_bool(),
-            Err(Error(ErrorKind::ExpectedToken(..)))
-        );
-
-        let mut parser = Parser::from_str("trueueue");
+        let mut parser = start_parser(b"1");
         assert_matches!(
             parser.parse_bool(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -2089,281 +2220,278 @@ mod tests {
 
     #[test]
     fn parser_parse_number_or_datetime() {
-        let mut parser = Parser::from_str("0x123");
+        let mut parser = start_parser(b"0x123");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::HexInt(_)));
 
-        let mut parser = Parser::from_str("0o123");
+        let mut parser = start_parser(b"0o123");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::OctalInt(_)));
 
-        let mut parser = Parser::from_str("0b101");
+        let mut parser = start_parser(b"0b101");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::BinaryInt(_)));
 
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000+02:30");
+        let mut parser = start_parser(b"1980-01-01T12:00:00.000+02:30");
         assert_matches!(
             parser.parse_number_or_datetime(),
             Ok(Value::OffsetDatetime(_))
         );
 
-        let mut parser = Parser::from_str("1980-01-01 12:00:00Z");
+        let mut parser = start_parser(b"1980-01-01 12:00:00Z");
         assert_matches!(
             parser.parse_number_or_datetime(),
             Ok(Value::OffsetDatetime(_))
         );
 
-        let mut parser = Parser::from_str("1980-01-01T12:00:00.000");
+        let mut parser = start_parser(b"1980-01-01T12:00:00.000");
         assert_matches!(
             parser.parse_number_or_datetime(),
             Ok(Value::LocalDatetime(_))
         );
 
-        let mut parser = Parser::from_str("1980-01-01 12:00:00");
+        let mut parser = start_parser(b"1980-01-01 12:00:00");
         assert_matches!(
             parser.parse_number_or_datetime(),
             Ok(Value::LocalDatetime(_))
         );
 
-        let mut parser = Parser::from_str("1980-01-01");
+        let mut parser = start_parser(b"1980-01-01");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalDate(_)));
 
-        let mut parser = Parser::from_str("12:00:00.000000000");
+        let mut parser = start_parser(b"12:00:00.000000000");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalTime(_)));
 
-        let mut parser = Parser::from_str("123");
+        let mut parser = start_parser(b"123");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::Integer(_)));
 
-        let mut parser = Parser::from_str("4.5");
+        let mut parser = start_parser(b"4.5");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::Float(_)));
     }
 
     #[test]
-    fn parse_number_decimal() {
-        let mut parser = Parser::from_str("123");
+    #[allow(clippy::cognitive_complexity)]
+    fn parser_parse_number_decimal() {
+        let mut parser = start_parser(b"123_456");
         assert_matches!(
             parser.parse_number_decimal(),
-            Ok(Value::Integer(v)) if &*v == b"123"
-        );
-    }
-
-    #[test]
-    #[allow(clippy::cognitive_complexity)]
-    fn parser_normalize_number_decimal() {
-        assert_matches!(
-            Parser::normalize_number_decimal(b"123_456".into()),
             Ok(Value::Integer(v)) if &*v == b"123456"
         );
 
+        let mut parser = start_parser(b"+123_456");
         assert_matches!(
-            Parser::normalize_number_decimal(b"+123_456".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Integer(v)) if &*v == b"+123456"
         );
 
+        let mut parser = start_parser(b"-123_456");
         assert_matches!(
-            Parser::normalize_number_decimal(b"-123_456".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Integer(v)) if &*v == b"-123456"
         );
 
+        let mut parser = start_parser(b"0");
         assert_matches!(
-            Parser::normalize_number_decimal(b"0".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Integer(v)) if &*v == b"0"
         );
 
+        let mut parser = start_parser(b"0123");
         assert_matches!(
-            Parser::normalize_number_decimal(b"0123".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"0_1");
         assert_matches!(
-            Parser::normalize_number_decimal(b"abc".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"abc");
         assert_matches!(
-            Parser::normalize_number_decimal(b"-abc".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"-abc");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123_456.789_012".into()),
+            parser.parse_number_decimal(),
+            Err(Error(ErrorKind::InvalidNumber(..)))
+        );
+
+        let mut parser = start_parser(b"123_456.789_012");
+        assert_matches!(
+            parser.parse_number_decimal(),
             Ok(Value::Float(v)) if &*v == b"123456.789012"
         );
 
+        let mut parser = start_parser(b"123_456.789_012e345_678");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123_456.789_012e345_678".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Float(v)) if &*v == b"123456.789012e345678"
         );
 
+        let mut parser = start_parser(b"123_456.789_012e+345_678");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123_456.789_012e+345_678".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Float(v)) if &*v == b"123456.789012e+345678"
         );
 
+        let mut parser = start_parser(b"123_456.789_012e-345_678");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123_456.789_012e-345_678".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Float(v)) if &*v == b"123456.789012e-345678"
         );
 
+        let mut parser = start_parser(b"123_456e345_678");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123_456e345_678".into()),
+            parser.parse_number_decimal(),
             Ok(Value::Float(v)) if &*v == b"123456e345678"
         );
 
+        let mut parser = start_parser(b".123");
         assert_matches!(
-            Parser::normalize_number_decimal(b".123".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123.");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123.".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123e");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123e".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"e123");
         assert_matches!(
-            Parser::normalize_number_decimal(b"e123".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123.e456");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123.e456".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123.abc");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123e456.789".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123.456eabc");
         assert_matches!(
-            Parser::normalize_number_decimal(b"123.abc".into()),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-
-        assert_matches!(
-            Parser::normalize_number_decimal(b"123.456eabc".into()),
+            parser.parse_number_decimal(),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
     }
 
     #[test]
-    fn parser_normalize_number() {
+    fn parser_parse_digits() {
+        let mut parser = start_parser(b"123_456");
         assert_matches!(
-            Parser::normalize_number(b"123_456".into(), u8::is_ascii_digit),
+            parser.parse_digits(u8::is_ascii_digit),
             Ok(v) if &*v == b"123456"
         );
 
+        let mut parser = start_parser(b"abc_def");
         assert_matches!(
-            Parser::normalize_number(b"abc_def".into(), u8::is_ascii_hexdigit),
+            parser.parse_digits(u8::is_ascii_hexdigit),
             Ok(v) if &*v == b"abcdef"
         );
 
+        let mut parser = start_parser(b"abc_def");
         assert_matches!(
-            Parser::normalize_number(b"abc_def".into(), u8::is_ascii_digit),
+            parser.parse_digits(u8::is_ascii_digit),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"_123_");
         assert_matches!(
-            Parser::normalize_number(b"_123_".into(), u8::is_ascii_digit),
-            Err(Error(ErrorKind::InvalidNumber(..)))
-        );
-    }
-
-    #[test]
-    fn parser_check_underscores() {
-        assert!(Parser::check_underscores(b"123_456").is_ok());
-
-        assert_matches!(
-            Parser::check_underscores(b"_123"),
+            parser.parse_digits(u8::is_ascii_digit),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"_123");
         assert_matches!(
-            Parser::check_underscores(b"123_"),
+            parser.parse_digits(u8::is_ascii_digit),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123_");
         assert_matches!(
-            Parser::check_underscores(b"123__456"),
+            parser.parse_digits(u8::is_ascii_digit),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
 
+        let mut parser = start_parser(b"123__456");
         assert_matches!(
-            Parser::check_underscores(b""),
+            parser.parse_digits(u8::is_ascii_digit),
             Err(Error(ErrorKind::InvalidNumber(..)))
         );
-    }
 
-    #[test]
-    fn parser_strip_underscores() {
-        assert_eq!(Parser::strip_underscores(b"123456".into()), b"123456");
-
-        assert_eq!(Parser::strip_underscores(b"123_456".into()), b"123456");
-
-        assert_eq!(
-            Parser::strip_underscores(b"123_456_789".into()),
-            b"123456789"
-        );
-
-        assert_eq!(
-            Parser::strip_underscores(b"123_456_789_abc".into()),
-            b"123456789abc"
+        let mut parser = start_parser(b"");
+        assert_matches!(
+            parser.parse_digits(u8::is_ascii_digit),
+            Err(Error(ErrorKind::InvalidNumber(..)))
         );
     }
 
     #[test]
     fn parser_parse_number_special() {
-        let mut parser = Parser::from_str("inf");
+        let mut parser = start_parser(b"inf");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Infinity));
 
-        let mut parser = Parser::from_str("+inf");
+        let mut parser = start_parser(b"+inf");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Infinity));
 
-        let mut parser = Parser::from_str("-inf");
+        let mut parser = start_parser(b"-inf");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::NegInfinity));
 
-        let mut parser = Parser::from_str("nan");
+        let mut parser = start_parser(b"nan");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Nan));
 
-        let mut parser = Parser::from_str("+nan");
+        let mut parser = start_parser(b"+nan");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::Nan));
 
-        let mut parser = Parser::from_str("-nan");
+        let mut parser = start_parser(b"-nan");
         assert_matches!(parser.parse_number_special(), Ok(SpecialFloat::NegNan));
 
-        let mut parser = Parser::from_str("+1.0e+3");
+        let mut parser = start_parser(b"+1.0e+3");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("NaN");
+        let mut parser = start_parser(b"NaN");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("INF");
+        let mut parser = start_parser(b"INF");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("abc");
+        let mut parser = start_parser(b"abc");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("+abc");
+        let mut parser = start_parser(b"+abc");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("-abc");
+        let mut parser = start_parser(b"-abc");
         assert_matches!(
             parser.parse_number_special(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -2372,31 +2500,31 @@ mod tests {
 
     #[test]
     fn parser_parse_array() {
-        let mut parser = Parser::from_str("]");
+        let mut parser = start_parser(b"]");
         assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
-        let mut parser = Parser::from_str("  ]");
+        let mut parser = start_parser(b"  ]");
         assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
                 # comment
             ]
         "});
         assert_matches!(parser.parse_array(), Ok(s) if s.is_empty());
 
-        let mut parser = Parser::from_str("123]");
+        let mut parser = start_parser(b"123]");
         assert_matches!(
             parser.parse_array(),
             Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
-        let mut parser = Parser::from_str("123,]");
+        let mut parser = start_parser(b"123,]");
         assert_matches!(
             parser.parse_array(),
             Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
                 123,
             ]
         "});
@@ -2405,7 +2533,7 @@ mod tests {
             Ok(s) if s == [Value::Integer(b"123".into())]
         );
 
-        let mut parser = Parser::from_str(r"123, 456, 789]");
+        let mut parser = start_parser(br"123, 456, 789]");
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
@@ -2415,7 +2543,7 @@ mod tests {
             ]
         );
 
-        let mut parser = Parser::from_str(r"123, 456, 789,]");
+        let mut parser = start_parser(br"123, 456, 789,]");
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
@@ -2425,7 +2553,7 @@ mod tests {
             ]
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
                 123,
                 456,
                 789,
@@ -2440,7 +2568,7 @@ mod tests {
             ]
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
                 123,
                 456, # comment
                 789 # comment
@@ -2455,7 +2583,7 @@ mod tests {
             ]
         );
 
-        let mut parser = Parser::from_str("123 abc]");
+        let mut parser = start_parser(b"123 abc]");
         assert_matches!(
             parser.parse_array(),
             Err(Error(ErrorKind::ExpectedToken(..)))
@@ -2464,19 +2592,19 @@ mod tests {
 
     #[test]
     fn parser_parse_inline_table() {
-        let mut parser = Parser::from_str("}");
+        let mut parser = start_parser(b"}");
         assert_matches!(parser.parse_inline_table(), Ok(t) if t == Table::new());
 
-        let mut parser = Parser::from_str("  }");
+        let mut parser = start_parser(b"  }");
         assert_matches!(parser.parse_inline_table(), Ok(t) if t == Table::new());
 
-        let mut parser = Parser::from_str("abc = 123 }");
+        let mut parser = start_parser(b"abc = 123 }");
         assert_matches!(
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! { "abc".into() => Value::Integer(b"123".into()) }
         );
 
-        let mut parser = Parser::from_str(r"abc = 123, def = 456, ghi = 789 }");
+        let mut parser = start_parser(br"abc = 123, def = 456, ghi = 789 }");
         assert_matches!(
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
@@ -2486,7 +2614,7 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_str(r"abc = { def = 123, ghi = 456 } }");
+        let mut parser = start_parser(br"abc = { def = 123, ghi = 456 } }");
         assert_matches!(
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
@@ -2497,7 +2625,7 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_str(r"abc.def = 123, abc.ghi = 456 }");
+        let mut parser = start_parser(br"abc.def = 123, abc.ghi = 456 }");
         assert_matches!(
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
@@ -2508,25 +2636,25 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_str("abc 123 }");
+        let mut parser = start_parser(b"abc 123 }");
         assert_matches!(
             parser.parse_inline_table(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("abc = 123, }");
+        let mut parser = start_parser(b"abc = 123, }");
         assert_matches!(
             parser.parse_inline_table(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("123 }");
+        let mut parser = start_parser(b"123 }");
         assert_matches!(
             parser.parse_inline_table(),
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str(indoc! {r"
+        let mut parser = start_parser(indoc! {br"
                 abc = 123
             }
         "});
@@ -2535,328 +2663,256 @@ mod tests {
             Err(Error(ErrorKind::ExpectedToken(..)))
         );
 
-        let mut parser = Parser::from_str("abc = 123, abc = 456 }");
+        let mut parser = start_parser(b"abc = 123, abc = 456 }");
         assert_matches!(
             parser.parse_inline_table(),
             Err(Error(ErrorKind::DuplicateKey(..)))
         );
 
-        let mut parser = Parser::from_str("abc = { def = 123 }, abc.ghi = 456 }");
+        let mut parser = start_parser(b"abc = { def = 123 }, abc.ghi = 456 }");
         assert_matches!(
             parser.parse_inline_table(),
             Err(Error(ErrorKind::InvalidKeyPath(..)))
         );
 
-        let mut parser = Parser::from_str("abc = 123, def = 456 ");
+        let mut parser = start_parser(b"abc = 123, def = 456 ");
         assert_matches!(
             parser.parse_inline_table(),
-            Err(Error(ErrorKind::UnexpectedEof))
+            Err(Error(ErrorKind::ExpectedToken(..)))
         );
     }
 
     #[test]
     fn parser_skip_whitespace() {
-        let mut parser = Parser::from_str("   ");
+        let mut parser = start_parser(b"   ");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), None);
+        assert!(parser.line.is_empty());
 
-        let mut parser = Parser::from_str("   \t");
+        let mut parser = start_parser(b"   \t");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), None);
+        assert!(parser.line.is_empty());
 
-        let mut parser = Parser::from_str("   abc");
+        let mut parser = start_parser(b"   abc");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), Some(b'a'));
+        assert_eq!(parser.line, b"abc");
 
-        let mut parser = Parser::from_str("   \t   abc");
+        let mut parser = start_parser(b"   \t   abc");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), Some(b'a'));
+        assert_eq!(parser.line, b"abc");
 
-        let mut parser = Parser::from_str("   \t   # comment");
+        let mut parser = start_parser(b"   \t   # comment");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), Some(b'#'));
+        assert_eq!(parser.line, b"# comment");
 
-        let mut parser = Parser::from_str("abc");
+        let mut parser = start_parser(b"abc");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), Some(b'a'));
+        assert_eq!(parser.line, b"abc");
 
-        let mut parser = Parser::from_str("");
+        let mut parser = start_parser(b"");
         parser.skip_whitespace();
-        assert_matches!(parser.reader.peek(), None);
+        assert!(parser.line.is_empty());
     }
 
     #[test]
-    #[allow(clippy::bool_assert_comparison)]
     fn parser_skip_comment() {
-        let mut parser = Parser::from_str("# comment");
+        let mut parser = start_parser(b"# comment");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), None);
+        assert!(parser.line.is_empty());
 
-        let mut parser = Parser::from_str("# comment\n");
+        let mut parser = start_parser(b"# comment\n");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Some(b'\n'));
+        assert!(parser.line.is_empty());
 
-        let mut parser = Parser::from_str("# comment\r\n");
+        let mut parser = start_parser(b"# comment\r\n");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Some(b'\n'));
+        assert!(parser.line.is_empty());
 
-        let mut parser = Parser::from_str("abc");
+        let mut parser = start_parser(b"abc");
         parser.skip_comment().unwrap();
-        assert_matches!(parser.reader.peek(), Some(b'a'));
+        assert_eq!(parser.line, b"abc");
 
-        if cfg!(not(feature = "fast")) {
-            let mut parser = Parser::from_slice(b"# comment\xff");
-            assert_matches!(
-                parser.skip_comment(),
-                Err(Error(ErrorKind::InvalidEncoding))
-            );
+        let mut parser = start_parser(b"# comment\xff");
+        assert_matches!(
+            parser.skip_comment(),
+            Err(Error(ErrorKind::InvalidEncoding))
+        );
 
-            let mut parser = Parser::from_str("# comment\0");
-            assert_matches!(
-                parser.skip_comment(),
-                Err(Error(ErrorKind::IllegalChar(..)))
-            );
-        }
+        let mut parser = start_parser(b"# comment\0");
+        assert_matches!(
+            parser.skip_comment(),
+            Err(Error(ErrorKind::IllegalChar(..)))
+        );
     }
 
     #[test]
-    fn parser_skip_comments_and_whitespace() {
-        let mut parser = Parser::from_str(indoc! {r"
-
-            # comment
-
-            abc
-        "});
-        assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Some(b'a'));
-
-        let mut parser = Parser::from_str("# comment\r\n\tabc");
-        assert!(parser.skip_comments_and_whitespace().is_ok());
-        assert_matches!(parser.reader.peek(), Some(b'a'));
+    fn parser_next_line() {
+        let mut parser = Parser {
+            reader: Reader::from_str(indoc! {r"
+                [a]
+                b = c
+            "}),
+            line: b"",
+        };
+        assert!(parser.next_line().is_some());
+        assert_eq!(parser.line, b"[a]");
+        assert!(parser.next_line().is_some());
+        assert_eq!(parser.line, b"b = c");
+        assert!(parser.next_line().is_none());
     }
 
-    // #[test]
-    // fn parser_get_table_header() {
-    //     type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+    #[test]
+    fn table_get_subtable() {
+        let mut table = hashmap! {
+            "a".into() => Value::ArrayOfTables(vec![hashmap! {}]),
+            "b".into() => Value::Table(hashmap! {
+                "c".into() => Value::UndefinedTable(hashmap! {}),
+                "d".into() => Value::DottedKeyTable(hashmap! {}),
+                "e".into() => Value::Table(hashmap! {}),
+                "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
+                "g".into() => Value::InlineTable(hashmap! {}),
+                "h".into() => Value::Integer(b"123".into()),
+            }),
+        };
+        assert_eq!(table.clone().get_subtable(&[]), Some(&mut table));
+        assert_eq!(
+            table.get_subtable(&["a".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["a".to_string(), "b".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["a".to_string(), "b".to_string(), "c".to_string()]),
+            Some(&mut hashmap! {})
+        );
 
-    //     let map = || {
-    //         hashmap! {
-    //             "a".into() => Value::UndefinedTable(hashmap! {}),
-    //             "b".into() => Value::Table(hashmap! {
-    //                 "c".into() => Value::UndefinedTable(hashmap! {}),
-    //                 "d".into() => Value::DottedKeyTable(hashmap! {}),
-    //                 "e".into() => Value::Table(hashmap! {}),
-    //                 "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
-    //                 "g".into() => Value::InlineTable(hashmap! {}),
-    //                 "h".into() => Value::Integer(b"123".into()),
-    //             }),
-    //         }
-    //     };
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec![],
-    //             name: "a".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["a".to_string(),],
-    //             name: "b".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["a".to_string(), "b".to_string()],
-    //             name: "c".to_string()
-    //         }
-    //     )
-    //     .is_some());
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "a".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "c".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "d".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "e".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "f".to_string()]),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "g".to_string()]),
+            None
+        );
+        assert_eq!(
+            table.get_subtable(&["b".to_string(), "h".to_string()]),
+            None
+        );
+    }
 
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "c".to_string()],
-    //             name: "d".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "d".to_string()],
-    //             name: "e".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "e".to_string()],
-    //             name: "f".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "f".to_string()],
-    //             name: "g".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "g".to_string()],
-    //             name: "h".to_string()
-    //         }
-    //     )
-    //     .is_none());
-    //     assert!(Parser::get_table_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec![],
-    //             name: "b".to_string()
-    //         }
-    //     )
-    //     .is_none());
-    // }
+    #[test]
+    fn table_get_dotted_subtable() {
+        let mut table = hashmap! {
+            "a".into() => Value::DottedKeyTable(hashmap! {}),
+            "b".into() => Value::UndefinedTable(hashmap! {}),
+            "c".into() => Value::Table(hashmap! {}),
+        };
+        assert_eq!(
+            table.clone().get_dotted_subtable(&[], true),
+            Some(&mut table)
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["a".to_string()], true),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["a".to_string(), "b".to_string()], true),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["b".to_string()], true),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["b".to_string(), "c".to_string()], true),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(table.get_dotted_subtable(&["c".to_string()], true), None);
 
-    // #[test]
-    // fn table_get_array_header() {
-    //     type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+        let mut table = hashmap! {
+            "a".into() => Value::DottedKeyTable(hashmap! {}),
+            "b".into() => Value::UndefinedTable(hashmap! {}),
+            "c".into() => Value::Table(hashmap! {}),
+        };
+        assert_eq!(
+            table.clone().get_dotted_subtable(&[], false),
+            Some(&mut table)
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["a".to_string()], false),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.get_dotted_subtable(&["a".to_string(), "b".to_string()], false),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(table.get_dotted_subtable(&["b".to_string()], false), None);
+        assert_eq!(
+            table.get_dotted_subtable(&["b".to_string(), "c".to_string()], false),
+            None
+        );
+        assert_eq!(table.get_dotted_subtable(&["c".to_string()], false), None);
+    }
 
-    //     let map = || {
-    //         hashmap! {
-    //             "a".into() => Value::ArrayOfTables(vec![hashmap! {}]),
-    //             "b".into() => Value::Table(hashmap! {
-    //                 "c".into() => Value::UndefinedTable(hashmap! {}),
-    //                 "d".into() => Value::DottedKeyTable(hashmap! {}),
-    //                 "e".into() => Value::Table(hashmap! {}),
-    //                 "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
-    //                 "g".into() => Value::InlineTable(hashmap! {}),
-    //                 "h".into() => Value::Integer(b"123".into()),
-    //             }),
-    //         }
-    //     };
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec![],
-    //             name: "a".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["a".to_string(),],
-    //             name: "b".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["a".to_string(), "b".to_string()],
-    //             name: "c".to_string()
-    //         }
-    //     )
-    //     .is_some());
+    #[test]
+    fn table_insert_table() {
+        let mut table = hashmap! {
+            "a".to_string() => Value::UndefinedTable(hashmap! {}),
+        };
+        assert_eq!(table.insert_table("a".to_string()), Some(&mut hashmap! {}));
+        assert_eq!(table.insert_table("b".to_string()), Some(&mut hashmap! {}));
+        assert_eq!(table.len(), 2);
+        assert_eq!(table["a"], Value::Table(hashmap! {}));
+        assert_eq!(table["b"], Value::Table(hashmap! {}));
 
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "c".to_string()],
-    //             name: "d".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "d".to_string()],
-    //             name: "e".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "e".to_string()],
-    //             name: "f".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "f".to_string()],
-    //             name: "g".to_string()
-    //         }
-    //     )
-    //     .is_some());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec!["b".to_string(), "g".to_string()],
-    //             name: "h".to_string()
-    //         }
-    //     )
-    //     .is_none());
-    //     assert!(Parser::get_array_header(
-    //         &mut map(),
-    //         &Key {
-    //             path: vec![],
-    //             name: "b".to_string()
-    //         }
-    //     )
-    //     .is_none());
-    // }
+        let mut table = hashmap! {
+            "a".to_string() => Value::Table(hashmap! {}),
+        };
+        assert_eq!(table.insert_table("a".to_string()), None);
+    }
 
-    // #[test]
-    // fn table_get_dotted_key() {
-    //     type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
+    #[test]
+    #[allow(clippy::pattern_type_mismatch)]
+    fn table_append_array_of_tables() {
+        let mut table = hashmap! {
+            "a".to_string() => Value::ArrayOfTables(vec![]),
+        };
+        assert_eq!(
+            table.append_array_of_tables("a".to_string()),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.append_array_of_tables("a".to_string()),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(
+            table.append_array_of_tables("b".to_string()),
+            Some(&mut hashmap! {})
+        );
+        assert_eq!(table.len(), 2);
+        assert_matches!(&table["a"], Value::ArrayOfTables(vec) if vec.len() == 2);
+        assert_matches!(&table["b"], Value::ArrayOfTables(vec) if vec.len() == 1);
 
-    //     let map = || {
-    //         hashmap! {
-    //             "a".into() => Value::DottedKeyTable(hashmap! {}),
-    //             "b".into() => Value::UndefinedTable(hashmap! {}),
-    //             "c".into() => Value::Table(hashmap! {}),
-    //         }
-    //     };
-    //     assert!(Parser::get_dotted_key(&mut map(), &[]).is_some());
-    //     assert!(Parser::get_dotted_key(&mut map(), &["a"].map(Into::into)).is_some());
-    //     assert!(Parser::get_dotted_key(&mut map(), &["a", "b"].map(Into::into)).is_some());
-    //     assert!(Parser::get_dotted_key(&mut map(), &["b"].map(Into::into)).is_some());
-    //     assert!(Parser::get_dotted_key(&mut map(), &["b", "c"].map(Into::into)).is_some());
-    //     assert!(Parser::get_dotted_key(&mut map(), &["c"].map(Into::into)).is_none());
-    // }
-
-    // #[test]
-    // fn table_get_inline_subtable() {
-    //     type Parser<'de> = super::Parser<'de, SliceReader<'de>>;
-
-    //     let map = || {
-    //         hashmap! {
-    //             "a".into() => Value::DottedKeyTable(hashmap! {}),
-    //             "b".into() => Value::InlineTable(hashmap! {}),
-    //             // Shouldn't actually exist in an inline table
-    //             "c".into() => Value::UndefinedTable(hashmap! {}),
-    //         }
-    //     };
-    //     assert!(Parser::get_inline_subtable(&mut map(), &[]).is_some());
-    //     assert!(Parser::get_inline_subtable(&mut map(), &["a"].map(Into::into)).is_some());
-    //     assert!(Parser::get_inline_subtable(&mut map(), &["a", "b"].map(Into::into)).is_some());
-    //     assert!(
-    //         Parser::get_inline_subtable(&mut map(), &["a", "b", "c"].map(Into::into)).is_some()
-    //     );
-    //     assert!(Parser::get_inline_subtable(&mut map(), &["b"].map(Into::into)).is_none());
-    //     assert!(Parser::get_inline_subtable(&mut map(), &["b", "c"].map(Into::into)).is_none());
-    // }
+        let mut table = hashmap! {
+            "a".to_string() => Value::Table(hashmap! {}),
+        };
+        assert_eq!(table.append_array_of_tables("a".to_string()), None);
+    }
 }
