@@ -961,11 +961,18 @@ impl fmt::Display for LocalTime {
             nanosecond,
         } = *self;
         if nanosecond != 0 {
-            write!(
-                f,
-                "{hour:02}:{minute:02}:{second:02}.{}",
-                format!("{nanosecond:09}").trim_end_matches('0')
-            )
+            let (frac, digits) = if nanosecond % 1_000 == 0 {
+                let micros = nanosecond / 1_000;
+                if micros % 1_000 == 0 {
+                    let millis = micros / 1_000;
+                    (millis, 3)
+                } else {
+                    (micros, 6)
+                }
+            } else {
+                (nanosecond, 9)
+            };
+            write!(f, "{hour:02}:{minute:02}:{second:02}.{frac:0digits$}")
         } else {
             write!(f, "{hour:02}:{minute:02}:{second:02}")
         }
@@ -1981,6 +1988,33 @@ mod tests {
         };
         let str_no_nanos = LocalTime::EXAMPLE_STR.split('.').next().unwrap();
         assert_eq!(time_no_nanos.to_string(), str_no_nanos);
+
+        let time_millis = LocalTime {
+            nanosecond: 60_000_000,
+            ..LocalTime::EXAMPLE
+        };
+        let str_millis = format!("{}.060", LocalTime::EXAMPLE_STR.split('.').next().unwrap());
+        assert_eq!(time_millis.to_string(), str_millis);
+
+        let time_micros = LocalTime {
+            nanosecond: 60_000,
+            ..LocalTime::EXAMPLE
+        };
+        let str_micros = format!(
+            "{}.000060",
+            LocalTime::EXAMPLE_STR.split('.').next().unwrap()
+        );
+        assert_eq!(time_micros.to_string(), str_micros);
+
+        let time_nanos = LocalTime {
+            nanosecond: 60,
+            ..LocalTime::EXAMPLE
+        };
+        let str_nanos = format!(
+            "{}.000000060",
+            LocalTime::EXAMPLE_STR.split('.').next().unwrap()
+        );
+        assert_eq!(time_nanos.to_string(), str_nanos);
     }
 
     #[test]
