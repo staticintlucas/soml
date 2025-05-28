@@ -97,7 +97,7 @@ impl From<soml::value::Datetime> for ChronoDatetime {
                 )
                 .unwrap(),
             ),
-            _ => panic!("invalid datetime"),
+            _ => panic!("invalid date-time"),
         }
     }
 }

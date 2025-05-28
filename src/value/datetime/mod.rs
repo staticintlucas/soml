@@ -166,28 +166,24 @@ impl Datetime {
         time: Some(LocalTime::EXAMPLE),
         offset: None,
     };
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_INVALID_1: Self = Self {
         date: None,
         time: None,
         offset: Some(Offset::EXAMPLE),
     };
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_INVALID_2: Self = Self {
         date: Some(LocalDate::EXAMPLE),
         time: None,
         offset: Some(Offset::EXAMPLE),
     };
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_INVALID_3: Self = Self {
         date: None,
         time: Some(LocalTime::EXAMPLE),
         offset: Some(Offset::EXAMPLE),
     };
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_INVALID_4: Self = Self {
         date: None,
@@ -333,13 +329,10 @@ impl OffsetDatetime {
         time: LocalTime::EXAMPLE,
         offset: Offset::EXAMPLE,
     };
-
-    #[cfg(test)]
-    pub(crate) const EXAMPLE_ENCODED: &[u8; 14] =
-        b"\x80\x8d\x5b\x00\x03\x04\x05\x00\xe7\x07\x01\x02\xac\x01";
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006+07:08";
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`OffsetDatetime`] from a byte slice.
     ///
@@ -367,28 +360,12 @@ impl OffsetDatetime {
         Ok(Self { date, time, offset })
     }
 
+    /// Generates a string representation of the offset date-time as a sequence of bytes.
+    /// This is a convenience method equivalent to calling `datetime.to_string().into_bytes()`.
     #[inline]
-    pub(crate) fn from_encoded(bytes: [u8; 14]) -> Self {
-        Self {
-            time: LocalTime::from_encoded(
-                bytes[0..8].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-            date: LocalDate::from_encoded(
-                bytes[8..12].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-            offset: Offset::from_encoded(
-                bytes[12..14].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn to_encoded(&self) -> [u8; 14] {
-        let mut bytes = [0; 14];
-        bytes[0..8].copy_from_slice(&self.time.to_encoded());
-        bytes[8..12].copy_from_slice(&self.date.to_encoded());
-        bytes[12..14].copy_from_slice(&self.offset.to_encoded());
-        bytes
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 
@@ -485,13 +462,10 @@ impl LocalDatetime {
         date: LocalDate::EXAMPLE,
         time: LocalTime::EXAMPLE,
     };
-
-    #[cfg(test)]
-    pub(crate) const EXAMPLE_ENCODED: &[u8; 12] =
-        b"\x80\x8d\x5b\x00\x03\x04\x05\x00\xe7\x07\x01\x02";
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006";
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalDatetime`] from a byte slice.
     ///
@@ -512,24 +486,12 @@ impl LocalDatetime {
         Ok(Self { date, time })
     }
 
+    /// Generates a string representation of the local date-time as a sequence of bytes.
+    /// This is a convenience method equivalent to calling `datetime.to_string().into_bytes()`.
     #[inline]
-    pub(crate) fn from_encoded(bytes: [u8; 12]) -> Self {
-        Self {
-            time: LocalTime::from_encoded(
-                bytes[0..8].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-            date: LocalDate::from_encoded(
-                bytes[8..12].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn to_encoded(&self) -> [u8; 12] {
-        let mut bytes = [0; 12];
-        bytes[0..8].copy_from_slice(&self.time.to_encoded());
-        bytes[8..12].copy_from_slice(&self.date.to_encoded());
-        bytes
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 
@@ -641,12 +603,10 @@ impl LocalDate {
         month: 1,
         day: 2,
     };
-
-    #[cfg(test)]
-    pub(crate) const EXAMPLE_ENCODED: &[u8; 4] = b"\xe7\x07\x01\x02";
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_STR: &str = "2023-01-02";
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalDate`] from a byte slice.
     ///
@@ -701,22 +661,12 @@ impl LocalDate {
         Ok(Self { year, month, day })
     }
 
+    /// Generates a string representation of the local date as a sequence of bytes.
+    /// This is a convenience method equivalent to calling `date.to_string().into_bytes()`.
     #[inline]
-    pub(crate) fn from_encoded(bytes: [u8; 4]) -> Self {
-        Self {
-            year: u16::from_ne_bytes(bytes[0..2].try_into().unwrap_or_else(|_| unreachable!())),
-            month: u8::from_ne_bytes(bytes[2..3].try_into().unwrap_or_else(|_| unreachable!())),
-            day: u8::from_ne_bytes(bytes[3..4].try_into().unwrap_or_else(|_| unreachable!())),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn to_encoded(&self) -> [u8; 4] {
-        let mut bytes = [0; 4];
-        bytes[0..2].copy_from_slice(&self.year.to_ne_bytes());
-        bytes[2..3].copy_from_slice(&self.month.to_ne_bytes());
-        bytes[3..4].copy_from_slice(&self.day.to_ne_bytes());
-        bytes
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 
@@ -829,12 +779,10 @@ impl LocalTime {
         second: 5,
         nanosecond: 6_000_000,
     };
-
-    #[cfg(test)]
-    pub(crate) const EXAMPLE_ENCODED: &[u8; 8] = b"\x80\x8d\x5b\x00\x03\x04\x05\x00";
-
     #[cfg(test)]
     pub(crate) const EXAMPLE_STR: &str = "03:04:05.006";
+    #[cfg(test)]
+    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalTime`] from a byte slice.
     ///
@@ -915,30 +863,12 @@ impl LocalTime {
         })
     }
 
+    /// Generates a string representation of the local time as a sequence of bytes.
+    /// This is a convenience method equivalent to calling `time.to_string().into_bytes()`.
     #[inline]
-    pub(crate) fn from_encoded(bytes: [u8; 8]) -> Self {
-        // Note: we put nanosecond first so the field order matches what rustc does. This field
-        // order is not guaranteed, but if it does match we get more efficient code here.
-        Self {
-            nanosecond: u32::from_ne_bytes(
-                bytes[0..4].try_into().unwrap_or_else(|_| unreachable!()),
-            ),
-            hour: u8::from_ne_bytes(bytes[4..5].try_into().unwrap_or_else(|_| unreachable!())),
-            minute: u8::from_ne_bytes(bytes[5..6].try_into().unwrap_or_else(|_| unreachable!())),
-            second: u8::from_ne_bytes(bytes[6..7].try_into().unwrap_or_else(|_| unreachable!())),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn to_encoded(&self) -> [u8; 8] {
-        // Note: we put nanosecond first so the field order matches what rustc does. This field
-        // order is not guaranteed, but if it does match we get more efficient code here.
-        let mut bytes = [0; 8];
-        bytes[0..4].copy_from_slice(&self.nanosecond.to_ne_bytes());
-        bytes[4..5].copy_from_slice(&self.hour.to_ne_bytes());
-        bytes[5..6].copy_from_slice(&self.minute.to_ne_bytes());
-        bytes[6..7].copy_from_slice(&self.second.to_ne_bytes());
-        bytes
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 
@@ -1099,22 +1029,12 @@ impl Offset {
         }
     }
 
+    /// Generates a string representation of the offset as a sequence of bytes.
+    /// This is a convenience method equivalent to calling `offset.to_string().into_bytes()`.
     #[inline]
-    pub(crate) fn from_encoded(bytes: [u8; 2]) -> Self {
-        let minutes = i16::from_ne_bytes(bytes);
-        if minutes == 0 {
-            Self::Z
-        } else {
-            Self::Custom { minutes }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn to_encoded(&self) -> [u8; 2] {
-        match *self {
-            Self::Z => [0, 0],
-            Self::Custom { minutes } => minutes.to_ne_bytes(),
-        }
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
     }
 }
 

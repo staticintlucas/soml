@@ -1,6 +1,6 @@
 use serde::ser;
 use serde::ser::Error as _;
-use serde_bytes::Bytes;
+use serde_bytes::ByteBuf;
 
 use super::{AnyDatetime, Datetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
@@ -16,20 +16,18 @@ impl ser::Serialize for AnyDatetime {
         match *self {
             Self::OffsetDatetime(ref datetime) => s.serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                &Bytes::new(datetime.to_encoded().as_slice()),
+                &ByteBuf::from(datetime.to_bytes()),
             ),
             Self::LocalDatetime(ref datetime) => s.serialize_field(
                 LocalDatetime::WRAPPER_FIELD,
-                &Bytes::new(datetime.to_encoded().as_slice()),
+                &ByteBuf::from(datetime.to_bytes()),
             ),
-            Self::LocalDate(ref date) => s.serialize_field(
-                LocalDate::WRAPPER_FIELD,
-                &Bytes::new(date.to_encoded().as_slice()),
-            ),
-            Self::LocalTime(ref time) => s.serialize_field(
-                LocalTime::WRAPPER_FIELD,
-                &Bytes::new(time.to_encoded().as_slice()),
-            ),
+            Self::LocalDate(ref date) => {
+                s.serialize_field(LocalDate::WRAPPER_FIELD, &ByteBuf::from(date.to_bytes()))
+            }
+            Self::LocalTime(ref time) => {
+                s.serialize_field(LocalTime::WRAPPER_FIELD, &ByteBuf::from(time.to_bytes()))
+            }
         }?;
         s.end()
     }
@@ -56,10 +54,7 @@ impl ser::Serialize for OffsetDatetime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(
-            Self::WRAPPER_FIELD,
-            &Bytes::new(self.to_encoded().as_slice()),
-        )?;
+        s.serialize_field(Self::WRAPPER_FIELD, &ByteBuf::from(self.to_bytes()))?;
         s.end()
     }
 }
@@ -73,10 +68,7 @@ impl ser::Serialize for LocalDatetime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(
-            Self::WRAPPER_FIELD,
-            &Bytes::new(self.to_encoded().as_slice()),
-        )?;
+        s.serialize_field(Self::WRAPPER_FIELD, &ByteBuf::from(self.to_bytes()))?;
         s.end()
     }
 }
@@ -90,10 +82,7 @@ impl ser::Serialize for LocalDate {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(
-            Self::WRAPPER_FIELD,
-            &Bytes::new(self.to_encoded().as_slice()),
-        )?;
+        s.serialize_field(Self::WRAPPER_FIELD, &ByteBuf::from(self.to_bytes()))?;
         s.end()
     }
 }
@@ -107,10 +96,7 @@ impl ser::Serialize for LocalTime {
         use ser::SerializeStruct as _;
 
         let mut s = serializer.serialize_struct(Self::WRAPPER_TYPE, 1)?;
-        s.serialize_field(
-            Self::WRAPPER_FIELD,
-            &Bytes::new(self.to_encoded().as_slice()),
-        )?;
+        s.serialize_field(Self::WRAPPER_FIELD, &ByteBuf::from(self.to_bytes()))?;
         s.end()
     }
 }
@@ -130,7 +116,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&AnyDatetime::EXAMPLE_OFFSET_DATETIME, tokens);
@@ -141,7 +127,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATETIME, tokens);
@@ -152,7 +138,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATE, tokens);
@@ -163,7 +149,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&AnyDatetime::EXAMPLE_LOCAL_TIME, tokens);
@@ -177,7 +163,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&Datetime::EXAMPLE_OFFSET_DATETIME, tokens);
@@ -188,7 +174,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_DATETIME, tokens);
@@ -199,7 +185,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_DATE, tokens);
@@ -210,7 +196,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&Datetime::EXAMPLE_LOCAL_TIME, tokens);
@@ -252,7 +238,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&OffsetDatetime::EXAMPLE, tokens);
@@ -266,7 +252,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&LocalDatetime::EXAMPLE, tokens);
@@ -280,7 +266,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&LocalDate::EXAMPLE, tokens);
@@ -294,7 +280,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_ser_tokens(&LocalTime::EXAMPLE, tokens);

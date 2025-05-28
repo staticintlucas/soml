@@ -138,13 +138,13 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
             ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
             ParsedValue::Boolean(bool) => visitor.visit_bool(bool),
             ParsedValue::OffsetDatetime(datetime) => {
-                visitor.visit_map(OffsetDatetimeAccess::from(datetime))
+                visitor.visit_map(OffsetDatetimeAccess::new(datetime))
             }
             ParsedValue::LocalDatetime(datetime) => {
-                visitor.visit_map(LocalDatetimeAccess::from(datetime))
+                visitor.visit_map(LocalDatetimeAccess::new(datetime))
             }
-            ParsedValue::LocalDate(date) => visitor.visit_map(LocalDateAccess::from(date)),
-            ParsedValue::LocalTime(time) => visitor.visit_map(LocalTimeAccess::from(time)),
+            ParsedValue::LocalDate(date) => visitor.visit_map(LocalDateAccess::new(date)),
+            ParsedValue::LocalTime(time) => visitor.visit_map(LocalTimeAccess::new(time)),
             ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             ParsedValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
             ParsedValue::Table(table)
@@ -474,7 +474,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
                     [AnyDatetime::WRAPPER_FIELD | OffsetDatetime::WRAPPER_FIELD]
                 ) =>
             {
-                visitor.visit_map(OffsetDatetimeAccess::from(datetime))
+                visitor.visit_map(OffsetDatetimeAccess::new(datetime))
             }
             ParsedValue::LocalDatetime(datetime)
                 if matches!(
@@ -485,7 +485,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
                     [AnyDatetime::WRAPPER_FIELD | LocalDatetime::WRAPPER_FIELD]
                 ) =>
             {
-                visitor.visit_map(LocalDatetimeAccess::from(datetime))
+                visitor.visit_map(LocalDatetimeAccess::new(datetime))
             }
             ParsedValue::LocalDate(date)
                 if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalDate::WRAPPER_TYPE)
@@ -494,7 +494,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
                         [AnyDatetime::WRAPPER_FIELD | LocalDate::WRAPPER_FIELD]
                     ) =>
             {
-                visitor.visit_map(LocalDateAccess::from(date))
+                visitor.visit_map(LocalDateAccess::new(date))
             }
             ParsedValue::LocalTime(time)
                 if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalTime::WRAPPER_TYPE)
@@ -503,7 +503,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
                         [AnyDatetime::WRAPPER_FIELD | LocalTime::WRAPPER_FIELD]
                     ) =>
             {
-                visitor.visit_map(LocalTimeAccess::from(time))
+                visitor.visit_map(LocalTimeAccess::new(time))
             }
             ParsedValue::Table(table)
             | ParsedValue::UndefinedTable(table)
@@ -1238,27 +1238,31 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Boolean(true));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Boolean(true)));
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
+            OffsetDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             Value::deserialize(deserializer),
             Ok(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(
+            LocalDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             Value::deserialize(deserializer),
             Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()));
         assert_matches!(
             Value::deserialize(deserializer),
             Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE_BYTES.to_vec()));
         assert_matches!(
             Value::deserialize(deserializer),
             Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME))
@@ -1755,36 +1759,24 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".into()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            }),
+            ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
         ]));
         assert_matches!(
             <(i32, String, LocalDate)>::deserialize(deserializer),
-            Ok((i, s, d)) if i == 123 && s == "hello" && d == LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            }
+            Ok((i, s, d)) if i == 123 && s == "hello" && d == LocalDate::EXAMPLE
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
             hashmap! { "val".into() => ParsedValue::Integer(b"123".into()) },
             hashmap! { "val".into() => ParsedValue::String("hello".into()) },
-            hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate { year: 1979, month: 5, day: 27 }) },
+            hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()) },
         ]));
         assert_matches!(
             <(Struct<i32>, Struct<String>, Struct<LocalDate>)>::deserialize(deserializer),
             Ok((a, b, c)) if a == Struct { val: 123 }
                 && b == Struct { val: "hello".into() }
                 && c == Struct {
-                    val: LocalDate {
-                        year: 1979,
-                        month: 5,
-                        day: 27,
-                    }
+                    val: LocalDate::EXAMPLE
                 }
         );
 
@@ -1803,21 +1795,13 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".into()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(LocalDate {
-                year: 1979,
-                month: 5,
-                day: 27,
-            }),
+            ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
         ]));
         assert_matches!(
             TupleStruct::deserialize(deserializer),
             Ok(TupleStruct(i, s, d)) if i == 123
                 && s == "hello"
-                && d == LocalDate {
-                    year: 1979,
-                    month: 5,
-                    day: 27,
-                }
+                && d == LocalDate::EXAMPLE
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1913,47 +1897,55 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserializer_deserialize_struct_datetime() {
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
+            OffsetDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             OffsetDatetime::deserialize(deserializer),
             Ok(OffsetDatetime::EXAMPLE)
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(
+            LocalDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             LocalDatetime::deserialize(deserializer),
             Ok(LocalDatetime::EXAMPLE)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()));
         assert_matches!(LocalDate::deserialize(deserializer), Ok(LocalDate::EXAMPLE));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE_BYTES.to_vec()));
         assert_matches!(LocalTime::deserialize(deserializer), Ok(LocalTime::EXAMPLE));
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::OffsetDatetime(OffsetDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
+            OffsetDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             Datetime::deserialize(deserializer),
             Ok(Datetime::EXAMPLE_OFFSET_DATETIME)
         );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDatetime(LocalDatetime::EXAMPLE));
+        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(
+            LocalDatetime::EXAMPLE_BYTES.to_vec(),
+        ));
         assert_matches!(
             Datetime::deserialize(deserializer),
             Ok(Datetime::EXAMPLE_LOCAL_DATETIME)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()));
         assert_matches!(
             Datetime::deserialize(deserializer),
             Ok(Datetime::EXAMPLE_LOCAL_DATE)
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE));
+        let deserializer =
+            ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE_BYTES.to_vec()));
         assert_matches!(
             Datetime::deserialize(deserializer),
             Ok(Datetime::EXAMPLE_LOCAL_TIME)

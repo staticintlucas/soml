@@ -173,7 +173,7 @@ impl fmt::Display for ErrorKind {
             InvalidNumber(ref error) => write!(f, "invalid number: {error}"),
             InvalidInteger(ref error) => write!(f, "invalid integer: {error}"),
             InvalidFloat(ref error) => write!(f, "invalid float: {error}"),
-            InvalidDatetime => write!(f, "invalid datetime"),
+            InvalidDatetime => write!(f, "invalid date-time"),
             ExpectedToken(ref token) => write!(f, "expected {token}"),
             DuplicateKey(ref key, ref table) => write!(f, "duplicate key: {key} in {table}"),
             InvalidTableHeader(ref key) => write!(f, "invalid table header: {key}"),
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(kind.to_string(), "invalid float: invalid float literal");
 
         let kind = ErrorKind::InvalidDatetime;
-        assert_eq!(kind.to_string(), "invalid datetime");
+        assert_eq!(kind.to_string(), "invalid date-time");
 
         let kind = ErrorKind::ExpectedToken("foo".into());
         assert_eq!(kind.to_string(), "expected foo");

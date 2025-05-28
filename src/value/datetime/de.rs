@@ -202,10 +202,11 @@ impl<'de> de::Deserialize<'de> for EncodedOffsetDatetime {
             where
                 E: de::Error,
             {
-                let bytes = v
-                    .try_into()
-                    .map_err(|_| E::invalid_length(v.len(), &self))?;
-                Ok(EncodedOffsetDatetime(OffsetDatetime::from_encoded(bytes)))
+                Ok(EncodedOffsetDatetime(
+                    OffsetDatetime::from_slice(v).map_err(|_| {
+                        E::invalid_value(de::Unexpected::Bytes(v), &"an encoded offset date-time")
+                    })?,
+                ))
             }
         }
 
@@ -214,11 +215,11 @@ impl<'de> de::Deserialize<'de> for EncodedOffsetDatetime {
 }
 
 #[derive(Debug)]
-pub struct OffsetDatetimeAccess(Option<OffsetDatetime>);
+pub struct OffsetDatetimeAccess(Option<Vec<u8>>);
 
-impl From<OffsetDatetime> for OffsetDatetimeAccess {
+impl OffsetDatetimeAccess {
     #[inline]
-    fn from(datetime: OffsetDatetime) -> Self {
+    pub fn new(datetime: Vec<u8>) -> Self {
         Self(Some(datetime))
     }
 }
@@ -248,7 +249,7 @@ impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime.to_encoded())),
+            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime)),
             None => panic!(
                 "OffsetDatetimeAccess::next_value called without calling OffsetDatetimeAccess::next_key first"
             ),
@@ -348,10 +349,9 @@ impl<'de> de::Deserialize<'de> for EncodedLocalDatetime {
             where
                 E: de::Error,
             {
-                let bytes = v
-                    .try_into()
-                    .map_err(|_| E::invalid_length(v.len(), &self))?;
-                Ok(EncodedLocalDatetime(LocalDatetime::from_encoded(bytes)))
+                Ok(EncodedLocalDatetime(LocalDatetime::from_slice(v).map_err(
+                    |_| E::invalid_value(de::Unexpected::Bytes(v), &self),
+                )?))
             }
         }
 
@@ -360,11 +360,11 @@ impl<'de> de::Deserialize<'de> for EncodedLocalDatetime {
 }
 
 #[derive(Debug)]
-pub struct LocalDatetimeAccess(Option<LocalDatetime>);
+pub struct LocalDatetimeAccess(Option<Vec<u8>>);
 
-impl From<LocalDatetime> for LocalDatetimeAccess {
+impl LocalDatetimeAccess {
     #[inline]
-    fn from(datetime: LocalDatetime) -> Self {
+    pub fn new(datetime: Vec<u8>) -> Self {
         Self(Some(datetime))
     }
 }
@@ -394,7 +394,7 @@ impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime.to_encoded())),
+            Some(datetime) => seed.deserialize(de::value::BytesDeserializer::new(&datetime)),
             None => panic!(
                 "LocalDatetimeAccess::next_value called without calling LocalDatetimeAccess::next_key first"
             ),
@@ -491,10 +491,9 @@ impl<'de> de::Deserialize<'de> for EncodedLocalDate {
             where
                 E: de::Error,
             {
-                let bytes = v
-                    .try_into()
-                    .map_err(|_| E::invalid_length(v.len(), &self))?;
-                Ok(EncodedLocalDate(LocalDate::from_encoded(bytes)))
+                Ok(EncodedLocalDate(LocalDate::from_slice(v).map_err(
+                    |_| E::invalid_value(de::Unexpected::Bytes(v), &self),
+                )?))
             }
         }
 
@@ -503,11 +502,11 @@ impl<'de> de::Deserialize<'de> for EncodedLocalDate {
 }
 
 #[derive(Debug)]
-pub struct LocalDateAccess(Option<LocalDate>);
+pub struct LocalDateAccess(Option<Vec<u8>>);
 
-impl From<LocalDate> for LocalDateAccess {
+impl LocalDateAccess {
     #[inline]
-    fn from(date: LocalDate) -> Self {
+    pub fn new(date: Vec<u8>) -> Self {
         Self(Some(date))
     }
 }
@@ -537,7 +536,7 @@ impl<'de> de::MapAccess<'de> for LocalDateAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(date) => seed.deserialize(de::value::BytesDeserializer::new(&date.to_encoded())),
+            Some(date) => seed.deserialize(de::value::BytesDeserializer::new(&date)),
             None => panic!(
                 "LocalDateAccess::next_value called without calling LocalDateAccess::next_key first"
             ),
@@ -634,10 +633,9 @@ impl<'de> de::Deserialize<'de> for EncodedLocalTime {
             where
                 E: de::Error,
             {
-                let bytes = v
-                    .try_into()
-                    .map_err(|_| E::invalid_length(v.len(), &self))?;
-                Ok(EncodedLocalTime(LocalTime::from_encoded(bytes)))
+                Ok(EncodedLocalTime(LocalTime::from_slice(v).map_err(
+                    |_| E::invalid_value(de::Unexpected::Bytes(v), &self),
+                )?))
             }
         }
 
@@ -646,11 +644,11 @@ impl<'de> de::Deserialize<'de> for EncodedLocalTime {
 }
 
 #[derive(Debug)]
-pub struct LocalTimeAccess(Option<LocalTime>);
+pub struct LocalTimeAccess(Option<Vec<u8>>);
 
-impl From<LocalTime> for LocalTimeAccess {
+impl LocalTimeAccess {
     #[inline]
-    fn from(time: LocalTime) -> Self {
+    pub fn new(time: Vec<u8>) -> Self {
         Self(Some(time))
     }
 }
@@ -680,7 +678,7 @@ impl<'de> de::MapAccess<'de> for LocalTimeAccess {
     {
         #[allow(clippy::panic, clippy::option_if_let_else)]
         match self.0.take() {
-            Some(time) => seed.deserialize(de::value::BytesDeserializer::new(&time.to_encoded())),
+            Some(time) => seed.deserialize(de::value::BytesDeserializer::new(&time)),
             None => panic!(
                 "LocalTimeAccess::next_value called without calling LocalTimeAccess::next_key first"
             ),
@@ -706,7 +704,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&AnyDatetime::EXAMPLE_OFFSET_DATETIME, tokens);
@@ -717,7 +715,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATETIME, tokens);
@@ -728,7 +726,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&AnyDatetime::EXAMPLE_LOCAL_DATE, tokens);
@@ -739,7 +737,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&AnyDatetime::EXAMPLE_LOCAL_TIME, tokens);
@@ -780,7 +778,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::Str(LocalDate::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<AnyDatetime>(
@@ -803,7 +801,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&Datetime::EXAMPLE_OFFSET_DATETIME, tokens);
@@ -814,7 +812,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&Datetime::EXAMPLE_LOCAL_DATETIME, tokens);
@@ -825,7 +823,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&Datetime::EXAMPLE_LOCAL_DATE, tokens);
@@ -836,7 +834,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&Datetime::EXAMPLE_LOCAL_TIME, tokens);
@@ -877,7 +875,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::Str(LocalDate::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<Datetime>(
@@ -900,7 +898,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&OffsetDatetime::EXAMPLE, tokens);
@@ -944,7 +942,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
             Token::Str(OffsetDatetime::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<OffsetDatetime>(
@@ -961,25 +959,25 @@ mod tests {
 
     #[test]
     fn deserialize_encoded_offset_datetime() {
-        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_BYTES)];
         assert_de_tokens(&EncodedOffsetDatetime(OffsetDatetime::EXAMPLE), tokens);
 
-        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedOffsetDatetime>(
             tokens,
-            "invalid length 12, expected an encoded offset date-time",
+            "invalid value: byte array, expected an encoded offset date-time",
         );
 
-        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedOffsetDatetime>(
             tokens,
-            "invalid length 4, expected an encoded offset date-time",
+            "invalid value: byte array, expected an encoded offset date-time",
         );
 
-        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedOffsetDatetime>(
             tokens,
-            "invalid length 8, expected an encoded offset date-time",
+            "invalid value: byte array, expected an encoded offset date-time",
         );
 
         let tokens = &[Token::Str("invalid string")];
@@ -997,12 +995,12 @@ mod tests {
 
     #[test]
     fn offset_datetime_access() {
-        let mut access = OffsetDatetimeAccess::from(OffsetDatetime::EXAMPLE);
+        let mut access = OffsetDatetimeAccess::new(OffsetDatetime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, OffsetDatetimeAccess(Some(OffsetDatetime::EXAMPLE)));
+        assert_matches!(access, OffsetDatetimeAccess(Some(ref datetime)) if datetime == OffsetDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key(), Ok(Some(OffsetDatetime::WRAPPER_FIELD)));
-        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == OffsetDatetime::EXAMPLE_ENCODED);
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == OffsetDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
     }
@@ -1023,7 +1021,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&LocalDatetime::EXAMPLE, tokens);
@@ -1067,7 +1065,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(LocalDatetime::WRAPPER_FIELD),
-            Token::Bytes(LocalDatetime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDatetime::EXAMPLE_BYTES),
             Token::Str(LocalDatetime::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<LocalDatetime>(
@@ -1084,25 +1082,25 @@ mod tests {
 
     #[test]
     fn deserialize_encoded_local_datetime() {
-        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_BYTES)];
         assert_de_tokens(&EncodedLocalDatetime(LocalDatetime::EXAMPLE), tokens);
 
-        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDatetime>(
             tokens,
-            "invalid length 14, expected an encoded local date-time",
+            "invalid value: byte array, expected an encoded local date-time",
         );
 
-        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDatetime>(
             tokens,
-            "invalid length 4, expected an encoded local date-time",
+            "invalid value: byte array, expected an encoded local date-time",
         );
 
-        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDatetime>(
             tokens,
-            "invalid length 8, expected an encoded local date-time",
+            "invalid value: byte array, expected an encoded local date-time",
         );
 
         let tokens = &[Token::Str("invalid string")];
@@ -1120,12 +1118,12 @@ mod tests {
 
     #[test]
     fn local_datetime_access() {
-        let mut access = LocalDatetimeAccess::from(LocalDatetime::EXAMPLE);
+        let mut access = LocalDatetimeAccess::new(LocalDatetime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalDatetimeAccess(Some(LocalDatetime::EXAMPLE)));
+        assert_matches!(access, LocalDatetimeAccess(Some(ref datetime)) if datetime == LocalDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key(), Ok(Some(LocalDatetime::WRAPPER_FIELD)));
-        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDatetime::EXAMPLE_ENCODED);
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
     }
@@ -1146,7 +1144,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&LocalDate::EXAMPLE, tokens);
@@ -1190,7 +1188,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(LocalDate::WRAPPER_FIELD),
-            Token::Bytes(LocalDate::EXAMPLE_ENCODED),
+            Token::Bytes(LocalDate::EXAMPLE_BYTES),
             Token::Str(LocalDate::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<LocalDate>(
@@ -1207,25 +1205,25 @@ mod tests {
 
     #[test]
     fn deserialize_encoded_local_date() {
-        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_BYTES)];
         assert_de_tokens(&EncodedLocalDate(LocalDate::EXAMPLE), tokens);
 
-        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDate>(
             tokens,
-            "invalid length 14, expected an encoded local date",
+            "invalid value: byte array, expected an encoded local date",
         );
 
-        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDate>(
             tokens,
-            "invalid length 12, expected an encoded local date",
+            "invalid value: byte array, expected an encoded local date",
         );
 
-        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalDate>(
             tokens,
-            "invalid length 8, expected an encoded local date",
+            "invalid value: byte array, expected an encoded local date",
         );
 
         let tokens = &[Token::Str("invalid string")];
@@ -1243,12 +1241,12 @@ mod tests {
 
     #[test]
     fn local_date_access() {
-        let mut access = LocalDateAccess::from(LocalDate::EXAMPLE);
+        let mut access = LocalDateAccess::new(LocalDate::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalDateAccess(Some(LocalDate::EXAMPLE)));
+        assert_matches!(access, LocalDateAccess(Some(ref date)) if date == LocalDate::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key(), Ok(Some(LocalDate::WRAPPER_FIELD)));
-        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDate::EXAMPLE_ENCODED);
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDate::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
     }
@@ -1269,7 +1267,7 @@ mod tests {
                 len: 1,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::StructEnd,
         ];
         assert_de_tokens(&LocalTime::EXAMPLE, tokens);
@@ -1313,7 +1311,7 @@ mod tests {
                 len: 3,
             },
             Token::Str(LocalTime::WRAPPER_FIELD),
-            Token::Bytes(LocalTime::EXAMPLE_ENCODED),
+            Token::Bytes(LocalTime::EXAMPLE_BYTES),
             Token::Str(LocalTime::WRAPPER_FIELD),
         ];
         assert_de_tokens_error::<LocalTime>(
@@ -1330,25 +1328,25 @@ mod tests {
 
     #[test]
     fn deserialize_encoded_local_time() {
-        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalTime::EXAMPLE_BYTES)];
         assert_de_tokens(&EncodedLocalTime(LocalTime::EXAMPLE), tokens);
 
-        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(OffsetDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalTime>(
             tokens,
-            "invalid length 14, expected an encoded local time",
+            "invalid value: byte array, expected an encoded local time",
         );
 
-        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDatetime::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalTime>(
             tokens,
-            "invalid length 12, expected an encoded local time",
+            "invalid value: byte array, expected an encoded local time",
         );
 
-        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_ENCODED)];
+        let tokens = &[Token::Bytes(LocalDate::EXAMPLE_BYTES)];
         assert_de_tokens_error::<EncodedLocalTime>(
             tokens,
-            "invalid length 4, expected an encoded local time",
+            "invalid value: byte array, expected an encoded local time",
         );
 
         let tokens = &[Token::Str("invalid string")];
@@ -1366,12 +1364,12 @@ mod tests {
 
     #[test]
     fn local_time_access() {
-        let mut access = LocalTimeAccess::from(LocalTime::EXAMPLE);
+        let mut access = LocalTimeAccess::new(LocalTime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalTimeAccess(Some(LocalTime::EXAMPLE)));
+        assert_matches!(access, LocalTimeAccess(Some(ref time)) if time == LocalTime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key(), Ok(Some(LocalTime::WRAPPER_FIELD)));
-        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalTime::EXAMPLE_ENCODED);
+        assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalTime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
     }

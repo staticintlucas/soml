@@ -62,11 +62,15 @@ impl<'de> de::Deserialize<'de> for Value {
     {
         #[derive(Debug)]
         enum MapField {
+            Datetime(DatetimeField),
+            Other(String),
+        }
+        #[derive(Debug, PartialEq, Eq)]
+        enum DatetimeField {
             OffsetDatetime,
             LocalDatetime,
             LocalDate,
             LocalTime,
-            Other(String),
         }
         struct MapFieldVisitor;
 
@@ -74,11 +78,28 @@ impl<'de> de::Deserialize<'de> for Value {
             #[inline]
             fn as_str(&self) -> &str {
                 match *self {
+                    Self::Datetime(ref field) => field.as_str(),
+                    Self::Other(ref field) => field.as_str(),
+                }
+            }
+        }
+        impl DatetimeField {
+            #[inline]
+            fn as_str(&self) -> &'static str {
+                match *self {
                     Self::OffsetDatetime => OffsetDatetime::WRAPPER_FIELD,
                     Self::LocalDatetime => LocalDatetime::WRAPPER_FIELD,
                     Self::LocalDate => LocalDate::WRAPPER_FIELD,
                     Self::LocalTime => LocalTime::WRAPPER_FIELD,
-                    Self::Other(ref field) => field.as_str(),
+                }
+            }
+            #[inline]
+            fn expected(&self) -> &'static [&'static str] {
+                match *self {
+                    Self::OffsetDatetime => &[OffsetDatetime::WRAPPER_FIELD],
+                    Self::LocalDatetime => &[LocalDatetime::WRAPPER_FIELD],
+                    Self::LocalDate => &[LocalDate::WRAPPER_FIELD],
+                    Self::LocalTime => &[LocalTime::WRAPPER_FIELD],
                 }
             }
         }
@@ -97,10 +118,14 @@ impl<'de> de::Deserialize<'de> for Value {
                 E: de::Error,
             {
                 match value.as_str() {
-                    OffsetDatetime::WRAPPER_FIELD => Ok(Self::Value::OffsetDatetime),
-                    LocalDatetime::WRAPPER_FIELD => Ok(Self::Value::LocalDatetime),
-                    LocalDate::WRAPPER_FIELD => Ok(Self::Value::LocalDate),
-                    LocalTime::WRAPPER_FIELD => Ok(Self::Value::LocalTime),
+                    OffsetDatetime::WRAPPER_FIELD => {
+                        Ok(Self::Value::Datetime(DatetimeField::OffsetDatetime))
+                    }
+                    LocalDatetime::WRAPPER_FIELD => {
+                        Ok(Self::Value::Datetime(DatetimeField::LocalDatetime))
+                    }
+                    LocalDate::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalDate)),
+                    LocalTime::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalTime)),
                     _ => Ok(Self::Value::Other(value)),
                 }
             }
@@ -110,7 +135,17 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 E: de::Error,
             {
-                self.visit_string(value.to_owned())
+                match value {
+                    OffsetDatetime::WRAPPER_FIELD => {
+                        Ok(Self::Value::Datetime(DatetimeField::OffsetDatetime))
+                    }
+                    LocalDatetime::WRAPPER_FIELD => {
+                        Ok(Self::Value::Datetime(DatetimeField::LocalDatetime))
+                    }
+                    LocalDate::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalDate)),
+                    LocalTime::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalTime)),
+                    _ => Ok(Self::Value::Other(value.to_string())),
+                }
             }
         }
 
@@ -233,56 +268,28 @@ impl<'de> de::Deserialize<'de> for Value {
                 };
 
                 match key {
-                    MapField::OffsetDatetime => {
-                        let result = map.next_value::<EncodedOffsetDatetime>()?.0.into();
+                    MapField::Datetime(key) => {
+                        let result = match key {
+                            DatetimeField::OffsetDatetime => Self::Value::Datetime(
+                                map.next_value::<EncodedOffsetDatetime>()?.0.into(),
+                            ),
+                            DatetimeField::LocalDatetime => Self::Value::Datetime(
+                                map.next_value::<EncodedLocalDatetime>()?.0.into(),
+                            ),
+                            DatetimeField::LocalDate => Self::Value::Datetime(
+                                map.next_value::<EncodedLocalDate>()?.0.into(),
+                            ),
+                            DatetimeField::LocalTime => Self::Value::Datetime(
+                                map.next_value::<EncodedLocalTime>()?.0.into(),
+                            ),
+                        };
+
                         match map.next_key::<MapField>()? {
-                            Some(MapField::OffsetDatetime) => {
-                                Err(de::Error::duplicate_field(OffsetDatetime::WRAPPER_FIELD))
+                            Some(MapField::Datetime(k)) if k == key => {
+                                Err(de::Error::duplicate_field(key.as_str()))
                             }
-                            Some(key) => Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &[OffsetDatetime::WRAPPER_FIELD],
-                            )),
-                            None => Ok(Self::Value::Datetime(result)),
-                        }
-                    }
-                    MapField::LocalDatetime => {
-                        let result = map.next_value::<EncodedLocalDatetime>()?.0.into();
-                        match map.next_key::<MapField>()? {
-                            Some(MapField::LocalDatetime) => {
-                                Err(de::Error::duplicate_field(LocalDatetime::WRAPPER_FIELD))
-                            }
-                            Some(key) => Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &[LocalDatetime::WRAPPER_FIELD],
-                            )),
-                            None => Ok(Self::Value::Datetime(result)),
-                        }
-                    }
-                    MapField::LocalDate => {
-                        let result = map.next_value::<EncodedLocalDate>()?.0.into();
-                        match map.next_key::<MapField>()? {
-                            Some(MapField::LocalDate) => {
-                                Err(de::Error::duplicate_field(LocalDate::WRAPPER_FIELD))
-                            }
-                            Some(key) => Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &[LocalDate::WRAPPER_FIELD],
-                            )),
-                            None => Ok(Self::Value::Datetime(result)),
-                        }
-                    }
-                    MapField::LocalTime => {
-                        let result = map.next_value::<EncodedLocalTime>()?.0.into();
-                        match map.next_key::<MapField>()? {
-                            Some(MapField::LocalTime) => {
-                                Err(de::Error::duplicate_field(LocalTime::WRAPPER_FIELD))
-                            }
-                            Some(key) => Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &[LocalTime::WRAPPER_FIELD],
-                            )),
-                            None => Ok(Self::Value::Datetime(result)),
+                            Some(k) => Err(de::Error::unknown_field(k.as_str(), key.expected())),
+                            None => Ok(result),
                         }
                     }
                     MapField::Other(key) => {
@@ -316,13 +323,17 @@ impl<'de> de::Deserializer<'de> for Value {
             Self::Boolean(bool) => visitor.visit_bool(bool),
             Self::Datetime(datetime) => match datetime.try_into()? {
                 AnyDatetime::OffsetDatetime(datetime) => {
-                    visitor.visit_map(OffsetDatetimeAccess::from(datetime))
+                    visitor.visit_map(OffsetDatetimeAccess::new(datetime.to_bytes()))
                 }
                 AnyDatetime::LocalDatetime(datetime) => {
-                    visitor.visit_map(LocalDatetimeAccess::from(datetime))
+                    visitor.visit_map(LocalDatetimeAccess::new(datetime.to_bytes()))
                 }
-                AnyDatetime::LocalDate(date) => visitor.visit_map(LocalDateAccess::from(date)),
-                AnyDatetime::LocalTime(time) => visitor.visit_map(LocalTimeAccess::from(time)),
+                AnyDatetime::LocalDate(date) => {
+                    visitor.visit_map(LocalDateAccess::new(date.to_bytes()))
+                }
+                AnyDatetime::LocalTime(time) => {
+                    visitor.visit_map(LocalTimeAccess::new(time.to_bytes()))
+                }
             },
             Self::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             Self::Table(table) => visitor.visit_map(MapAccess::new(table)),
@@ -564,30 +575,21 @@ impl<'de> de::Deserializer<'de> for &'de Value {
             Value::Float(float) => visitor.visit_f64(float),
             Value::Boolean(bool) => visitor.visit_bool(bool),
             Value::Datetime(ref datetime) => {
-                // Unfortunately we have to convert to a string here before re-parsing it in the
-                // deserialize impl because serde doesn't have a way to pass the datetime struct
-                // through directly
-                match (
-                    datetime.date.clone(),
-                    datetime.time.clone(),
-                    datetime.offset.clone(),
-                ) {
-                    (Some(date), Some(time), Some(offset)) => {
-                        visitor.visit_map(OffsetDatetimeAccess::from(OffsetDatetime {
-                            date,
-                            time,
-                            offset,
-                        }))
+                // Note: a datetime clone here is very cheap, Datetime should probably impl Copy
+                // but we don't for toml-rs compatibility.
+                match datetime.clone().try_into()? {
+                    AnyDatetime::OffsetDatetime(datetime) => {
+                        visitor.visit_map(OffsetDatetimeAccess::new(datetime.to_bytes()))
                     }
-                    (Some(date), Some(time), None) => {
-                        visitor.visit_map(LocalDatetimeAccess::from(LocalDatetime { date, time }))
+                    AnyDatetime::LocalDatetime(datetime) => {
+                        visitor.visit_map(LocalDatetimeAccess::new(datetime.to_bytes()))
                     }
-                    (Some(date), None, None) => visitor.visit_map(LocalDateAccess::from(date)),
-                    (None, Some(time), None) => visitor.visit_map(LocalTimeAccess::from(time)),
-                    _ => Err(Error::invalid_value(
-                        de::Unexpected::Other(datetime.type_str()),
-                        &"a valid data-time",
-                    )),
+                    AnyDatetime::LocalDate(date) => {
+                        visitor.visit_map(LocalDateAccess::new(date.to_bytes()))
+                    }
+                    AnyDatetime::LocalTime(time) => {
+                        visitor.visit_map(LocalTimeAccess::new(time.to_bytes()))
+                    }
                 }
             }
             Value::Array(ref array) => visitor.visit_seq(SeqRefAccess::new(array)),
@@ -1041,22 +1043,22 @@ mod tests {
         let tests = [
             (
                 OffsetDatetime::WRAPPER_FIELD,
-                OffsetDatetime::EXAMPLE_ENCODED.as_slice(),
+                OffsetDatetime::EXAMPLE_BYTES,
                 Datetime::EXAMPLE_OFFSET_DATETIME,
             ),
             (
                 LocalDatetime::WRAPPER_FIELD,
-                LocalDatetime::EXAMPLE_ENCODED.as_slice(),
+                LocalDatetime::EXAMPLE_BYTES,
                 Datetime::EXAMPLE_LOCAL_DATETIME,
             ),
             (
                 LocalDate::WRAPPER_FIELD,
-                LocalDate::EXAMPLE_ENCODED.as_slice(),
+                LocalDate::EXAMPLE_BYTES,
                 Datetime::EXAMPLE_LOCAL_DATE,
             ),
             (
                 LocalTime::WRAPPER_FIELD,
-                LocalTime::EXAMPLE_ENCODED.as_slice(),
+                LocalTime::EXAMPLE_BYTES,
                 Datetime::EXAMPLE_LOCAL_TIME,
             ),
         ];
@@ -1080,22 +1082,10 @@ mod tests {
         }
 
         let tests = [
-            (
-                OffsetDatetime::WRAPPER_FIELD,
-                OffsetDatetime::EXAMPLE_ENCODED.as_slice(),
-            ),
-            (
-                LocalDatetime::WRAPPER_FIELD,
-                LocalDatetime::EXAMPLE_ENCODED.as_slice(),
-            ),
-            (
-                LocalDate::WRAPPER_FIELD,
-                LocalDate::EXAMPLE_ENCODED.as_slice(),
-            ),
-            (
-                LocalTime::WRAPPER_FIELD,
-                LocalTime::EXAMPLE_ENCODED.as_slice(),
-            ),
+            (OffsetDatetime::WRAPPER_FIELD, OffsetDatetime::EXAMPLE_BYTES),
+            (LocalDatetime::WRAPPER_FIELD, LocalDatetime::EXAMPLE_BYTES),
+            (LocalDate::WRAPPER_FIELD, LocalDate::EXAMPLE_BYTES),
+            (LocalTime::WRAPPER_FIELD, LocalTime::EXAMPLE_BYTES),
         ];
 
         for (i, (field, bytes)) in tests.into_iter().enumerate() {

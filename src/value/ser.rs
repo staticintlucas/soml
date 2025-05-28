@@ -522,21 +522,21 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
     #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         match self {
-            Self::OffsetDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| Value::Datetime(OffsetDatetime::from_encoded(b).into()))
+            Self::OffsetDatetime(Some(bytes)) => OffsetDatetime::from_slice(&bytes)
+                .map(Into::into)
+                .map(Value::Datetime)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| Value::Datetime(LocalDatetime::from_encoded(b).into()))
+            Self::LocalDatetime(Some(bytes)) => LocalDatetime::from_slice(&bytes)
+                .map(Into::into)
+                .map(Value::Datetime)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDate(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| Value::Datetime(LocalDate::from_encoded(b).into()))
+            Self::LocalDate(Some(bytes)) => LocalDate::from_slice(&bytes)
+                .map(Into::into)
+                .map(Value::Datetime)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalTime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| Value::Datetime(LocalTime::from_encoded(b).into()))
+            Self::LocalTime(Some(bytes)) => LocalTime::from_slice(&bytes)
+                .map(Into::into)
+                .map(Value::Datetime)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
             Self::AnyDatetime
             | Self::OffsetDatetime(None)
@@ -655,7 +655,7 @@ mod tests {
             serde_json::to_string(&Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)).unwrap();
         assert_eq!(
             result,
-            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":[128,141,91,0,3,4,5,0,231,7,1,2,172,1]}"#
+            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":[50,48,50,51,45,48,49,45,48,50,84,48,51,58,48,52,58,48,53,46,48,48,54,43,48,55,58,48,56]}"#
         );
 
         let result = serde_json::to_string(&Value::Array(vec![
@@ -941,7 +941,7 @@ mod tests {
         serializer
             .serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         let result = serializer.end().unwrap();
@@ -952,7 +952,7 @@ mod tests {
         serializer
             .serialize_field(
                 LocalDatetime::WRAPPER_FIELD,
-                Bytes::new(LocalDatetime::EXAMPLE_ENCODED),
+                Bytes::new(LocalDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         let result = serializer.end().unwrap();
@@ -963,7 +963,7 @@ mod tests {
         serializer
             .serialize_field(
                 LocalDate::WRAPPER_FIELD,
-                Bytes::new(LocalDate::EXAMPLE_ENCODED),
+                Bytes::new(LocalDate::EXAMPLE_BYTES),
             )
             .unwrap();
         let result = serializer.end().unwrap();
@@ -974,7 +974,7 @@ mod tests {
         serializer
             .serialize_field(
                 LocalTime::WRAPPER_FIELD,
-                Bytes::new(LocalTime::EXAMPLE_ENCODED),
+                Bytes::new(LocalTime::EXAMPLE_BYTES),
             )
             .unwrap();
         let result = serializer.end().unwrap();
@@ -1004,13 +1004,13 @@ mod tests {
         serializer
             .serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         assert_matches!(
             serializer.serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED)
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES)
             ),
             Err(Error(ErrorKind::UnsupportedValue(..)))
         );

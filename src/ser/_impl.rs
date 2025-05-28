@@ -1078,21 +1078,17 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
     #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
-            Self::OffsetDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| ValueKind::InlineValue(OffsetDatetime::from_encoded(b).to_string()))
+            Self::OffsetDatetime(Some(bytes)) => String::from_utf8(bytes)
+                .map(ValueKind::InlineValue)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| ValueKind::InlineValue(LocalDatetime::from_encoded(b).to_string()))
+            Self::LocalDatetime(Some(bytes)) => String::from_utf8(bytes)
+                .map(ValueKind::InlineValue)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDate(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| ValueKind::InlineValue(LocalDate::from_encoded(b).to_string()))
+            Self::LocalDate(Some(bytes)) => String::from_utf8(bytes)
+                .map(ValueKind::InlineValue)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalTime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| ValueKind::InlineValue(LocalTime::from_encoded(b).to_string()))
+            Self::LocalTime(Some(bytes)) => String::from_utf8(bytes)
+                .map(ValueKind::InlineValue)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
             Self::AnyDatetime
             | Self::OffsetDatetime(None)
@@ -1187,6 +1183,7 @@ where
         self.first = false;
         self.buf.write_str(&value.serialize(S::new())?)
     }
+
     #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_char(']')?;
@@ -1450,21 +1447,13 @@ where
     #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
-            Self::OffsetDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| OffsetDatetime::from_encoded(b).to_string())
+            Self::OffsetDatetime(Some(bytes)) => String::from_utf8(bytes)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDatetime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| LocalDatetime::from_encoded(b).to_string())
+            Self::LocalDatetime(Some(bytes)) => String::from_utf8(bytes)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalDate(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| LocalDate::from_encoded(b).to_string())
+            Self::LocalDate(Some(bytes)) => String::from_utf8(bytes)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
-            Self::LocalTime(Some(bytes)) => bytes
-                .try_into()
-                .map(|b| LocalTime::from_encoded(b).to_string())
+            Self::LocalTime(Some(bytes)) => String::from_utf8(bytes)
                 .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
             Self::AnyDatetime
             | Self::OffsetDatetime(None)
@@ -2038,7 +2027,7 @@ mod tests {
         kind_ser
             .serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         let kind = kind_ser.end().unwrap();
@@ -2050,7 +2039,7 @@ mod tests {
         kind_ser
             .serialize_field(
                 LocalDatetime::WRAPPER_FIELD,
-                Bytes::new(LocalDatetime::EXAMPLE_ENCODED),
+                Bytes::new(LocalDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         let kind = kind_ser.end().unwrap();
@@ -2062,7 +2051,7 @@ mod tests {
         kind_ser
             .serialize_field(
                 LocalDate::WRAPPER_FIELD,
-                Bytes::new(LocalDate::EXAMPLE_ENCODED),
+                Bytes::new(LocalDate::EXAMPLE_BYTES),
             )
             .unwrap();
         let kind = kind_ser.end().unwrap();
@@ -2074,7 +2063,7 @@ mod tests {
         kind_ser
             .serialize_field(
                 LocalTime::WRAPPER_FIELD,
-                Bytes::new(LocalTime::EXAMPLE_ENCODED),
+                Bytes::new(LocalTime::EXAMPLE_BYTES),
             )
             .unwrap();
         let kind = kind_ser.end().unwrap();
@@ -2095,13 +2084,13 @@ mod tests {
         kind_ser
             .serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
         assert_matches!(
             kind_ser.serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED)
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES)
             ),
             Err(Error(ErrorKind::UnsupportedValue(..)))
         );
@@ -2233,7 +2222,7 @@ mod tests {
         .unwrap();
         ser.serialize_field(
             OffsetDatetime::WRAPPER_FIELD,
-            Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
         )
         .unwrap();
         let value = ser.end().unwrap();
@@ -2247,7 +2236,7 @@ mod tests {
         .unwrap();
         ser.serialize_field(
             LocalDatetime::WRAPPER_FIELD,
-            Bytes::new(LocalDatetime::EXAMPLE_ENCODED),
+            Bytes::new(LocalDatetime::EXAMPLE_BYTES),
         )
         .unwrap();
         let value = ser.end().unwrap();
@@ -2261,7 +2250,7 @@ mod tests {
         .unwrap();
         ser.serialize_field(
             LocalDate::WRAPPER_FIELD,
-            Bytes::new(LocalDate::EXAMPLE_ENCODED),
+            Bytes::new(LocalDate::EXAMPLE_BYTES),
         )
         .unwrap();
         let value = ser.end().unwrap();
@@ -2275,7 +2264,7 @@ mod tests {
         .unwrap();
         ser.serialize_field(
             LocalTime::WRAPPER_FIELD,
-            Bytes::new(LocalTime::EXAMPLE_ENCODED),
+            Bytes::new(LocalTime::EXAMPLE_BYTES),
         )
         .unwrap();
         let value = ser.end().unwrap();
@@ -2301,13 +2290,13 @@ mod tests {
         .unwrap();
         ser.serialize_field(
             OffsetDatetime::WRAPPER_FIELD,
-            Bytes::new(OffsetDatetime::EXAMPLE_ENCODED),
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
         )
         .unwrap();
         assert_matches!(
             ser.serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_ENCODED)
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES)
             ),
             Err(Error(ErrorKind::UnsupportedValue(..)))
         );

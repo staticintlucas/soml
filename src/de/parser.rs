@@ -5,7 +5,6 @@ use serde::de;
 
 use super::error::{ErrorKind, Result};
 use super::{reader, Reader};
-use crate::value::{LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpecialFloat {
@@ -74,13 +73,13 @@ pub(super) enum Value {
     // Boolean
     Boolean(bool),
     // Offset Datetime
-    OffsetDatetime(OffsetDatetime),
+    OffsetDatetime(Vec<u8>),
     // Local Datetime
-    LocalDatetime(LocalDatetime),
+    LocalDatetime(Vec<u8>),
     // Local Date
-    LocalDate(LocalDate),
+    LocalDate(Vec<u8>),
     // Local Time
-    LocalTime(LocalTime),
+    LocalTime(Vec<u8>),
     // Just a regular inline array
     Array(Vec<Self>),
     // Table defined by a table header. This is immutable aside from being able to add subtables
@@ -699,7 +698,7 @@ impl Parser<'_> {
                     .iter()
                     .position(|b| !b.is_toml_datetime())
                     .unwrap_or(self.line.len());
-                let result = LocalTime::from_slice(&self.line[..idx])?;
+                let result = self.line[..idx].to_vec();
                 self.line = &self.line[idx..];
                 Ok(Value::LocalTime(result))
             }
@@ -707,57 +706,54 @@ impl Parser<'_> {
             // Also need to check for only digits before to rule out float literals (e.g. 120e-2)
             #[cfg(feature = "datetime")]
             [b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'0'..=b'9', b'-', ..] => {
-                let idx = self
+                let end = self
                     .line
                     .iter()
                     .position(|b| !b.is_toml_datetime())
                     .unwrap_or(self.line.len());
-                let value = &self.line[..idx];
-                self.line = &self.line[idx..];
 
-                // If we have a 'T' split the date and time
-                let (date, time) =
-                    if let Some(idx) = value.iter().position(|&b| matches!(b, b'T' | b't')) {
-                        (&value[..idx], &value[idx + 1..])
-                    }
-                    // If we don't have a 'T' we might have a space-delimited datetime of which
-                    // `value` is the first half, so check for space followed by a digit
-                    else if matches!(*self.line, [b' ', b'0'..=b'9', ..]) {
-                        // Discard the space
-                        self.line = &self.line[1..];
-
-                        // Get the time
-                        let idx = self
-                            .line
-                            .iter()
-                            .position(|b| !b.is_toml_datetime())
-                            .unwrap_or(self.line.len());
-                        let tvalue = &self.line[..idx];
-                        self.line = &self.line[idx..];
-
-                        (value, tvalue)
-                    }
-                    // Else we definitely just have a LocalDate
-                    else {
-                        return LocalDate::from_slice(value).map(Value::LocalDate);
-                    };
-
-                if let Some(idx) = time
+                // If we have a 'T' we already have date and time
+                let (end, time) = if let Some(t) = self.line[..end]
                     .iter()
-                    .position(|&b| matches!(b, b'z' | b'Z' | b'+' | b'-'))
+                    .position(|&b| matches!(b, b'T' | b't'))
                 {
-                    let (time, offset) = time.split_at(idx);
-                    Ok(Value::OffsetDatetime(OffsetDatetime {
-                        date: LocalDate::from_slice(date)?,
-                        time: LocalTime::from_slice(time)?,
-                        offset: Offset::from_slice(offset)?,
-                    }))
-                // Otherwise it's just a LocalDateTime
+                    (end, t + 1)
+                }
+                // If we don't have a 'T' we might have a space-delimited datetime of which
+                // `value` is the first half, so check for space followed by a digit
+                else if matches!(self.line[end..], [b' ', b'0'..=b'9', ..]) {
+                    // Discard the space
+                    let idx = end + 1;
+                    let time = idx;
+
+                    // Get the time
+                    let end = self.line[idx..]
+                        .iter()
+                        .position(|b| !b.is_toml_datetime())
+                        .map_or(self.line.len(), |i| idx + i);
+
+                    (end, time)
+                }
+                // Else we definitely just have a LocalDate
+                else {
+                    // Consume the date and return the string
+                    let result = self.line[..end].to_vec();
+                    self.line = &self.line[end..];
+                    return Ok(Value::LocalDate(result));
+                };
+
+                // Consume the date and return the string
+                let result = self.line[..end].to_vec();
+                self.line = &self.line[end..];
+
+                // Check for an offset to return correct offset/local type
+                if result[time..]
+                    .iter()
+                    .any(|&b| matches!(b, b'z' | b'Z' | b'+' | b'-'))
+                {
+                    Ok(Value::OffsetDatetime(result))
                 } else {
-                    Ok(Value::LocalDatetime(LocalDatetime {
-                        date: LocalDate::from_slice(date)?,
-                        time: LocalTime::from_slice(time)?,
-                    }))
+                    Ok(Value::LocalDatetime(result))
                 }
             }
             // Just a plain ol' decimal
@@ -1282,16 +1278,10 @@ mod tests {
             Type::Float
         );
         assert_eq!(Value::Boolean(true).typ(), Type::Boolean);
-        assert_eq!(
-            Value::OffsetDatetime(OffsetDatetime::EXAMPLE).typ(),
-            Type::Datetime
-        );
-        assert_eq!(
-            Value::LocalDatetime(LocalDatetime::EXAMPLE).typ(),
-            Type::Datetime
-        );
-        assert_eq!(Value::LocalDate(LocalDate::EXAMPLE).typ(), Type::Datetime);
-        assert_eq!(Value::LocalTime(LocalTime::EXAMPLE).typ(), Type::Datetime);
+        assert_eq!(Value::OffsetDatetime(Vec::new()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDatetime(Vec::new()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalDate(Vec::new()).typ(), Type::Datetime);
+        assert_eq!(Value::LocalTime(Vec::new()).typ(), Type::Datetime);
         assert_eq!(Value::Array(vec![]).typ(), Type::Array);
         assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
         assert_eq!(Value::Table(Table::new()).typ(), Type::Table);
@@ -1407,20 +1397,7 @@ mod tests {
                 "title".into() => Value::String("TOML Example".into()),
                 "owner".into() => Value::Table(hashmap! {
                     "name".into() => Value::String("Tom Preston-Werner".into()),
-                    "dob".into() => Value::OffsetDatetime(OffsetDatetime {
-                        date: LocalDate {
-                            year: 1979,
-                            month: 5,
-                            day: 27,
-                        },
-                        time: LocalTime {
-                            hour: 7,
-                            minute: 32,
-                            second: 0,
-                            nanosecond: 0,
-                        },
-                        offset: Offset::Custom { minutes: -480 },
-                    }),
+                    "dob".into() => Value::OffsetDatetime(b"1979-05-27T07:32:00-08:00".to_vec()),
                 }),
                 "database".into() => Value::Table(hashmap! {
                     "server".into() => Value::String("192.168.1.1".into()),
@@ -1699,22 +1676,13 @@ mod tests {
         let mut parser = start_parser(b"0001-01-01");
         assert_matches!(
             parser.parse_value(),
-            Ok(Value::LocalDate(LocalDate {
-                year: 1,
-                month: 1,
-                day: 1
-            }))
+            Ok(Value::LocalDate(date)) if date == b"0001-01-01"
         );
 
         let mut parser = start_parser(b"00:00:00");
         assert_matches!(
             parser.parse_value(),
-            Ok(Value::LocalTime(LocalTime {
-                hour: 0,
-                minute: 0,
-                second: 0,
-                nanosecond: 0
-            }))
+            Ok(Value::LocalTime(time)) if time == b"00:00:00"
         );
 
         let mut parser = start_parser(b"0");
@@ -1729,22 +1697,13 @@ mod tests {
         let mut parser = start_parser(b"1234-05-06");
         assert_matches!(
             parser.parse_value(),
-            Ok(Value::LocalDate(LocalDate {
-                year: 1234,
-                month: 5,
-                day: 6
-            }))
+            Ok(Value::LocalDate(date)) if date == b"1234-05-06"
         );
 
         let mut parser = start_parser(b"12:34:56");
         assert_matches!(
             parser.parse_value(),
-            Ok(Value::LocalTime(LocalTime {
-                hour: 12,
-                minute: 34,
-                second: 56,
-                nanosecond: 0
-            }))
+            Ok(Value::LocalTime(time)) if time == b"12:34:56"
         );
 
         let mut parser = start_parser(b"-123");
