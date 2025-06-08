@@ -26,7 +26,6 @@ pub(super) enum Type {
 }
 
 impl Type {
-    #[inline]
     pub const fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",
@@ -127,7 +126,6 @@ struct Key {
 }
 
 impl fmt::Display for Key {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for p in &self.path {
             f.write_str(p)?;
@@ -177,7 +175,6 @@ impl<'de> Parser<'de> {
 }
 
 impl Parser<'_> {
-    #[inline]
     pub fn parse(&mut self) -> Result<Value> {
         let mut root = Table::with_capacity(10);
 
@@ -229,7 +226,6 @@ impl Parser<'_> {
         Ok(Value::Table(root))
     }
 
-    #[inline]
     fn parse_line(&mut self) -> Result<Option<Line>> {
         if self.next_line().is_none() {
             return Ok(None);
@@ -281,7 +277,6 @@ impl Parser<'_> {
         Ok(Some(result))
     }
 
-    #[inline]
     fn parse_array_header(&mut self) -> Result<Key> {
         self.skip_whitespace();
         let key = self.parse_dotted_key()?;
@@ -295,7 +290,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_table_header(&mut self) -> Result<Key> {
         self.skip_whitespace();
         let key = self.parse_dotted_key()?;
@@ -309,7 +303,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_key_value_pair(&mut self) -> Result<(Key, Value)> {
         let path = self.parse_dotted_key()?;
 
@@ -326,7 +319,6 @@ impl Parser<'_> {
         Ok((path, value))
     }
 
-    #[inline]
     fn parse_dotted_key(&mut self) -> Result<Key> {
         let mut path = vec![self.parse_key()?];
 
@@ -344,7 +336,6 @@ impl Parser<'_> {
         Ok(Key { path, name })
     }
 
-    #[inline]
     fn parse_key(&mut self) -> Result<String> {
         match *self.line {
             [b'"', b'"', b'"', ..] | [b'\'', b'\'', b'\'', ..] => {
@@ -363,7 +354,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_bare_key(&mut self) -> Result<String> {
         let idx = self
             .line
@@ -383,7 +373,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_value(&mut self) -> Result<Value> {
         match *self.line {
             // String
@@ -417,7 +406,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_string(&mut self) -> Result<String> {
         match *self.line {
             [b'"', b'"', b'"', ref rest @ ..] => {
@@ -440,7 +428,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_basic_str(&mut self) -> Result<String> {
         let mut str = String::new();
 
@@ -461,7 +448,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_multiline_basic_str(&mut self) -> Result<String> {
         // Newlines after the first """ are ignored. So if line is empty just populate the next one
         if self.line.is_empty() {
@@ -531,7 +517,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_literal_str(&mut self) -> Result<String> {
         let orig = self.line;
         let idx = orig
@@ -547,7 +532,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_multiline_literal_str(&mut self) -> Result<String> {
         // Newlines after the first ''' are ignored. So if line is empty just populate the next one
         if self.line.is_empty() {
@@ -604,7 +588,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_escape_seq(&mut self) -> Result<char> {
         let Some((&esc, rest)) = self.line.split_first() else {
             return Err(ErrorKind::UnterminatedString.into());
@@ -656,7 +639,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_bool(&mut self) -> Result<bool> {
         if let Some(rest) = self.line.strip_prefix(b"true") {
             self.line = rest;
@@ -670,7 +652,6 @@ impl Parser<'_> {
     }
 
     // Parses anything that starts with a digit. Does not parse special floats or +/- values
-    #[inline]
     fn parse_number_or_datetime(&mut self) -> Result<Value> {
         match *self.line {
             // Hex literal starts with "0x"
@@ -761,7 +742,6 @@ impl Parser<'_> {
         }
     }
 
-    #[inline]
     fn parse_number_decimal(&mut self) -> Result<Value> {
         let mut float = false;
         let mut buf = Vec::new();
@@ -815,14 +795,12 @@ impl Parser<'_> {
         })
     }
 
-    #[inline]
     fn parse_digits(&mut self, is_digit: fn(&u8) -> bool) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
         self.parse_digits_into(is_digit, &mut buf)?;
         Ok(buf)
     }
 
-    #[inline]
     fn parse_digits_into(&mut self, is_digit: fn(&u8) -> bool, buf: &mut Vec<u8>) -> Result<()> {
         // Find the first non-digit char
         let idx = self
@@ -872,7 +850,6 @@ impl Parser<'_> {
         Ok(())
     }
 
-    #[inline]
     fn parse_number_special(&mut self) -> Result<SpecialFloat> {
         match *self.line {
             [b'-', ref rest @ ..] => match rest.split_at_checked(3) {
@@ -892,7 +869,6 @@ impl Parser<'_> {
         })
     }
 
-    #[inline]
     fn parse_array(&mut self) -> Result<Vec<Value>> {
         fn skip_comments_and_whitespace(slf: &mut Parser<'_>) -> Result<()> {
             slf.skip_whitespace();
@@ -934,7 +910,6 @@ impl Parser<'_> {
         Ok(result)
     }
 
-    #[inline]
     fn parse_inline_table(&mut self) -> Result<Table> {
         let mut result = Table::with_capacity(10);
 
@@ -984,7 +959,6 @@ impl Parser<'_> {
         Ok(result)
     }
 
-    #[inline]
     fn skip_whitespace(&mut self) {
         let idx = self
             .line
@@ -994,7 +968,6 @@ impl Parser<'_> {
         self.line = &self.line[idx..];
     }
 
-    #[inline]
     fn skip_comment(&mut self) -> Result<()> {
         if let Some(rest) = self.line.strip_prefix(b"#") {
             // Only validate comments without feature = "fast"
@@ -1012,7 +985,6 @@ impl Parser<'_> {
         Ok(())
     }
 
-    #[inline]
     fn next_line(&mut self) -> Option<()> {
         self.line = self.reader.next_line()?;
         Some(())
@@ -1027,7 +999,6 @@ trait TomlTable {
 }
 
 impl TomlTable for Table {
-    #[inline]
     fn get_subtable(&mut self, path: &[String]) -> Option<&mut Self> {
         // Navigate to the parent table, either a subtable with the given name or the last element
         // in an array of tables
@@ -1049,7 +1020,6 @@ impl TomlTable for Table {
         })
     }
 
-    #[inline]
     fn get_dotted_subtable(&mut self, path: &[String], allow_undefined: bool) -> Option<&mut Self> {
         // Navigate to the table, converting any UndefinedTables to DottedKeyTables
         path.iter().try_fold(self, |table, key| {
@@ -1074,7 +1044,6 @@ impl TomlTable for Table {
         })
     }
 
-    #[inline]
     fn insert_table(&mut self, name: String) -> Option<&mut Self> {
         // Create the table in the parent, or error if a table already exists
         match self.entry(name) {
@@ -1104,7 +1073,6 @@ impl TomlTable for Table {
         }
     }
 
-    #[inline]
     fn append_array_of_tables(&mut self, name: String) -> Option<&mut Self> {
         // Create the array in the parent, or append if the array already exists
         let value = self
@@ -2191,25 +2159,25 @@ mod tests {
         let mut parser = start_parser(b"1980-01-01T12:00:00.000+02:30");
         assert_matches!(
             parser.parse_number_or_datetime(),
-            Ok(Value::OffsetDatetime(_))
+            Ok(Value::OffsetDatetime { .. })
         );
 
         let mut parser = start_parser(b"1980-01-01 12:00:00Z");
         assert_matches!(
             parser.parse_number_or_datetime(),
-            Ok(Value::OffsetDatetime(_))
+            Ok(Value::OffsetDatetime { .. })
         );
 
         let mut parser = start_parser(b"1980-01-01T12:00:00.000");
         assert_matches!(
             parser.parse_number_or_datetime(),
-            Ok(Value::LocalDatetime(_))
+            Ok(Value::LocalDatetime { .. })
         );
 
         let mut parser = start_parser(b"1980-01-01 12:00:00");
         assert_matches!(
             parser.parse_number_or_datetime(),
-            Ok(Value::LocalDatetime(_))
+            Ok(Value::LocalDatetime { .. })
         );
 
         let mut parser = start_parser(b"1980-01-01");

@@ -21,7 +21,6 @@ impl<'a> Reader<'a> {
     }
 
     /// Gets the next line from the source. Returns `Ok(None)` if the end of the source is reached.
-    #[inline]
     pub fn next_line(&mut self) -> Option<&'a [u8]> {
         match self.bytes.iter().position(|&b| b == b'\n') {
             Some(offset) => {

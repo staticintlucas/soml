@@ -78,7 +78,6 @@ where
     W: Writer,
 {
     #[expect(clippy::type_complexity)] // It's not that complex
-    #[inline]
     fn split_inlines_and_subtables(
         table: Vec<(String, ValueKind)>,
     ) -> (Vec<(String, String)>, Vec<(String, TableKind)>) {
@@ -94,7 +93,6 @@ where
         )
     }
 
-    #[inline]
     fn write(mut self, table: Vec<(String, ValueKind)>) -> Result<()> {
         let (inlines, subtables) = Self::split_inlines_and_subtables(table);
         let need_nl = !inlines.is_empty();
@@ -106,7 +104,6 @@ where
         Ok(())
     }
 
-    #[inline]
     fn write_table(&mut self, table: Vec<(String, ValueKind)>, path: &str) -> Result<()> {
         let (inlines, subtables) = Self::split_inlines_and_subtables(table);
         let need_nl = !inlines.is_empty() && !subtables.is_empty();
@@ -124,7 +121,6 @@ where
         Ok(())
     }
 
-    #[inline]
     fn write_array_of_tables(
         &mut self,
         array: Vec<Vec<(String, ValueKind)>>,
@@ -144,7 +140,6 @@ where
         Ok(())
     }
 
-    #[inline]
     fn write_table_inlines(&mut self, inlines: Vec<(String, String)>) -> Result<()> {
         // Sort alphabetically for deterministic test output
         #[cfg(test)]
@@ -161,7 +156,6 @@ where
         Ok(())
     }
 
-    #[inline]
     fn write_subtable(&mut self, key: String, table: TableKind, path: &str) -> Result<()> {
         let path = if path.is_empty() {
             key
@@ -175,7 +169,6 @@ where
         }
     }
 
-    #[inline]
     fn write_table_subtables(
         &mut self,
         subtables: Vec<(String, TableKind)>,
@@ -516,7 +509,6 @@ impl ValueSerializer {
 
 impl ValueSerializer {
     #[allow(clippy::unused_self)]
-    #[inline]
     fn serialize_basic_str(self, value: &str) -> Result<String> {
         #[allow(clippy::trivially_copy_pass_by_ref)] // makes the function more ergonomic to use
         const fn is_escape(ch: &u8) -> bool {
@@ -568,7 +560,6 @@ impl ValueSerializer {
     }
 
     #[allow(clippy::unused_self)]
-    #[inline]
     fn serialize_multiline_basic_str(self, value: &str) -> Result<String> {
         #[allow(clippy::trivially_copy_pass_by_ref)] // makes the function more ergonomic to use
         const fn is_escape(ch: &u8) -> bool {

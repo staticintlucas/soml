@@ -227,22 +227,20 @@ impl OffsetDatetimeAccess {
 impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
     {
-        if self.0.is_some() {
-            seed.deserialize(de::value::BorrowedStrDeserializer::new(
-                OffsetDatetime::WRAPPER_FIELD,
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
-        }
+        Ok(match self.0 {
+            Some(_) => Some(seed.deserialize(
+                de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    OffsetDatetime::WRAPPER_FIELD,
+                ),
+            )?),
+            None => None,
+        })
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -254,6 +252,26 @@ impl<'de> de::MapAccess<'de> for OffsetDatetimeAccess {
                 "OffsetDatetimeAccess::next_value called without calling OffsetDatetimeAccess::next_key first"
             ),
         }
+    }
+
+    fn next_entry_seed<K, V>(
+        &mut self,
+        kseed: K,
+        vseed: V,
+    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
+    where
+        K: de::DeserializeSeed<'de>,
+        V: de::DeserializeSeed<'de>,
+    {
+        Ok(match self.0.take() {
+            Some(datetime) => Some((
+                kseed.deserialize(de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    OffsetDatetime::WRAPPER_FIELD,
+                ))?,
+                vseed.deserialize(de::value::BytesDeserializer::<Self::Error>::new(&datetime))?,
+            )),
+            None => None,
+        })
     }
 }
 
@@ -372,22 +390,20 @@ impl LocalDatetimeAccess {
 impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
     {
-        if self.0.is_some() {
-            seed.deserialize(de::value::BorrowedStrDeserializer::new(
-                LocalDatetime::WRAPPER_FIELD,
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
-        }
+        Ok(match self.0 {
+            Some(_) => Some(seed.deserialize(
+                de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    LocalDatetime::WRAPPER_FIELD,
+                ),
+            )?),
+            None => None,
+        })
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -399,6 +415,26 @@ impl<'de> de::MapAccess<'de> for LocalDatetimeAccess {
                 "LocalDatetimeAccess::next_value called without calling LocalDatetimeAccess::next_key first"
             ),
         }
+    }
+
+    fn next_entry_seed<K, V>(
+        &mut self,
+        kseed: K,
+        vseed: V,
+    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
+    where
+        K: de::DeserializeSeed<'de>,
+        V: de::DeserializeSeed<'de>,
+    {
+        Ok(match self.0.take() {
+            Some(datetime) => Some((
+                kseed.deserialize(de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    LocalDatetime::WRAPPER_FIELD,
+                ))?,
+                vseed.deserialize(de::value::BytesDeserializer::<Self::Error>::new(&datetime))?,
+            )),
+            None => None,
+        })
     }
 }
 
@@ -514,22 +550,18 @@ impl LocalDateAccess {
 impl<'de> de::MapAccess<'de> for LocalDateAccess {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
     {
-        if self.0.is_some() {
-            seed.deserialize(de::value::BorrowedStrDeserializer::new(
-                LocalDate::WRAPPER_FIELD,
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
-        }
+        Ok(match self.0 {
+            Some(_) => Some(seed.deserialize(
+                de::value::BorrowedStrDeserializer::<Self::Error>::new(LocalDate::WRAPPER_FIELD),
+            )?),
+            None => None,
+        })
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -541,6 +573,26 @@ impl<'de> de::MapAccess<'de> for LocalDateAccess {
                 "LocalDateAccess::next_value called without calling LocalDateAccess::next_key first"
             ),
         }
+    }
+
+    fn next_entry_seed<K, V>(
+        &mut self,
+        kseed: K,
+        vseed: V,
+    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
+    where
+        K: de::DeserializeSeed<'de>,
+        V: de::DeserializeSeed<'de>,
+    {
+        Ok(match self.0.take() {
+            Some(datetime) => Some((
+                kseed.deserialize(de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    LocalDate::WRAPPER_FIELD,
+                ))?,
+                vseed.deserialize(de::value::BytesDeserializer::<Self::Error>::new(&datetime))?,
+            )),
+            None => None,
+        })
     }
 }
 
@@ -656,22 +708,18 @@ impl LocalTimeAccess {
 impl<'de> de::MapAccess<'de> for LocalTimeAccess {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de>,
     {
-        if self.0.is_some() {
-            seed.deserialize(de::value::BorrowedStrDeserializer::new(
-                LocalTime::WRAPPER_FIELD,
-            ))
-            .map(Some)
-        } else {
-            Ok(None)
-        }
+        Ok(match self.0 {
+            Some(_) => Some(seed.deserialize(
+                de::value::BorrowedStrDeserializer::<Self::Error>::new(LocalTime::WRAPPER_FIELD),
+            )?),
+            None => None,
+        })
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de>,
@@ -683,6 +731,26 @@ impl<'de> de::MapAccess<'de> for LocalTimeAccess {
                 "LocalTimeAccess::next_value called without calling LocalTimeAccess::next_key first"
             ),
         }
+    }
+
+    fn next_entry_seed<K, V>(
+        &mut self,
+        kseed: K,
+        vseed: V,
+    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
+    where
+        K: de::DeserializeSeed<'de>,
+        V: de::DeserializeSeed<'de>,
+    {
+        Ok(match self.0.take() {
+            Some(datetime) => Some((
+                kseed.deserialize(de::value::BorrowedStrDeserializer::<Self::Error>::new(
+                    LocalTime::WRAPPER_FIELD,
+                ))?,
+                vseed.deserialize(de::value::BytesDeserializer::<Self::Error>::new(&datetime))?,
+            )),
+            None => None,
+        })
     }
 }
 

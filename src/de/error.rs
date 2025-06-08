@@ -160,7 +160,6 @@ pub enum ErrorKind {
 }
 
 impl fmt::Display for ErrorKind {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[allow(clippy::enum_glob_use)] // Just for match
         use ErrorKind::*;
@@ -195,7 +194,6 @@ impl fmt::Display for ErrorKind {
 pub struct OneOf(&'static [&'static str]);
 
 impl fmt::Display for OneOf {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self.0 {
             [] => f.write_str("no variant"),

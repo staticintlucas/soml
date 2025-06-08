@@ -123,7 +123,6 @@ impl ValueDeserializer {
 impl<'de> de::Deserializer<'de> for ValueDeserializer {
     type Error = Error;
 
-    #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -454,7 +453,6 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         }
     }
 
-    #[inline]
     fn deserialize_struct<V>(
         self,
         name: &'static str,
@@ -682,7 +680,6 @@ struct EnumAccess {
 }
 
 impl EnumAccess {
-    #[inline]
     fn new(table: ParsedTable) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
@@ -762,7 +759,6 @@ trait Integer: Sized {
 macro_rules! impl_integer {
     ($($t:ident)*) => ($(
         impl Integer for $t {
-            #[inline]
             fn from_str_radix(bytes: &[u8], radix: u32) -> Result<Self> {
                 let str = str::from_utf8(bytes)
                     .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
@@ -770,7 +766,6 @@ macro_rules! impl_integer {
                     .map_err(|err| $crate::de::ErrorKind::InvalidInteger(err).into())
             }
 
-            #[inline]
             fn from_str(bytes: &[u8]) -> Result<Self> {
                 let str = str::from_utf8(bytes)
                     .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
@@ -799,7 +794,6 @@ macro_rules! impl_float {
         const NAN: Self = Self::NAN;
         const NEG_NAN: Self = -Self::NAN;
 
-        #[inline]
         fn from_str(bytes: &[u8]) -> Result<Self> {
             let str = str::from_utf8(bytes)
                 .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));

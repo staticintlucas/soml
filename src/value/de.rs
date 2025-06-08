@@ -432,7 +432,6 @@ impl MapAccess {
 impl<'de> de::MapAccess<'de> for MapAccess {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -446,7 +445,6 @@ impl<'de> de::MapAccess<'de> for MapAccess {
             .transpose()
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
@@ -458,7 +456,6 @@ impl<'de> de::MapAccess<'de> for MapAccess {
         seed.deserialize(value)
     }
 
-    #[inline]
     fn next_entry_seed<K, V>(&mut self, kseed: K, vseed: V) -> Result<Option<(K::Value, V::Value)>>
     where
         K: de::DeserializeSeed<'de>,
@@ -488,7 +485,6 @@ struct EnumAccess {
 }
 
 impl EnumAccess {
-    #[inline]
     fn new(table: Table) -> Result<Self> {
         let mut table = table.into_iter();
         let (variant, value) = table.next().ok_or_else(|| {
@@ -689,7 +685,6 @@ impl<'de> MapRefAccess<'de> {
 impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
     type Error = Error;
 
-    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -703,7 +698,6 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
             .transpose()
     }
 
-    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
@@ -715,7 +709,6 @@ impl<'de> de::MapAccess<'de> for MapRefAccess<'de> {
         seed.deserialize(value)
     }
 
-    #[inline]
     fn next_entry_seed<K, V>(&mut self, kseed: K, vseed: V) -> Result<Option<(K::Value, V::Value)>>
     where
         K: de::DeserializeSeed<'de>,
@@ -745,7 +738,6 @@ struct EnumRefAccess<'de> {
 }
 
 impl<'de> EnumRefAccess<'de> {
-    #[inline]
     fn new(table: &'de Table) -> Result<Self> {
         let mut table = table.iter();
         let (variant, value) = table.next().ok_or_else(|| {

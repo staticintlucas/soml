@@ -379,7 +379,6 @@ impl ser::SerializeMap for ToValueTableSerializer {
     type Ok = Value;
     type Error = Error;
 
-    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -388,7 +387,6 @@ impl ser::SerializeMap for ToValueTableSerializer {
         Ok(())
     }
 
-    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -402,7 +400,6 @@ impl ser::SerializeMap for ToValueTableSerializer {
         Ok(())
     }
 
-    #[inline]
     fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<(), Self::Error>
     where
         K: ?Sized + ser::Serialize,
@@ -450,7 +447,6 @@ pub enum ToValueTableOrDatetimeSerializer {
 }
 
 impl ToValueTableOrDatetimeSerializer {
-    #[inline]
     fn start(len: Option<usize>, name: &'static str) -> Result<Self, Error> {
         Ok(match name {
             AnyDatetime::WRAPPER_TYPE => Self::AnyDatetime,
@@ -467,7 +463,6 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
     type Ok = <ToValueTableSerializer as ser::SerializeStruct>::Ok;
     type Error = <ToValueTableSerializer as ser::SerializeStruct>::Error;
 
-    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error>
     where
         T: ?Sized + ser::Serialize,
@@ -519,7 +514,6 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
         Ok(())
     }
 
-    #[inline]
     fn end(self) -> Result<Self::Ok, Self::Error> {
         match self {
             Self::OffsetDatetime(Some(bytes)) => OffsetDatetime::from_slice(&bytes)

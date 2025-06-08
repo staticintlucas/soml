@@ -34,7 +34,6 @@ pub(crate) enum Type {
 }
 
 impl Type {
-    #[inline]
     pub fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",

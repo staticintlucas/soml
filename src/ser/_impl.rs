@@ -27,7 +27,6 @@ pub enum TableKind {
 }
 
 impl ValueKind {
-    #[inline]
     fn into_inline_value(self) -> Result<String> {
         use ser::{SerializeMap as _, SerializeSeq as _};
 
@@ -746,7 +745,6 @@ pub trait Float {
 
 macro_rules! impl_float {
     ($($t:ident)*) => ($(impl Float for $t {
-        #[inline]
         fn to_string(self) -> String {
             if self.is_nan() {
                 // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase and
@@ -787,7 +785,6 @@ struct ArrayKindSerializer {
 
 impl ArrayKindSerializer {
     #[allow(clippy::unnecessary_wraps)]
-    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let arr = Vec::with_capacity(len.unwrap_or(0).min(256));
         Ok(Self { arr })
@@ -798,7 +795,6 @@ impl ser::SerializeSeq for ArrayKindSerializer {
     type Ok = ValueKind;
     type Error = Error;
 
-    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -807,7 +803,6 @@ impl ser::SerializeSeq for ArrayKindSerializer {
         Ok(())
     }
 
-    #[inline]
     fn end(self) -> Result<Self::Ok> {
         if !self.arr.is_empty()
             && self
@@ -1006,7 +1001,6 @@ enum TableOrDatetimeKindSerializer {
 }
 
 impl TableOrDatetimeKindSerializer {
-    #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
             AnyDatetime::WRAPPER_TYPE => Self::AnyDatetime,
@@ -1023,7 +1017,6 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
     type Ok = <TableKindSerializer as ser::SerializeStruct>::Ok;
     type Error = <TableKindSerializer as ser::SerializeStruct>::Error;
 
-    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1075,7 +1068,6 @@ impl ser::SerializeStruct for TableOrDatetimeKindSerializer {
         Ok(())
     }
 
-    #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
             Self::OffsetDatetime(Some(bytes)) => String::from_utf8(bytes)
@@ -1151,7 +1143,6 @@ pub struct InlineArraySerializer<S> {
 }
 
 impl<S> InlineArraySerializer<S> {
-    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let cap = (16 * len.unwrap_or(0)).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1172,7 +1163,6 @@ where
     type Ok = String;
     type Error = Error;
 
-    #[inline]
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1184,7 +1174,6 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
-    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_char(']')?;
         Ok(self.buf)
@@ -1241,7 +1230,6 @@ pub struct InlineWrappedArraySerializer<S> {
 }
 
 impl<S> InlineWrappedArraySerializer<S> {
-    #[inline]
     pub fn start(len: usize, key: &'static str) -> Result<Self> {
         let cap = (16 * len).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1264,7 +1252,6 @@ where
     type Ok = String;
     type Error = Error;
 
-    #[inline]
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1276,7 +1263,6 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
-    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str("] }")?;
         Ok(self.buf)
@@ -1291,7 +1277,6 @@ pub struct InlineTableSerializer<S> {
 }
 
 impl<S> InlineTableSerializer<S> {
-    #[inline]
     pub fn start(len: Option<usize>) -> Result<Self> {
         let cap = (32 * len.unwrap_or(0)).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1312,7 +1297,6 @@ where
     type Ok = String;
     type Error = Error;
 
-    #[inline]
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1324,7 +1308,6 @@ where
         self.buf.write_str(&key.serialize(KeySerializer)?)
     }
 
-    #[inline]
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1333,7 +1316,6 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
-    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str(" }")?;
         Ok(self.buf)
@@ -1372,7 +1354,6 @@ pub enum InlineTableOrDatetimeSerializer<S> {
 }
 
 impl<S> InlineTableOrDatetimeSerializer<S> {
-    #[inline]
     pub fn start(len: Option<usize>, name: &'static str) -> Result<Self> {
         Ok(match name {
             AnyDatetime::WRAPPER_TYPE => Self::AnyDatetime,
@@ -1392,7 +1373,6 @@ where
     type Ok = String;
     type Error = Error;
 
-    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1444,7 +1424,6 @@ where
         Ok(())
     }
 
-    #[inline]
     fn end(self) -> Result<Self::Ok> {
         match self {
             Self::OffsetDatetime(Some(bytes)) => String::from_utf8(bytes)
@@ -1475,7 +1454,6 @@ pub struct InlineWrappedTableSerializer<S> {
 }
 
 impl<S> InlineWrappedTableSerializer<S> {
-    #[inline]
     pub fn start(len: usize, variant: &'static str) -> Result<Self> {
         let cap = (32 * len).min(4096); // TODO is there a better estimate?
         let mut buf = String::with_capacity(cap);
@@ -1498,7 +1476,6 @@ where
     type Ok = String;
     type Error = Error;
 
-    #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + ser::Serialize,
@@ -1512,7 +1489,6 @@ where
         self.buf.write_str(&value.serialize(S::new())?)
     }
 
-    #[inline]
     fn end(mut self) -> Result<Self::Ok> {
         self.buf.write_str(" } }")?;
         Ok(self.buf)
@@ -1536,7 +1512,6 @@ impl ser::Serializer for KeySerializer {
         self.serialize_str(v.encode_utf8(&mut [0; 4]))
     }
 
-    #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         let is_bare_key = |b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-');
 

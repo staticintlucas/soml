@@ -91,7 +91,6 @@ pub enum ErrorKind {
 }
 
 impl fmt::Display for ErrorKind {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[allow(clippy::enum_glob_use)] // Just for match
         use ErrorKind::*;
