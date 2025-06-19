@@ -1,0 +1,37 @@
+[soml]
+package = "soml"
+path = "."
+maintained = true
+toml-ver = "1.0"
+url = "https://crates.io/crates/soml"
+
+["toml-0.8"]
+package = "toml"
+version = "0.8"
+maintained = true
+toml-ver = "1.0"
+url = "https://crates.io/crates/toml"
+
+["toml-0.5"]
+package = "toml"
+version = "0.5"
+maintained = false
+toml-ver = "0.5"
+url = "https://crates.io/crates/toml"
+
+[basic-toml]
+package = "basic-toml"
+version = "0.1"
+maintained = false
+toml-ver = "0.5<br>(partial {1})"
+url = "https://crates.io/crates/basic-toml"
+footnotes = [
+    "Does not support TOML date-time types.",
+]
+
+# [serde_json]
+# package = "serde_json"
+# version = "1.0"
+# maintained = true
+# toml-ver = "N/A"
+# url = "https://crates.io/crates/serde_json"
