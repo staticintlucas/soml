@@ -6,8 +6,6 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::{fmt, ops};
 
-use serde::Serialize as _;
-
 pub use self::datetime::{
     AnyDatetime, Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
@@ -34,6 +32,7 @@ pub(crate) enum Type {
 }
 
 impl Type {
+    #[inline]
     pub fn to_str(self) -> &'static str {
         match self {
             Self::String => "string",
@@ -291,16 +290,17 @@ impl Value {
     }
 }
 
-impl fmt::Display for Value {
-    #[allow(clippy::panic)]
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.serialize(crate::ser::ValueSerializer) {
-            Ok(s) => s.fmt(f),
-            Err(e) => panic!("{e}"), // This should never happen
-        }
-    }
-}
+// TODO
+// impl fmt::Display for Value {
+//     #[allow(clippy::panic)]
+//     #[inline]
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self.serialize(crate::ser::ValueSerializer) {
+//             Ok(s) => s.fmt(f),
+//             Err(e) => panic!("{e}"), // This should never happen
+//         }
+//     }
+// }
 
 /// A trait for indexing into TOML values.
 pub trait Index: private::Sealed {
@@ -1229,37 +1229,38 @@ mod tests {
         assert_eq!(value.type_str(), "table");
     }
 
-    #[test]
-    fn value_display() {
-        let value = Value::String("Hello!".to_string());
-        assert_eq!(value.to_string(), r#""Hello!""#);
+    // TODO
+    // #[test]
+    // fn value_display() {
+    //     let value = Value::String("Hello!".to_string());
+    //     assert_eq!(value.to_string(), r#""Hello!""#);
 
-        let value = Value::Integer(42);
-        assert_eq!(value.to_string(), "42");
+    //     let value = Value::Integer(42);
+    //     assert_eq!(value.to_string(), "42");
 
-        let value = Value::Float(42.0);
-        assert_eq!(value.to_string(), "42.0");
+    //     let value = Value::Float(42.0);
+    //     assert_eq!(value.to_string(), "42.0");
 
-        let value = Value::Boolean(true);
-        assert_eq!(value.to_string(), "true");
+    //     let value = Value::Boolean(true);
+    //     assert_eq!(value.to_string(), "true");
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert_eq!(value.to_string(), OffsetDatetime::EXAMPLE_STR);
+    //     let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+    //     assert_eq!(value.to_string(), OffsetDatetime::EXAMPLE_STR);
 
-        let value = Value::Array(vec![
-            Value::Integer(1),
-            Value::Integer(2),
-            Value::Integer(3),
-        ]);
-        assert_eq!(value.to_string(), "[1, 2, 3]");
+    //     let value = Value::Array(vec![
+    //         Value::Integer(1),
+    //         Value::Integer(2),
+    //         Value::Integer(3),
+    //     ]);
+    //     assert_eq!(value.to_string(), "[1, 2, 3]");
 
-        let value = Value::Table(btreemap! {
-            "one".to_string() => Value::Integer(1),
-            "two".to_string() => Value::Integer(2),
-            "three".to_string() => Value::Integer(3),
-        });
-        assert_eq!(value.to_string(), "{ one = 1, three = 3, two = 2 }");
-    }
+    //     let value = Value::Table(btreemap! {
+    //         "one".to_string() => Value::Integer(1),
+    //         "two".to_string() => Value::Integer(2),
+    //         "three".to_string() => Value::Integer(3),
+    //     });
+    //     assert_eq!(value.to_string(), "{ one = 1, three = 3, two = 2 }");
+    // }
 
     #[test]
     fn usize_index() {

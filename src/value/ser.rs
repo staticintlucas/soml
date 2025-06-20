@@ -2,7 +2,7 @@ use serde::ser;
 
 use super::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime, Value};
 use crate::ser::{Error, ErrorKind};
-use crate::{Table, __serialize_unimplemented};
+use crate::{Table, __serialize_unsupported};
 
 impl ser::Serialize for Value {
     #[inline]
@@ -589,7 +589,7 @@ impl ser::Serializer for RawStringSerializer {
     type Ok = String;
     type Error = Error;
 
-    __serialize_unimplemented!(
+    __serialize_unsupported!(
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char bytes none
         some unit unit_struct unit_variant newtype_struct newtype_variant seq
         tuple tuple_struct tuple_variant map struct struct_variant
@@ -608,7 +608,7 @@ impl ser::Serializer for RawBytesSerializer {
     type Ok = Vec<u8>;
     type Error = Error;
 
-    __serialize_unimplemented!(
+    __serialize_unsupported!(
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str none
         some unit unit_struct unit_variant newtype_struct newtype_variant seq
         tuple tuple_struct tuple_variant map struct struct_variant
