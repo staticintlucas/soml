@@ -29,7 +29,7 @@ where
     Ok(dst)
 }
 
-/// Serializes a value to an [`io::Writer`].
+/// Serializes a value to an [`io::Write`].
 ///
 /// # Errors
 ///
@@ -43,7 +43,7 @@ where
     value.serialize(Serializer::from_io_writer(writer))
 }
 
-/// Serializes a value to a [`fmt::Writer`].
+/// Serializes a value to a [`fmt::Write`].
 ///
 /// # Errors
 ///
