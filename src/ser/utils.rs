@@ -1,10 +1,29 @@
+use std::fmt;
+
 use super::{Error, Result};
+use crate::ser::{writer, ErrorKind};
 
 // Serializes something to a TOML key
-pub struct RawStringSerializer;
+pub struct KeySerializer<'a, W> {
+    pub writer: &'a mut W,
+}
 
-impl ser::Serializer for RawStringSerializer {
-    type Ok = String;
+impl<'a, W> KeySerializer<'a, W>
+where
+    W: fmt::Write,
+{
+    /// Creates a new `KeySerializer` with the given writer.
+    #[inline]
+    pub fn new(writer: &'a mut W) -> Self {
+        Self { writer }
+    }
+}
+
+impl<W> ser::Serializer for KeySerializer<'_, W>
+where
+    W: fmt::Write,
+{
+    type Ok = ();
     type Error = Error;
 
     __serialize_unsupported!(
@@ -15,71 +34,55 @@ impl ser::Serializer for RawStringSerializer {
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
-        Ok(value.to_string())
+        write!(self.writer, "{}", writer::Key(value))?;
+        Ok(())
     }
 }
 
-// Serializes something to raw bytes
-#[derive(Debug)]
-pub struct RawBytesSerializer;
+// Serializes a string to itself
+pub struct RawStringSerializer<'a, W> {
+    writer: &'a mut W,
+}
 
-impl ser::Serializer for RawBytesSerializer {
-    type Ok = Vec<u8>;
+impl<'a, W> RawStringSerializer<'a, W>
+where
+    W: fmt::Write,
+{
+    /// Creates a new `RawStringSerializer` with the given writer.
+    #[inline]
+    pub fn new(writer: &'a mut W) -> Self {
+        Self { writer }
+    }
+}
+
+impl<W> ser::Serializer for RawStringSerializer<'_, W>
+where
+    W: fmt::Write,
+{
+    type Ok = ();
     type Error = Error;
 
     __serialize_unsupported!(
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str none
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char none
         some unit unit_struct unit_variant newtype_struct newtype_variant seq
         tuple tuple_struct tuple_variant map struct struct_variant
     );
 
     #[inline]
+    fn serialize_str(self, value: &str) -> Result<Self::Ok> {
+        self.writer.write_str(value)?;
+        Ok(())
+    }
+
+    #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok> {
-        Ok(value.to_vec())
+        self.writer.write_str(
+            std::str::from_utf8(value)
+                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded bytes"))?,
+        )?;
+        Ok(())
     }
 }
-
-// Stringify integers
-#[doc(hidden)]
-pub trait Integer: Sized {
-    fn to_string(self) -> String;
-}
-
-macro_rules! impl_integer {
-    ($($t:ident)*) => ($(
-        impl Integer for $t {
-            #[inline]
-            fn to_string(self) -> String {
-                <Self as std::string::ToString>::to_string(&self)
-            }
-        }
-    )*);
-}
-
-impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
-
-// Stringify floats
-#[doc(hidden)]
-pub trait Float {
-    fn to_string(self) -> String;
-}
-
-macro_rules! impl_float {
-    ($($t:ident)*) => ($(impl Float for $t {
-        fn to_string(self) -> String {
-            if self.is_nan() {
-                // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase and
-                // we want to preserve the sign
-                if self.is_sign_positive() { "nan" } else { "-nan" }.into()
-            } else {
-                let mut buf = ryu::Buffer::new();
-                buf.format(self).to_string()
-            }
-        }
-    })*);
-}
-
-impl_float!(f32 f64);
 
 // Helper for unimplemented Serializer methods
 // Adapted from: https://github.com/serde-rs/serde/blob/04ff3e8/serde/src/private/doc.rs#L47

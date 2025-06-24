@@ -6,12 +6,14 @@ use serde::ser;
 
 pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
+pub use self::value::Serializer as ValueSerializer;
 use self::writer::IoWriter;
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
 mod tree;
 mod utils;
+mod value;
 mod writer;
 
 /// Serializes a value to a TOML string.
@@ -224,7 +226,7 @@ where
 
     #[inline]
     fn end(mut self) -> Result<Self::Ok> {
-        match self.arr.end_inner() {
+        match self.arr.end_inner()? {
             tree::Array::Inline(value) => {
                 writeln!(
                     self.writer,

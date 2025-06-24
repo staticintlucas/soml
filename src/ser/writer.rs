@@ -170,72 +170,137 @@ impl fmt::Display for MultilineBasicString<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct InlineValue<'a>(pub &'a tree::Value);
+pub trait IntegerTrait {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
 
-impl fmt::Display for InlineValue<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self.0 {
-            tree::Value::Table(tree::Table::Table(ref table)) => {
-                write!(f, "{}", InlineTable(table))
+macro_rules! impl_integer {
+    ($($t:ident)*) => ($(
+        impl IntegerTrait for $t {
+            #[inline]
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                // Just use the Display impl for integer types
+                <Self as std::fmt::Display>::fmt(&self, f)
             }
-            tree::Value::Table(tree::Table::Array(ref array)) => {
-                write!(f, "{}", InlineArrayOfTables(array))
-            }
-            tree::Value::Inline(ref value) => f.write_str(value),
         }
+    )*);
+}
+
+impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
+
+pub struct Integer<I: IntegerTrait>(pub I);
+
+impl<I> fmt::Display for Integer<I>
+where
+    I: IntegerTrait,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        IntegerTrait::fmt(&self.0, f)
     }
 }
 
-#[derive(Debug)]
-pub struct InlineArray<'a>(pub &'a [tree::Value]);
+pub trait FloatTrait {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
 
-impl fmt::Display for InlineArray<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("[")?;
-        if let Some((first, rest)) = self.0.split_first() {
-            write!(f, "{}", InlineValue(first))?;
-            for value in rest {
-                write!(f, ", {}", InlineValue(value))?;
+macro_rules! impl_float {
+    ($($t:ident)*) => ($(
+        impl FloatTrait for $t {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                if self.is_nan() {
+                    // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase
+                    // and we want to preserve the sign
+                    f.write_str(if self.is_sign_positive() { "nan" } else { "-nan" })
+                } else {
+                    let mut buf = ryu::Buffer::new();
+                    f.write_str(buf.format(*self))
+                }
             }
         }
-        f.write_str("]")
+    )*);
+}
+
+impl_float!(f32 f64);
+
+pub struct Float<F: FloatTrait>(pub F);
+
+impl<F> fmt::Display for Float<F>
+where
+    F: FloatTrait,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        FloatTrait::fmt(&self.0, f)
     }
 }
 
-#[derive(Debug)]
-pub struct InlineTable<'a>(pub &'a [(String, tree::Value)]);
+// #[derive(Debug)]
+// pub struct InlineValue<'a>(pub &'a tree::Value);
 
-impl fmt::Display for InlineTable<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("{ ")?;
-        if let Some((first, rest)) = self.0.split_first() {
-            let (ref key, ref value) = *first;
-            write!(f, "{} = {}", Key(key), InlineValue(value))?;
-            #[allow(clippy::pattern_type_mismatch)]
-            for (key, value) in rest {
-                write!(f, ", {} = {}", Key(key), InlineValue(value))?;
-            }
-        }
-        f.write_str(" }")
-    }
-}
+// impl fmt::Display for InlineValue<'_> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match *self.0 {
+//             tree::Value::Table(tree::Table::Table(ref table)) => {
+//                 write!(f, "{}", InlineTable(table))
+//             }
+//             tree::Value::Table(tree::Table::Array(ref array)) => {
+//                 write!(f, "{}", InlineArrayOfTables(array))
+//             }
+//             tree::Value::Inline(ref value) => f.write_str(value),
+//         }
+//     }
+// }
 
-#[derive(Debug)]
-pub struct InlineArrayOfTables<'a>(pub &'a [Vec<(String, tree::Value)>]);
+// #[derive(Debug)]
+// pub struct InlineArray<'a>(pub &'a [tree::Value]);
 
-impl fmt::Display for InlineArrayOfTables<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("[")?;
-        if let Some((first, rest)) = self.0.split_first() {
-            write!(f, "{}", InlineTable(first))?;
-            for table in rest {
-                write!(f, ", {}", InlineTable(table))?;
-            }
-        }
-        f.write_str("]")
-    }
-}
+// impl fmt::Display for InlineArray<'_> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.write_str("[")?;
+//         if let Some((first, rest)) = self.0.split_first() {
+//             write!(f, "{}", InlineValue(first))?;
+//             for value in rest {
+//                 write!(f, ", {}", InlineValue(value))?;
+//             }
+//         }
+//         f.write_str("]")
+//     }
+// }
+
+// #[derive(Debug)]
+// pub struct InlineTable<'a>(pub &'a [(String, tree::Value)]);
+
+// impl fmt::Display for InlineTable<'_> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.write_str("{ ")?;
+//         if let Some((first, rest)) = self.0.split_first() {
+//             let (ref key, ref value) = *first;
+//             write!(f, "{} = {}", Key(key), InlineValue(value))?;
+//             #[allow(clippy::pattern_type_mismatch)]
+//             for (key, value) in rest {
+//                 write!(f, ", {} = {}", Key(key), InlineValue(value))?;
+//             }
+//         }
+//         f.write_str(" }")
+//     }
+// }
+
+// #[derive(Debug)]
+// pub struct InlineArrayOfTables<'a>(pub &'a [Vec<(String, tree::Value)>]);
+
+// impl fmt::Display for InlineArrayOfTables<'_> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.write_str("[")?;
+//         if let Some((first, rest)) = self.0.split_first() {
+//             write!(f, "{}", InlineTable(first))?;
+//             for table in rest {
+//                 write!(f, ", {}", InlineTable(table))?;
+//             }
+//         }
+//         f.write_str("]")
+//     }
+// }
 
 #[derive(Debug)]
 struct Header<'a> {
