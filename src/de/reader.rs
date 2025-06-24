@@ -46,14 +46,6 @@ impl<'a> Reader<'a> {
             }
         }
     }
-
-    /// Gets the line number of the line returned by the previous call to [`Self::next_line`] read
-    /// from the source.
-    #[inline]
-    #[allow(unused)] // TODO
-    pub fn line_no(&self) -> usize {
-        self.line_no
-    }
 }
 
 #[inline]
@@ -129,24 +121,6 @@ mod tests {
 
         assert_matches!(reader.next_line(), None);
         assert_eq!(reader.line_no, 4);
-    }
-
-    #[test]
-    fn slice_reader_line_no() {
-        let mut reader = Reader {
-            bytes: indoc! {b"
-                [a]
-                b = 1
-                c = 2
-                d = 3
-            "},
-            line_no: 0,
-        };
-
-        assert_eq!(reader.line_no(), 0);
-
-        reader.line_no = 3;
-        assert_eq!(reader.line_no(), 3);
     }
 
     #[test]

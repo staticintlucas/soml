@@ -184,11 +184,9 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 E: de::Error,
             {
-                self.visit_i64(
-                    value
-                        .try_into()
-                        .map_err(|_| de::Error::custom("integer out of range of i64"))?,
-                )
+                self.visit_i64(value.try_into().map_err(|_| {
+                    E::invalid_value(de::Unexpected::Other("value out of range"), &"an i64")
+                })?)
             }
 
             #[inline]
@@ -196,11 +194,9 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 E: de::Error,
             {
-                self.visit_i64(
-                    value
-                        .try_into()
-                        .map_err(|_| de::Error::custom("integer out of range of i64"))?,
-                )
+                self.visit_i64(value.try_into().map_err(|_| {
+                    E::invalid_value(de::Unexpected::Other("value out of range"), &"an i64")
+                })?)
             }
 
             #[inline]
@@ -208,11 +204,9 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 E: de::Error,
             {
-                self.visit_i64(
-                    value
-                        .try_into()
-                        .map_err(|_| de::Error::custom("integer out of range of i64"))?,
-                )
+                self.visit_i64(value.try_into().map_err(|_| {
+                    E::invalid_value(de::Unexpected::Other("value out of range"), &"an i64")
+                })?)
             }
 
             #[inline]
@@ -907,17 +901,17 @@ mod tests {
         let value = Value::deserialize(de::value::I128Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::I128Deserializer::<Error>::new(i128::MIN));
-        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
+        assert_matches!(result, Err(Error(ErrorKind::InvalidValue(..))));
 
         let value = Value::deserialize(de::value::U64Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::U64Deserializer::<Error>::new(u64::MAX));
-        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
+        assert_matches!(result, Err(Error(ErrorKind::InvalidValue(..))));
 
         let value = Value::deserialize(de::value::U128Deserializer::<Error>::new(123)).unwrap();
         assert_eq!(value, Value::Integer(123));
         let result = Value::deserialize(de::value::U128Deserializer::<Error>::new(u128::MAX));
-        assert_matches!(result, Err(Error(ErrorKind::Custom(..)))); // TODO should this be a different error type?
+        assert_matches!(result, Err(Error(ErrorKind::InvalidValue(..))));
 
         let value = Value::deserialize(de::value::F64Deserializer::<Error>::new(123.0)).unwrap();
         assert_eq!(value, Value::Float(123.0));

@@ -1621,9 +1621,12 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_str() {
-        // TODO
-        // let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
-        // assert_matches!(<&str>::deserialize(deserializer), Ok("hello"));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
+        // Can't actually deserialize to a borrowed &str
+        assert_matches!(
+            <&str>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
         assert_matches!(
@@ -1646,9 +1649,12 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_bytes() {
-        // TODO
-        // let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
-        // assert_matches!(<&[u8]>::deserialize(deserializer), Ok(b"hello"));
+        let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
+        // Can't actually deserialize to a borrowed &[u8]
+        assert_matches!(
+            <&[u8]>::deserialize(deserializer),
+            Err(Error(ErrorKind::InvalidType(..)))
+        );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
         assert_matches!(
