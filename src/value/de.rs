@@ -1058,6 +1058,12 @@ mod tests {
                 .unwrap();
             assert_eq!(value, expected);
 
+            let value = Value::deserialize(de::value::MapDeserializer::<_, Error>::new(
+                iter::once((field.to_string(), de::value::BytesDeserializer::new(bytes))),
+            ))
+            .unwrap();
+            assert_eq!(value, expected);
+
             let value =
                 Value::deserialize(de::value::MapDeserializer::<_, Error>::new(iter::once((
                     de::value::BorrowedStrDeserializer::new(field),

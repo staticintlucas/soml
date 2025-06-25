@@ -205,7 +205,7 @@ mod tests {
         assert_ser_tokens_error(
             &Datetime::EXAMPLE_INVALID_1,
             tokens,
-            "invalid value: invalid date-time (offset with neither date nor time), expected a valid date-time",
+            "invalid value: invalid date-time (offset with no date or time), expected a valid date-time",
         );
 
         let tokens = &[];
@@ -226,7 +226,7 @@ mod tests {
         assert_ser_tokens_error(
             &Datetime::EXAMPLE_INVALID_4,
             tokens,
-            "invalid value: invalid date-time (no date, time, nor offset), expected a valid date-time",
+            "invalid value: invalid date-time (no date, time, or offset), expected a valid date-time",
         );
     }
 

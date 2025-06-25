@@ -230,10 +230,10 @@ impl Datetime {
             (Some(_), None, None) => "local date",
             (None, Some(_), None) => "local time",
             // Below are all "invalid" permutations
-            (None, None, Some(_)) => "invalid date-time (offset with neither date nor time)",
+            (None, None, Some(_)) => "invalid date-time (offset with no date or time)",
             (None, Some(_), Some(_)) => "invalid date-time (offset time without date)",
             (Some(_), None, Some(_)) => "invalid date-time (offset date without time)",
-            (None, None, None) => "invalid date-time (no date, time, nor offset)",
+            (None, None, None) => "invalid date-time (no date, time, or offset)",
         }
     }
 }
@@ -1223,7 +1223,7 @@ mod tests {
         let datetime = Datetime::EXAMPLE_INVALID_1;
         assert_eq!(
             datetime.type_str(),
-            "invalid date-time (offset with neither date nor time)"
+            "invalid date-time (offset with no date or time)"
         );
 
         let datetime = Datetime::EXAMPLE_INVALID_2;
@@ -1241,7 +1241,7 @@ mod tests {
         let datetime = Datetime::EXAMPLE_INVALID_4;
         assert_eq!(
             datetime.type_str(),
-            "invalid date-time (no date, time, nor offset)"
+            "invalid date-time (no date, time, or offset)"
         );
     }
 
@@ -1287,7 +1287,7 @@ mod tests {
         let datetime = Datetime::EXAMPLE_INVALID_1;
         assert_eq!(
             datetime.to_string(),
-            "<invalid date-time (offset with neither date nor time)>"
+            "<invalid date-time (offset with no date or time)>"
         );
 
         let datetime = Datetime::EXAMPLE_INVALID_2;
@@ -1305,7 +1305,7 @@ mod tests {
         let datetime = Datetime::EXAMPLE_INVALID_4;
         assert_eq!(
             datetime.to_string(),
-            "<invalid date-time (no date, time, nor offset)>"
+            "<invalid date-time (no date, time, or offset)>"
         );
     }
 
@@ -1413,6 +1413,14 @@ mod tests {
         assert_eq!(
             OffsetDatetime::EXAMPLE.to_string(),
             OffsetDatetime::EXAMPLE_STR
+        );
+    }
+
+    #[test]
+    fn offset_datetime_to_bytes() {
+        assert_eq!(
+            OffsetDatetime::EXAMPLE.to_bytes(),
+            OffsetDatetime::EXAMPLE_STR.as_bytes()
         );
     }
 
@@ -1541,6 +1549,14 @@ mod tests {
         assert_eq!(
             LocalDatetime::EXAMPLE.to_string(),
             LocalDatetime::EXAMPLE_STR
+        );
+    }
+
+    #[test]
+    fn local_datetime_to_bytes() {
+        assert_eq!(
+            LocalDatetime::EXAMPLE.to_bytes(),
+            LocalDatetime::EXAMPLE_STR.as_bytes()
         );
     }
 
@@ -1721,6 +1737,14 @@ mod tests {
     #[test]
     fn local_date_display() {
         assert_eq!(LocalDate::EXAMPLE.to_string(), LocalDate::EXAMPLE_STR);
+    }
+
+    #[test]
+    fn local_date_to_bytes() {
+        assert_eq!(
+            LocalDate::EXAMPLE.to_bytes(),
+            LocalDate::EXAMPLE_STR.as_bytes()
+        );
     }
 
     #[test]
@@ -1938,6 +1962,48 @@ mod tests {
     }
 
     #[test]
+    fn local_time_to_bytes() {
+        assert_eq!(
+            LocalTime::EXAMPLE.to_bytes(),
+            LocalTime::EXAMPLE_STR.as_bytes()
+        );
+
+        let time_no_nanos = LocalTime {
+            nanosecond: 0,
+            ..LocalTime::EXAMPLE
+        };
+        let str_no_nanos = LocalTime::EXAMPLE_STR.split('.').next().unwrap();
+        assert_eq!(time_no_nanos.to_bytes(), str_no_nanos.as_bytes());
+
+        let time_millis = LocalTime {
+            nanosecond: 60_000_000,
+            ..LocalTime::EXAMPLE
+        };
+        let str_millis = format!("{}.060", LocalTime::EXAMPLE_STR.split('.').next().unwrap());
+        assert_eq!(time_millis.to_bytes(), str_millis.as_bytes());
+
+        let time_micros = LocalTime {
+            nanosecond: 60_000,
+            ..LocalTime::EXAMPLE
+        };
+        let str_micros = format!(
+            "{}.000060",
+            LocalTime::EXAMPLE_STR.split('.').next().unwrap()
+        );
+        assert_eq!(time_micros.to_bytes(), str_micros.as_bytes());
+
+        let time_nanos = LocalTime {
+            nanosecond: 60,
+            ..LocalTime::EXAMPLE
+        };
+        let str_nanos = format!(
+            "{}.000000060",
+            LocalTime::EXAMPLE_STR.split('.').next().unwrap()
+        );
+        assert_eq!(time_nanos.to_bytes(), str_nanos.as_bytes());
+    }
+
+    #[test]
     fn any_datetime_from_local_time() {
         let result = AnyDatetime::from(LocalTime::EXAMPLE);
         let datetime = AnyDatetime::EXAMPLE_LOCAL_TIME;
@@ -2098,6 +2164,16 @@ mod tests {
         assert_eq!(offset.to_string(), "-07:08");
 
         assert_eq!(Offset::Z.to_string(), "Z");
+    }
+
+    #[test]
+    fn offset_to_bytes() {
+        assert_eq!(Offset::EXAMPLE.to_bytes(), b"+07:08");
+
+        let offset = Offset::Custom { minutes: -428 };
+        assert_eq!(offset.to_bytes(), b"-07:08");
+
+        assert_eq!(Offset::Z.to_bytes(), b"Z");
     }
 
     #[test]

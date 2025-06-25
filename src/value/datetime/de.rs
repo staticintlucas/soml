@@ -854,6 +854,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<AnyDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected a date-time wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<AnyDatetime>(
             tokens,
@@ -951,6 +963,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<Datetime>(
+            tokens,
+            "invalid type: integer `2`, expected a date-time wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<Datetime>(
             tokens,
@@ -1018,6 +1042,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::OffsetDatetime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: OffsetDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<OffsetDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected an offset date-time wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<OffsetDatetime>(
             tokens,
@@ -1065,12 +1101,23 @@ mod tests {
     fn offset_datetime_access() {
         let mut access = OffsetDatetimeAccess::new(OffsetDatetime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, OffsetDatetimeAccess(Some(ref datetime)) if datetime == OffsetDatetime::EXAMPLE_BYTES);
+        assert_matches!(
+            access,
+            OffsetDatetimeAccess(Some(ref datetime)) if datetime == OffsetDatetime::EXAMPLE_BYTES
+        );
 
         assert_matches!(access.next_key(), Ok(Some(OffsetDatetime::WRAPPER_FIELD)));
         assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == OffsetDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
+
+        let mut access = OffsetDatetimeAccess::new(OffsetDatetime::EXAMPLE_BYTES.to_vec());
+
+        assert_matches!(
+            access.next_entry::<&str, ByteBuf>(),
+            Ok(Some((OffsetDatetime::WRAPPER_FIELD, b))) if b == OffsetDatetime::EXAMPLE_BYTES
+        );
+        assert_matches!(access.next_entry::<&str, ByteBuf>(), Ok(None));
     }
 
     #[test]
@@ -1141,6 +1188,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::LocalDatetime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: LocalDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<LocalDatetime>(
+            tokens,
+            "invalid type: integer `2`, expected a local date-time wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<LocalDatetime>(
             tokens,
@@ -1188,12 +1247,23 @@ mod tests {
     fn local_datetime_access() {
         let mut access = LocalDatetimeAccess::new(LocalDatetime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalDatetimeAccess(Some(ref datetime)) if datetime == LocalDatetime::EXAMPLE_BYTES);
+        assert_matches!(
+            access,
+            LocalDatetimeAccess(Some(ref datetime)) if datetime == LocalDatetime::EXAMPLE_BYTES
+        );
 
         assert_matches!(access.next_key(), Ok(Some(LocalDatetime::WRAPPER_FIELD)));
         assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDatetime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
+
+        let mut access = LocalDatetimeAccess::new(LocalDatetime::EXAMPLE_BYTES.to_vec());
+
+        assert_matches!(
+            access.next_entry::<&str, ByteBuf>(),
+            Ok(Some((LocalDatetime::WRAPPER_FIELD, b))) if b == LocalDatetime::EXAMPLE_BYTES
+        );
+        assert_matches!(access.next_entry::<&str, ByteBuf>(), Ok(None));
     }
 
     #[test]
@@ -1264,6 +1334,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::LocalDate::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: LocalDate::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<LocalDate>(
+            tokens,
+            "invalid type: integer `2`, expected a local date wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<LocalDate>(
             tokens,
@@ -1311,12 +1393,23 @@ mod tests {
     fn local_date_access() {
         let mut access = LocalDateAccess::new(LocalDate::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalDateAccess(Some(ref date)) if date == LocalDate::EXAMPLE_BYTES);
+        assert_matches!(
+            access,
+            LocalDateAccess(Some(ref date)) if date == LocalDate::EXAMPLE_BYTES
+        );
 
         assert_matches!(access.next_key(), Ok(Some(LocalDate::WRAPPER_FIELD)));
         assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalDate::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
+
+        let mut access = LocalDateAccess::new(LocalDate::EXAMPLE_BYTES.to_vec());
+
+        assert_matches!(
+            access.next_entry::<&str, ByteBuf>(),
+            Ok(Some((LocalDate::WRAPPER_FIELD, b))) if b == LocalDate::EXAMPLE_BYTES
+        );
+        assert_matches!(access.next_entry::<&str, ByteBuf>(), Ok(None));
     }
 
     #[test]
@@ -1387,6 +1480,18 @@ mod tests {
             r#"expected Token::Str("<soml::_impl::LocalTime::Wrapper::Field>") but deserialization wants Token::StructEnd"#,
         );
 
+        let tokens = &[
+            Token::Struct {
+                name: LocalTime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::I32(2),
+        ];
+        assert_de_tokens_error::<LocalTime>(
+            tokens,
+            "invalid type: integer `2`, expected a local time wrapper field",
+        );
+
         let tokens = &[Token::I32(2)];
         assert_de_tokens_error::<LocalTime>(
             tokens,
@@ -1434,12 +1539,23 @@ mod tests {
     fn local_time_access() {
         let mut access = LocalTimeAccess::new(LocalTime::EXAMPLE_BYTES.to_vec());
 
-        assert_matches!(access, LocalTimeAccess(Some(ref time)) if time == LocalTime::EXAMPLE_BYTES);
+        assert_matches!(
+            access,
+            LocalTimeAccess(Some(ref time)) if time == LocalTime::EXAMPLE_BYTES
+        );
 
         assert_matches!(access.next_key(), Ok(Some(LocalTime::WRAPPER_FIELD)));
         assert_matches!(access.next_value::<ByteBuf>(), Ok(b) if b == LocalTime::EXAMPLE_BYTES);
 
         assert_matches!(access.next_key::<&str>(), Ok(None));
+
+        let mut access = LocalTimeAccess::new(LocalTime::EXAMPLE_BYTES.to_vec());
+
+        assert_matches!(
+            access.next_entry::<&str, ByteBuf>(),
+            Ok(Some((LocalTime::WRAPPER_FIELD, b))) if b == LocalTime::EXAMPLE_BYTES
+        );
+        assert_matches!(access.next_entry::<&str, ByteBuf>(), Ok(None));
     }
 
     #[test]

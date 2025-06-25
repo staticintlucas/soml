@@ -973,51 +973,130 @@ mod tests {
             .unwrap();
         let result = serializer.end().unwrap();
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME));
-    }
-
-    #[test]
-    fn to_value_table_or_datetime_serializer_error() {
-        use ser::SerializeStruct as _;
-
-        let serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(0), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert_matches!(
-            serializer.end(),
-            Err(Error(ErrorKind::UnsupportedValue(..)))
-        );
 
         let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
-        assert_matches!(
-            serializer.serialize_field("one", &1),
-            Err(Error(ErrorKind::UnsupportedValue(..)))
-        );
-
-        let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(2), OffsetDatetime::WRAPPER_TYPE).unwrap();
+            ToValueTableOrDatetimeSerializer::start(Some(1), AnyDatetime::WRAPPER_TYPE).unwrap();
         serializer
             .serialize_field(
                 OffsetDatetime::WRAPPER_FIELD,
                 Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
             )
             .unwrap();
-        assert_matches!(
-            serializer.serialize_field(
-                OffsetDatetime::WRAPPER_FIELD,
-                Bytes::new(OffsetDatetime::EXAMPLE_BYTES)
-            ),
-            Err(Error(ErrorKind::UnsupportedValue(..)))
-        );
+        let result = serializer.end().unwrap();
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
 
         let mut serializer =
-            ToValueTableOrDatetimeSerializer::start(Some(1), OffsetDatetime::WRAPPER_TYPE).unwrap();
+            ToValueTableOrDatetimeSerializer::start(Some(1), AnyDatetime::WRAPPER_TYPE).unwrap();
         serializer
-            .serialize_field(OffsetDatetime::WRAPPER_FIELD, Bytes::new(b"blah"))
+            .serialize_field(
+                LocalDatetime::WRAPPER_FIELD,
+                Bytes::new(LocalDatetime::EXAMPLE_BYTES),
+            )
             .unwrap();
-        assert_matches!(
-            serializer.end(),
-            Err(Error(ErrorKind::UnsupportedValue(..)))
-        );
+        let result = serializer.end().unwrap();
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME));
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), AnyDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(
+                LocalDate::WRAPPER_FIELD,
+                Bytes::new(LocalDate::EXAMPLE_BYTES),
+            )
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE));
+
+        let mut serializer =
+            ToValueTableOrDatetimeSerializer::start(Some(1), AnyDatetime::WRAPPER_TYPE).unwrap();
+        serializer
+            .serialize_field(
+                LocalTime::WRAPPER_FIELD,
+                Bytes::new(LocalTime::EXAMPLE_BYTES),
+            )
+            .unwrap();
+        let result = serializer.end().unwrap();
+        assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME));
+    }
+
+    #[test]
+    fn to_value_table_or_datetime_serializer_error() {
+        use ser::SerializeStruct as _;
+
+        let tests = [
+            (
+                OffsetDatetime::WRAPPER_TYPE,
+                OffsetDatetime::WRAPPER_FIELD,
+                OffsetDatetime::EXAMPLE_BYTES,
+            ),
+            (
+                LocalDatetime::WRAPPER_TYPE,
+                LocalDatetime::WRAPPER_FIELD,
+                LocalDatetime::EXAMPLE_BYTES,
+            ),
+            (
+                LocalDate::WRAPPER_TYPE,
+                LocalDate::WRAPPER_FIELD,
+                LocalDate::EXAMPLE_BYTES,
+            ),
+            (
+                LocalTime::WRAPPER_TYPE,
+                LocalTime::WRAPPER_FIELD,
+                LocalTime::EXAMPLE_BYTES,
+            ),
+            (
+                AnyDatetime::WRAPPER_TYPE,
+                OffsetDatetime::WRAPPER_FIELD,
+                OffsetDatetime::EXAMPLE_BYTES,
+            ),
+            (
+                AnyDatetime::WRAPPER_TYPE,
+                LocalDatetime::WRAPPER_FIELD,
+                LocalDatetime::EXAMPLE_BYTES,
+            ),
+            (
+                AnyDatetime::WRAPPER_TYPE,
+                LocalDate::WRAPPER_FIELD,
+                LocalDate::EXAMPLE_BYTES,
+            ),
+            (
+                AnyDatetime::WRAPPER_TYPE,
+                LocalTime::WRAPPER_FIELD,
+                LocalTime::EXAMPLE_BYTES,
+            ),
+        ];
+
+        for (name, field, bytes) in tests {
+            let serializer = ToValueTableOrDatetimeSerializer::start(Some(0), name).unwrap();
+            assert_matches!(
+                serializer.end(),
+                Err(Error(ErrorKind::UnsupportedValue(..)))
+            );
+
+            let mut serializer = ToValueTableOrDatetimeSerializer::start(Some(1), name).unwrap();
+            assert_matches!(
+                serializer.serialize_field("one", &1),
+                Err(Error(ErrorKind::UnsupportedValue(..)))
+            );
+
+            let mut serializer = ToValueTableOrDatetimeSerializer::start(Some(2), name).unwrap();
+            serializer
+                .serialize_field(field, Bytes::new(bytes))
+                .unwrap();
+            assert_matches!(
+                serializer.serialize_field(field, Bytes::new(bytes)),
+                Err(Error(ErrorKind::UnsupportedValue(..)))
+            );
+
+            let mut serializer = ToValueTableOrDatetimeSerializer::start(Some(1), name).unwrap();
+            serializer
+                .serialize_field(field, Bytes::new(b"blah"))
+                .unwrap();
+            assert_matches!(
+                serializer.end(),
+                Err(Error(ErrorKind::UnsupportedValue(..)))
+            );
+        }
     }
 
     #[test]
