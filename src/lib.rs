@@ -47,8 +47,8 @@
 //! |    Crate     | Version | Size &ast; | Maintained |    TOML version    |
 //! |:------------:|:-------:|:----------:|:----------:|:------------------:|
 //! |    [soml]    |  0.1.0  |  386 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.8.23 |  561 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.5.11 |  392 KiB   |     ❌      |        0.5         |
+//! |    [toml]    |  0.8.23 |  560 KiB   |     ✅      |        1.0         |
+//! |    [toml]    |  0.5.11 |  391 KiB   |     ❌      |        0.5         |
 //! | [basic-toml] |  0.1.10 |  390 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
 //! &ast; *Refers to the size of the `.text` section of a binary using the given TOML crate.
@@ -60,9 +60,9 @@
 //! |    Crate     | Version | Size &ast; | Maintained |    TOML version    |
 //! |:------------:|:-------:|:----------:|:----------:|:------------------:|
 //! |    [soml]    |  0.1.0  |  362 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.8.23 |  498 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.5.11 |  379 KiB   |     ❌      |        0.5         |
-//! | [basic-toml] |  0.1.10 |  380 KiB   |     ❌      | 0.5<br>(partial †) |
+//! |    [toml]    |  0.8.23 |  497 KiB   |     ✅      |        1.0         |
+//! |    [toml]    |  0.5.11 |  377 KiB   |     ❌      |        0.5         |
+//! | [basic-toml] |  0.1.10 |  379 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
 //! &ast; *Refers to the size of the `.text` section of a binary using the given TOML crate.
 //! This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.* \
