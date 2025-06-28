@@ -38,41 +38,29 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct Key<'a>(pub &'a str);
+pub struct Formatter;
 
-impl fmt::Display for Key<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Formatter {
+    pub fn write_key(key: &str, f: &mut dyn fmt::Write) -> fmt::Result {
         let is_bare_key = |b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-');
 
-        if !self.0.is_empty() && self.0.bytes().all(is_bare_key) {
-            write!(f, "{}", self.0)
+        if !key.is_empty() && key.bytes().all(is_bare_key) {
+            f.write_str(key)
         } else {
-            write!(f, "{}", BasicString(self.0))
+            Self::write_basic_string(key, f)
         }
     }
-}
 
-#[derive(Debug)]
-pub struct TomlString<'a>(pub &'a str);
-
-impl fmt::Display for TomlString<'_> {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub fn write_string(value: &str, f: &mut dyn fmt::Write) -> fmt::Result {
         // TODO also test where literal strings might be better?
-        if self.0.contains('\n') {
-            write!(f, "{}", MultilineBasicString(self.0))
+        if value.contains('\n') {
+            Self::write_multiline_basic_string(value, f)
         } else {
-            write!(f, "{}", BasicString(self.0))
+            Self::write_basic_string(value, f)
         }
     }
-}
 
-#[derive(Debug)]
-pub struct BasicString<'a>(pub &'a str);
-
-impl fmt::Display for BasicString<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub fn write_basic_string(value: &str, f: &mut dyn fmt::Write) -> fmt::Result {
         #[allow(clippy::trivially_copy_pass_by_ref)] // makes the function more ergonomic to use
         const fn is_escape(ch: &u8) -> bool {
             matches!(*ch, 0x00..=0x1f | b'\"' | b'\\' | 0x7f)
@@ -80,7 +68,7 @@ impl fmt::Display for BasicString<'_> {
 
         f.write_str(r#"""#)?;
 
-        let mut rest = self.0;
+        let mut rest = value;
         loop {
             let esc_pos = rest
                 .as_bytes()
@@ -118,13 +106,8 @@ impl fmt::Display for BasicString<'_> {
 
         f.write_str(r#"""#)
     }
-}
 
-#[derive(Debug)]
-pub struct MultilineBasicString<'a>(pub &'a str);
-
-impl fmt::Display for MultilineBasicString<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub fn write_multiline_basic_string(value: &str, f: &mut dyn fmt::Write) -> fmt::Result {
         #[allow(clippy::trivially_copy_pass_by_ref)] // makes the function more ergonomic to use
         const fn is_escape(ch: &u8) -> bool {
             matches!(*ch, 0x00..=0x08 | 0x0b..=0x1f | b'\"' | b'\\' | 0x7f)
@@ -133,7 +116,7 @@ impl fmt::Display for MultilineBasicString<'_> {
         // writeln since newlines after the """ get trimmed anyway
         writeln!(f, r#"""""#)?;
 
-        let mut rest = self.0;
+        let mut rest = value;
         loop {
             let esc_pos = rest
                 .as_bytes()
@@ -168,209 +151,52 @@ impl fmt::Display for MultilineBasicString<'_> {
 
         f.write_str(r#"""""#)
     }
-}
 
-pub trait IntegerTrait {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-}
-
-macro_rules! impl_integer {
-    ($($t:ident)*) => ($(
-        impl IntegerTrait for $t {
-            #[inline]
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                // Just use the Display impl for integer types
-                <Self as std::fmt::Display>::fmt(&self, f)
-            }
-        }
-    )*);
-}
-
-impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
-
-pub struct Integer<I: IntegerTrait>(pub I);
-
-impl<I> fmt::Display for Integer<I>
-where
-    I: IntegerTrait,
-{
     #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        IntegerTrait::fmt(&self.0, f)
+    pub fn write_integer<I: Integer>(value: &I, f: &mut dyn fmt::Write) -> fmt::Result {
+        value.fmt(f)
     }
-}
 
-pub trait FloatTrait {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-}
-
-macro_rules! impl_float {
-    ($($t:ident)*) => ($(
-        impl FloatTrait for $t {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                if self.is_nan() {
-                    // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase
-                    // and we want to preserve the sign
-                    f.write_str(if self.is_sign_positive() { "nan" } else { "-nan" })
-                } else {
-                    let mut buf = ryu::Buffer::new();
-                    f.write_str(buf.format(*self))
-                }
-            }
-        }
-    )*);
-}
-
-impl_float!(f32 f64);
-
-pub struct Float<F: FloatTrait>(pub F);
-
-impl<F> fmt::Display for Float<F>
-where
-    F: FloatTrait,
-{
     #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        FloatTrait::fmt(&self.0, f)
+    pub fn write_float<F: Float>(value: &F, f: &mut dyn fmt::Write) -> fmt::Result {
+        value.fmt(f)
     }
-}
 
-// #[derive(Debug)]
-// pub struct InlineValue<'a>(pub &'a tree::Value);
+    #[inline]
+    pub fn write_table_header(path: &[&String], f: &mut dyn fmt::Write) -> fmt::Result {
+        Self::write_header(path, "[", "]", f)
+    }
 
-// impl fmt::Display for InlineValue<'_> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match *self.0 {
-//             tree::Value::Table(tree::Table::Table(ref table)) => {
-//                 write!(f, "{}", InlineTable(table))
-//             }
-//             tree::Value::Table(tree::Table::Array(ref array)) => {
-//                 write!(f, "{}", InlineArrayOfTables(array))
-//             }
-//             tree::Value::Inline(ref value) => f.write_str(value),
-//         }
-//     }
-// }
+    #[inline]
+    pub fn write_array_header(path: &[&String], f: &mut dyn fmt::Write) -> fmt::Result {
+        Self::write_header(path, "[[", "]]", f)
+    }
 
-// #[derive(Debug)]
-// pub struct InlineArray<'a>(pub &'a [tree::Value]);
-
-// impl fmt::Display for InlineArray<'_> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.write_str("[")?;
-//         if let Some((first, rest)) = self.0.split_first() {
-//             write!(f, "{}", InlineValue(first))?;
-//             for value in rest {
-//                 write!(f, ", {}", InlineValue(value))?;
-//             }
-//         }
-//         f.write_str("]")
-//     }
-// }
-
-// #[derive(Debug)]
-// pub struct InlineTable<'a>(pub &'a [(String, tree::Value)]);
-
-// impl fmt::Display for InlineTable<'_> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.write_str("{ ")?;
-//         if let Some((first, rest)) = self.0.split_first() {
-//             let (ref key, ref value) = *first;
-//             write!(f, "{} = {}", Key(key), InlineValue(value))?;
-//             #[allow(clippy::pattern_type_mismatch)]
-//             for (key, value) in rest {
-//                 write!(f, ", {} = {}", Key(key), InlineValue(value))?;
-//             }
-//         }
-//         f.write_str(" }")
-//     }
-// }
-
-// #[derive(Debug)]
-// pub struct InlineArrayOfTables<'a>(pub &'a [Vec<(String, tree::Value)>]);
-
-// impl fmt::Display for InlineArrayOfTables<'_> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.write_str("[")?;
-//         if let Some((first, rest)) = self.0.split_first() {
-//             write!(f, "{}", InlineTable(first))?;
-//             for table in rest {
-//                 write!(f, ", {}", InlineTable(table))?;
-//             }
-//         }
-//         f.write_str("]")
-//     }
-// }
-
-#[derive(Debug)]
-struct Header<'a> {
-    path: &'a [&'a String],
-    prefix: &'static str,
-    suffix: &'static str,
-}
-
-impl fmt::Display for Header<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some((first, rest)) = self.path.split_first() {
-            write!(f, "{}{}", self.prefix, Key(first))?;
+    pub fn write_header(
+        path: &[&String],
+        prefix: &str,
+        suffix: &str,
+        f: &mut dyn fmt::Write,
+    ) -> fmt::Result {
+        if let Some((first, rest)) = path.split_first() {
+            f.write_str(prefix)?;
+            Self::write_key(first, f)?;
             for key in rest {
-                write!(f, ".{}", Key(key))?;
+                f.write_str(".")?;
+                Self::write_key(key, f)?;
             }
-            write!(f, "{}", self.suffix)?;
+            f.write_str(suffix)?;
+            f.write_str("\n")?;
         }
         Ok(())
     }
-}
 
-#[derive(Debug)]
-pub struct TableHeader<'a> {
-    pub path: &'a [&'a String],
-}
-
-impl fmt::Display for TableHeader<'_> {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            Header {
-                path: self.path,
-                prefix: "[",
-                suffix: "]",
-            }
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct ArrayHeader<'a> {
-    pub path: &'a [&'a String],
-}
-
-impl fmt::Display for ArrayHeader<'_> {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            Header {
-                path: self.path,
-                prefix: "[[",
-                suffix: "]]",
-            }
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct Table<'a> {
-    pub table: &'a [(String, tree::Value)],
-    pub path: &'a [&'a String],
-}
-
-impl fmt::Display for Table<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (inlines, subtables) = split_inlines_and_subtables(self.table);
+    pub fn write_table(
+        table: &[(String, tree::Value)],
+        path: &[&String],
+        f: &mut dyn fmt::Write,
+    ) -> fmt::Result {
+        let (inlines, subtables) = split_inlines_and_subtables(table);
 
         // The table header is only needed if the table has inlines (key/value pairs); but if the
         // table is completely empty (no inlines nor subtables) then a reader would have no idea
@@ -381,34 +207,21 @@ impl fmt::Display for Table<'_> {
         let need_nl = !inlines.is_empty() && !subtables.is_empty();
 
         if need_header {
-            writeln!(f, "{}", TableHeader { path: self.path })?;
+            Self::write_table_header(path, f)?;
         }
-        write!(f, "{}", Inlines(&inlines))?;
+        Self::write_inlines(&inlines, f)?;
         if need_nl {
             writeln!(f)?;
         }
-        writeln!(
-            f,
-            "{}",
-            Subtables {
-                subtables: &subtables,
-                path: self.path
-            }
-        )?;
-
-        Ok(())
+        Self::write_subtables(&subtables, path, f)
     }
-}
 
-#[derive(Debug)]
-pub struct ArrayOfTables<'a> {
-    pub array: &'a [Vec<(String, tree::Value)>],
-    pub path: &'a [&'a String],
-}
-
-impl fmt::Display for ArrayOfTables<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for table in self.array {
+    pub fn write_array_of_tables(
+        array: &[Vec<(String, tree::Value)>],
+        path: &[&String],
+        f: &mut dyn fmt::Write,
+    ) -> fmt::Result {
+        for table in array {
             let (inlines, subtables) = split_inlines_and_subtables(table);
 
             // We need a newline between inlines and subtables only if both exist
@@ -416,91 +229,65 @@ impl fmt::Display for ArrayOfTables<'_> {
 
             // Unlike a table, we always need to write the array header to create a new element
             // We also know the path here is never empty (can't have a root array of tables)
-            writeln!(f, "{}", ArrayHeader { path: self.path })?;
+            Self::write_array_header(path, f)?;
 
-            write!(f, "{}", Inlines(&inlines))?;
+            Self::write_inlines(&inlines, f)?;
             if need_nl {
                 writeln!(f)?;
             }
-            writeln!(
-                f,
-                "{}",
-                Subtables {
-                    subtables: &subtables,
-                    path: self.path
-                }
-            )?;
+            Self::write_subtables(&subtables, path, f)?;
         }
 
         Ok(())
     }
-}
 
-#[derive(Debug)]
-pub struct Inlines<'a, 'b>(pub &'a [(&'b String, &'b String)]);
-
-impl fmt::Display for Inlines<'_, '_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for &(key, value) in self.0 {
-            writeln!(f, "{} = {}", Key(key), value)?;
+    pub fn write_inlines(inlines: &[(&String, &String)], f: &mut dyn fmt::Write) -> fmt::Result {
+        for &(key, value) in inlines {
+            Self::write_inline(key, value, f)?;
         }
         Ok(())
     }
-}
 
-#[derive(Debug)]
-pub struct Subtables<'a> {
-    pub subtables: &'a [(&'a String, &'a tree::Table)],
-    pub path: &'a [&'a String],
-}
+    pub fn write_inline(key: &str, value: &str, f: &mut dyn fmt::Write) -> fmt::Result {
+        Self::write_key(key, f)?;
+        f.write_str(" = ")?;
+        f.write_str(value)?;
+        f.write_str("\n")
+    }
 
-impl fmt::Display for Subtables<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn write_subtable(
-            f: &mut fmt::Formatter<'_>,
-            key: &String,
-            table: &tree::Table,
-            path: &[&String],
-        ) -> fmt::Result {
-            let path = {
-                let mut tmp = path.to_vec();
-                tmp.push(key);
-                tmp
-            };
-            let result = match *table {
-                tree::Table::Array(ref array) => {
-                    write!(
-                        f,
-                        "{}",
-                        ArrayOfTables {
-                            array,
-                            path: path.as_slice()
-                        }
-                    )
-                }
-                tree::Table::Table(ref table) => write!(
-                    f,
-                    "{}",
-                    Table {
-                        table,
-                        path: path.as_slice()
-                    }
-                ),
-            };
-            result
-        }
-
-        if let Some((first, rest)) = self.subtables.split_first() {
+    pub fn write_subtables(
+        subtables: &[(&String, &tree::Table)],
+        path: &[&String],
+        f: &mut dyn fmt::Write,
+    ) -> fmt::Result {
+        if let Some((first, rest)) = subtables.split_first() {
             let (key, table) = *first;
-            write_subtable(f, key, table, self.path)?;
+            Self::write_subtable(key, table, path, f)?;
 
             for &(key, table) in rest {
                 writeln!(f)?;
-                write_subtable(f, key, table, self.path)?;
+                Self::write_subtable(key, table, path, f)?;
             }
         }
 
         Ok(())
+    }
+
+    pub fn write_subtable(
+        key: &String,
+        table: &tree::Table,
+        path: &[&String],
+        f: &mut dyn fmt::Write,
+    ) -> fmt::Result {
+        let path = {
+            let mut tmp = path.to_vec();
+            tmp.push(key);
+            tmp
+        };
+        match *table {
+            tree::Table::Array(ref array) => Self::write_array_of_tables(array, &path, f),
+            tree::Table::Table(ref table) => Self::write_table(table, &path, f),
+        }
     }
 }
 
@@ -520,6 +307,47 @@ fn split_inlines_and_subtables(
         },
     )
 }
+
+pub trait Integer {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result;
+}
+
+macro_rules! impl_integer {
+    ($($t:ident)*) => ($(
+        impl Integer for $t {
+            #[inline]
+            fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
+                // Just use the Display impl for integer types
+                f.write_fmt(format_args!("{}", self))
+            }
+        }
+    )*);
+}
+
+impl_integer!(i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize);
+
+pub trait Float {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result;
+}
+
+macro_rules! impl_float {
+    ($($t:ident)*) => ($(
+        impl Float for $t {
+            fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
+                if self.is_nan() {
+                    // Ryu stringifies nan as NaN and never prints the sign, TOML wants lowercase
+                    // and we want to preserve the sign
+                    f.write_str(if self.is_sign_positive() { "nan" } else { "-nan" })
+                } else {
+                    let mut buf = ryu::Buffer::new();
+                    f.write_str(buf.format(*self))
+                }
+            }
+        }
+    )*);
+}
+
+impl_float!(f32 f64);
 
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]

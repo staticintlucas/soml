@@ -34,7 +34,7 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
-        write!(self.writer, "{}", writer::Key(value))?;
+        writer::Formatter::write_key(value, self.writer)?;
         Ok(())
     }
 }

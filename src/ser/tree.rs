@@ -100,62 +100,62 @@ impl ser::Serializer for Serializer {
 
     #[inline]
     fn serialize_i8(self, value: i8) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i16(self, value: i16) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i32(self, value: i32) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i64(self, value: i64) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i128(self, value: i128) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u8(self, value: u8) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u16(self, value: u16) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u32(self, value: u32) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u64(self, value: u64) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u128(self, value: u128) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_f32(self, value: f32) -> Result<Self::Ok> {
-        self.serialize_float(value)
+        self.serialize_float(&value)
     }
 
     #[inline]
     fn serialize_f64(self, value: f64) -> Result<Self::Ok> {
-        self.serialize_float(value)
+        self.serialize_float(&value)
     }
 
     #[inline]
@@ -164,7 +164,9 @@ impl ser::Serializer for Serializer {
     }
 
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
-        Ok(Value::Inline(writer::TomlString(value).to_string()))
+        let mut buf = String::new();
+        writer::Formatter::write_string(value, &mut buf)?;
+        Ok(Value::Inline(buf))
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<Self::Ok> {
@@ -290,14 +292,18 @@ impl ser::Serializer for Serializer {
 impl Serializer {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     #[inline]
-    fn serialize_integer<T: writer::IntegerTrait>(self, value: T) -> Result<Value> {
-        Ok(Value::Inline(writer::Integer(value).to_string()))
+    fn serialize_integer<T: writer::Integer>(self, value: &T) -> Result<Value> {
+        let mut buf = String::new();
+        writer::Formatter::write_integer(value, &mut buf)?;
+        Ok(Value::Inline(buf))
     }
 
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     #[inline]
-    fn serialize_float<T: writer::FloatTrait>(self, value: T) -> Result<Value> {
-        Ok(Value::Inline(writer::Float(value).to_string()))
+    fn serialize_float<T: writer::Float>(self, value: &T) -> Result<Value> {
+        let mut buf = String::new();
+        writer::Formatter::write_float(value, &mut buf)?;
+        Ok(Value::Inline(buf))
     }
 }
 

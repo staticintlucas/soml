@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::ser;
 
+use crate::ser::writer::Formatter;
 use crate::ser::{utils, writer, Error, ErrorKind, Result};
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
@@ -46,62 +47,62 @@ where
 
     #[inline]
     fn serialize_i8(self, value: i8) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i16(self, value: i16) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i32(self, value: i32) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i64(self, value: i64) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_i128(self, value: i128) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u8(self, value: u8) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u16(self, value: u16) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u32(self, value: u32) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u64(self, value: u64) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_u128(self, value: u128) -> Result<Self::Ok> {
-        self.serialize_integer(value)
+        self.serialize_integer(&value)
     }
 
     #[inline]
     fn serialize_f32(self, value: f32) -> Result<Self::Ok> {
-        self.serialize_float(value)
+        self.serialize_float(&value)
     }
 
     #[inline]
     fn serialize_f64(self, value: f64) -> Result<Self::Ok> {
-        self.serialize_float(value)
+        self.serialize_float(&value)
     }
 
     #[inline]
@@ -111,7 +112,7 @@ where
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
-        write!(self.writer, "{}", writer::TomlString(value))?;
+        Formatter::write_string(value, self.writer)?;
         Ok(())
     }
 
@@ -243,21 +244,18 @@ where
 {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     #[inline]
-    fn serialize_integer<T: writer::IntegerTrait>(
+    fn serialize_integer<T: writer::Integer>(
         self,
-        value: T,
+        value: &T,
     ) -> Result<<Self as ser::Serializer>::Ok> {
-        write!(self.writer, "{}", writer::Integer(value))?;
+        Formatter::write_integer(value, self.writer)?;
         Ok(())
     }
 
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     #[inline]
-    fn serialize_float<T: writer::FloatTrait>(
-        self,
-        value: T,
-    ) -> Result<<Self as ser::Serializer>::Ok> {
-        write!(self.writer, "{}", writer::Float(value))?;
+    fn serialize_float<T: writer::Float>(self, value: &T) -> Result<<Self as ser::Serializer>::Ok> {
+        Formatter::write_float(value, self.writer)?;
         Ok(())
     }
 }

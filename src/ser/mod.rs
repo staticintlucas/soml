@@ -7,7 +7,7 @@ use serde::ser;
 pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
 pub use self::value::Serializer as ValueSerializer;
-use self::writer::IoWriter;
+use self::writer::{Formatter, IoWriter};
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
@@ -228,20 +228,13 @@ where
     fn end(mut self) -> Result<Self::Ok> {
         match self.arr.end_inner()? {
             tree::Array::Inline(value) => {
-                writeln!(
-                    self.writer,
-                    "{}",
-                    writer::Inlines(&[(&self.key.to_string(), &value)])
-                )?;
+                Formatter::write_inline(self.key, &value, &mut self.writer)?;
             }
             tree::Array::Table(array) => {
-                write!(
-                    self.writer,
-                    "{}",
-                    writer::ArrayOfTables {
-                        array: &array,
-                        path: &[&self.key.to_string()]
-                    }
+                Formatter::write_array_of_tables(
+                    &array,
+                    &[&self.key.to_string()],
+                    &mut self.writer,
                 )?;
             }
         }
@@ -300,14 +293,7 @@ where
 
     #[inline]
     fn end(mut self) -> Result<Self::Ok> {
-        write!(
-            self.writer,
-            "{}",
-            writer::Table {
-                table: &self.table.end_inner(),
-                path: &[],
-            }
-        )?;
+        Formatter::write_table(&self.table.end_inner(), &[], &mut self.writer)?;
         Ok(())
     }
 }
@@ -371,13 +357,10 @@ where
 
     #[inline]
     fn end(mut self) -> Result<Self::Ok> {
-        write!(
-            self.writer,
-            "{}",
-            writer::Table {
-                table: &self.table.end_inner(),
-                path: &[&self.key.to_owned()],
-            }
+        Formatter::write_table(
+            &self.table.end_inner(),
+            &[&self.key.to_owned()],
+            &mut self.writer,
         )?;
         Ok(())
     }
