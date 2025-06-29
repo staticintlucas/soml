@@ -5,7 +5,7 @@ use serde::ser;
 use crate::ser::{utils, writer, Error, ErrorKind, Result};
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Value {
     // Simple value (int, float, string, etc) or inline array/table/etc
     Inline(String),
@@ -25,7 +25,7 @@ impl ser::Serialize for Value {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Table {
     // A regular table
     Table(Vec<(String, Value)>),
