@@ -6,6 +6,7 @@ use serde::ser;
 
 pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
+pub(crate) use self::utils::Impossible;
 pub use self::value::Serializer as ValueSerializer;
 use self::writer::{Formatter, IoWriter};
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
