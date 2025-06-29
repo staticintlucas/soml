@@ -534,7 +534,7 @@ where
             // For AnyDatetime use the key to determine the type
             Self::AnyDatetime {
                 ref mut writer,
-                empty: ref mut first @ true,
+                empty: ref mut empty @ true,
             } if matches!(
                 key,
                 OffsetDatetime::WRAPPER_FIELD
@@ -544,39 +544,39 @@ where
             ) =>
             {
                 value.serialize(utils::RawStringSerializer::new(writer))?;
-                *first = false;
+                *empty = false;
                 Ok(())
             }
             Self::OffsetDatetime {
                 ref mut writer,
-                empty: ref mut first @ true,
+                empty: ref mut empty @ true,
             } if key == OffsetDatetime::WRAPPER_FIELD => {
                 value.serialize(utils::RawStringSerializer::new(writer))?;
-                *first = false;
+                *empty = false;
                 Ok(())
             }
             Self::LocalDatetime {
                 ref mut writer,
-                empty: ref mut first @ true,
+                empty: ref mut empty @ true,
             } if key == LocalDatetime::WRAPPER_FIELD => {
                 value.serialize(utils::RawStringSerializer::new(writer))?;
-                *first = false;
+                *empty = false;
                 Ok(())
             }
             Self::LocalDate {
                 ref mut writer,
-                empty: ref mut first @ true,
+                empty: ref mut empty @ true,
             } if key == LocalDate::WRAPPER_FIELD => {
                 value.serialize(utils::RawStringSerializer::new(writer))?;
-                *first = false;
+                *empty = false;
                 Ok(())
             }
             Self::LocalTime {
                 ref mut writer,
-                empty: ref mut first @ true,
+                empty: ref mut empty @ true,
             } if key == LocalTime::WRAPPER_FIELD => {
                 value.serialize(utils::RawStringSerializer::new(writer))?;
-                *first = false;
+                *empty = false;
                 Ok(())
             }
             Self::AnyDatetime { empty: false, .. }
@@ -671,5 +671,773 @@ where
     fn end(self) -> Result<Self::Ok> {
         self.writer.write_str(" } }")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use assert_matches::assert_matches;
+    use indoc::indoc;
+    use serde::Serializer as _;
+    use serde_bytes::Bytes;
+
+    use super::*;
+
+    #[test]
+    fn serializer_new() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        assert_eq!(serializer.writer.as_ptr(), buf.as_ptr());
+    }
+
+    #[test]
+    fn serializer_serialize_bool() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_bool(true).unwrap();
+        assert_eq!(buf, "true");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_bool(false).unwrap();
+        assert_eq!(buf, "false");
+    }
+
+    #[test]
+    fn serializer_serialize_i8() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i8(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i8(-12).unwrap();
+        assert_eq!(buf, "-12");
+    }
+
+    #[test]
+    fn serializer_serialize_i16() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i16(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i16(-12).unwrap();
+        assert_eq!(buf, "-12");
+    }
+
+    #[test]
+    fn serializer_serialize_i32() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i32(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i32(-12).unwrap();
+        assert_eq!(buf, "-12");
+    }
+
+    #[test]
+    fn serializer_serialize_i64() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i64(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i64(-12).unwrap();
+        assert_eq!(buf, "-12");
+    }
+
+    #[test]
+    fn serializer_serialize_i128() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i128(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_i128(-12).unwrap();
+        assert_eq!(buf, "-12");
+    }
+
+    #[test]
+    fn serializer_serialize_u8() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u8(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u8(12).unwrap();
+        assert_eq!(buf, "12");
+    }
+
+    #[test]
+    fn serializer_serialize_u16() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u16(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u16(12).unwrap();
+        assert_eq!(buf, "12");
+    }
+
+    #[test]
+    fn serializer_serialize_u32() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u32(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u32(12).unwrap();
+        assert_eq!(buf, "12");
+    }
+
+    #[test]
+    fn serializer_serialize_u64() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u64(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u64(12).unwrap();
+        assert_eq!(buf, "12");
+    }
+
+    #[test]
+    fn serializer_serialize_u128() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u128(42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_u128(12).unwrap();
+        assert_eq!(buf, "12");
+    }
+
+    #[test]
+    fn serializer_serialize_f32() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(42.0).unwrap();
+        assert_eq!(buf, "42.0");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(-12.0).unwrap();
+        assert_eq!(buf, "-12.0");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(1e28).unwrap();
+        assert_eq!(buf, "1e28");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(0.5e-9).unwrap();
+        assert_eq!(buf, "5e-10");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(f32::INFINITY).unwrap();
+        assert_eq!(buf, "inf");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(f32::NEG_INFINITY).unwrap();
+        assert_eq!(buf, "-inf");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(f32::NAN).unwrap();
+        assert_eq!(buf, "nan");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f32(-f32::NAN).unwrap();
+        assert_eq!(buf, "-nan");
+    }
+
+    #[test]
+    fn serializer_serialize_f64() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(42.0).unwrap();
+        assert_eq!(buf, "42.0");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(-12.0).unwrap();
+        assert_eq!(buf, "-12.0");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(1e28).unwrap();
+        assert_eq!(buf, "1e28");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(0.5e-9).unwrap();
+        assert_eq!(buf, "5e-10");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(f64::INFINITY).unwrap();
+        assert_eq!(buf, "inf");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(f64::NEG_INFINITY).unwrap();
+        assert_eq!(buf, "-inf");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(f64::NAN).unwrap();
+        assert_eq!(buf, "nan");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_f64(-f64::NAN).unwrap();
+        assert_eq!(buf, "-nan");
+    }
+
+    #[test]
+    fn serializer_serialize_char() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_char('a').unwrap();
+        assert_eq!(buf, r#""a""#);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_char('😎').unwrap();
+        assert_eq!(buf, r#""😎""#);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_char('\n').unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                """
+
+                """"#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_str() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_str("foo").unwrap();
+        assert_eq!(buf, r#""foo""#);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_str("😎").unwrap();
+        assert_eq!(buf, r#""😎""#);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_str("abc\ndef\n").unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                """
+                abc
+                def
+                """"#}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_bytes() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_bytes(b"foo").unwrap();
+        assert_eq!(buf, "[102, 111, 111]");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_bytes(b"\xF0\x9F\x98\x8E").unwrap();
+        assert_eq!(buf, "[240, 159, 152, 142]");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_bytes(b"abc\ndef\n").unwrap();
+        assert_eq!(buf, "[97, 98, 99, 10, 100, 101, 102, 10]");
+    }
+
+    #[test]
+    fn serializer_serialize_none() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        assert_matches!(
+            serializer.serialize_none(),
+            Err(Error(ErrorKind::UnsupportedValue(..)))
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_some() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_some(&42).unwrap();
+        assert_eq!(buf, "42");
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_some("foo").unwrap();
+        assert_eq!(buf, r#""foo""#);
+    }
+
+    #[test]
+    fn serializer_serialize_unit() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        assert_matches!(
+            serializer.serialize_unit(),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_unit_struct() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        assert_matches!(
+            serializer.serialize_unit_struct("name"),
+            Err(Error(ErrorKind::UnsupportedType(..)))
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_unit_variant() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_unit_variant("name", 0, "foo").unwrap();
+        assert_eq!(buf, r#""foo""#);
+    }
+
+    #[test]
+    fn serializer_serialize_newtype_struct() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer.serialize_newtype_struct("name", &42).unwrap();
+        assert_eq!(buf, "42");
+    }
+
+    #[test]
+    fn serializer_serialize_newtype_variant() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        serializer
+            .serialize_newtype_variant("name", 0, "foo", &42)
+            .unwrap();
+        assert_eq!(buf, "{ foo = 42 }");
+    }
+
+    #[test]
+    fn serializer_serialize_seq() {
+        use ser::SerializeSeq as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer.serialize_seq(Some(2)).unwrap();
+        seq.serialize_element(&42).unwrap();
+        seq.serialize_element(&"foo").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn serializer_serialize_tuple() {
+        use ser::SerializeTuple as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer.serialize_tuple(2).unwrap();
+        seq.serialize_element(&42).unwrap();
+        seq.serialize_element(&"foo").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn serializer_serialize_tuple_struct() {
+        use ser::SerializeTupleStruct as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer.serialize_tuple_struct("name", 2).unwrap();
+        seq.serialize_field(&42).unwrap();
+        seq.serialize_field(&"foo").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"[42, "foo"]"#);
+    }
+
+    #[test]
+    fn serializer_serialize_tuple_variant() {
+        use ser::SerializeTupleVariant as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer
+            .serialize_tuple_variant("name", 0, "foo", 2)
+            .unwrap();
+        seq.serialize_field(&42).unwrap();
+        seq.serialize_field(&"bar").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"{ foo = [42, "bar"] }"#);
+    }
+
+    #[test]
+    fn serializer_serialize_map() {
+        use ser::SerializeMap as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer.serialize_map(Some(2)).unwrap();
+        seq.serialize_entry("foo", &42).unwrap();
+        seq.serialize_entry("bar", &"baz").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"{ foo = 42, bar = "baz" }"#);
+    }
+
+    #[test]
+    fn serializer_serialize_struct() {
+        use ser::SerializeStruct as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer.serialize_struct("name", 2).unwrap();
+        seq.serialize_field("foo", &42).unwrap();
+        seq.serialize_field("bar", &"baz").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"{ foo = 42, bar = "baz" }"#);
+    }
+
+    #[test]
+    fn serializer_serialize_struct_variant() {
+        use ser::SerializeStructVariant as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+
+        let mut seq = serializer
+            .serialize_struct_variant("name", 0, "foo", 2)
+            .unwrap();
+        seq.serialize_field("bar", &42).unwrap();
+        seq.serialize_field("baz", &"qux").unwrap();
+        seq.end().unwrap();
+
+        assert_eq!(buf, r#"{ foo = { bar = 42, baz = "qux" } }"#);
+    }
+
+    #[test]
+    fn serializer_serialize_datetime() {
+        use ser::SerializeStruct as _;
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            OffsetDatetime::WRAPPER_FIELD,
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, OffsetDatetime::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(LocalDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDatetime::WRAPPER_FIELD,
+            Bytes::new(LocalDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalDatetime::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(LocalDate::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDate::WRAPPER_FIELD,
+            Bytes::new(LocalDate::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalDate::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(LocalTime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalTime::WRAPPER_FIELD,
+            Bytes::new(LocalTime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalTime::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            OffsetDatetime::WRAPPER_FIELD,
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, OffsetDatetime::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDatetime::WRAPPER_FIELD,
+            Bytes::new(LocalDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalDatetime::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDate::WRAPPER_FIELD,
+            Bytes::new(LocalDate::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalDate::EXAMPLE_STR);
+
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        let mut seq = serializer
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalTime::WRAPPER_FIELD,
+            Bytes::new(LocalTime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        seq.end().unwrap();
+        assert_eq!(buf, LocalTime::EXAMPLE_STR);
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn serializer_serialize_datetime_error() {
+        use ser::SerializeStruct as _;
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            OffsetDatetime::WRAPPER_FIELD,
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        assert_matches!(
+            seq.serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+            ),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDatetime::WRAPPER_FIELD,
+            Bytes::new(LocalDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        assert_matches!(
+            seq.serialize_field(
+                LocalDatetime::WRAPPER_FIELD,
+                Bytes::new(LocalDatetime::EXAMPLE_BYTES),
+            ),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDate::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalDate::WRAPPER_FIELD,
+            Bytes::new(LocalDate::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        assert_matches!(
+            seq.serialize_field(
+                LocalDate::WRAPPER_FIELD,
+                Bytes::new(LocalDate::EXAMPLE_BYTES),
+            ),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalTime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            LocalTime::WRAPPER_FIELD,
+            Bytes::new(LocalTime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        assert_matches!(
+            seq.serialize_field(
+                LocalTime::WRAPPER_FIELD,
+                Bytes::new(LocalTime::EXAMPLE_BYTES),
+            ),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        seq.serialize_field(
+            OffsetDatetime::WRAPPER_FIELD,
+            Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+        )
+        .unwrap();
+        assert_matches!(
+            seq.serialize_field(
+                OffsetDatetime::WRAPPER_FIELD,
+                Bytes::new(OffsetDatetime::EXAMPLE_BYTES),
+            ),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(
+            seq.serialize_field("foo", Bytes::new(b"bar"),),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(
+            seq.serialize_field("foo", Bytes::new(b"bar"),),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDate::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(
+            seq.serialize_field("foo", Bytes::new(b"bar"),),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalTime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(
+            seq.serialize_field("foo", Bytes::new(b"bar"),),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let mut seq = Serializer::new(&mut buf)
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(
+            seq.serialize_field("foo", Bytes::new(b"bar"),),
+            Err(Error(..))
+        );
+
+        let mut buf = String::new();
+        let seq = Serializer::new(&mut buf)
+            .serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(seq.end(), Err(Error(..)));
+
+        let mut buf = String::new();
+        let seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(seq.end(), Err(Error(..)));
+
+        let mut buf = String::new();
+        let seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalDate::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(seq.end(), Err(Error(..)));
+
+        let mut buf = String::new();
+        let seq = Serializer::new(&mut buf)
+            .serialize_struct(LocalTime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(seq.end(), Err(Error(..)));
+
+        let mut buf = String::new();
+        let seq = Serializer::new(&mut buf)
+            .serialize_struct(AnyDatetime::WRAPPER_TYPE, 1)
+            .unwrap();
+        assert_matches!(seq.end(), Err(Error(..)));
     }
 }
