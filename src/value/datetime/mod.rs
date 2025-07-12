@@ -35,8 +35,8 @@ pub enum AnyDatetime {
 }
 
 impl AnyDatetime {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::AnyDatetime::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::AnyDatetime::Wrapper::Field>";
+    pub(crate) const WRAPPER_TYPE: &'static str = "<soml::_impl::AnyDatetime::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &'static str = "<soml::_impl::AnyDatetime::Wrapper::Field>";
 
     #[cfg(test)]
     pub(crate) const EXAMPLE_OFFSET_DATETIME: Self = Self::OffsetDatetime(OffsetDatetime::EXAMPLE);
@@ -320,8 +320,8 @@ pub struct OffsetDatetime {
 }
 
 impl OffsetDatetime {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::OffsetDatetime::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::OffsetDatetime::Wrapper::Field>";
+    pub(crate) const WRAPPER_TYPE: &'static str = "<soml::_impl::OffsetDatetime::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &'static str = "<soml::_impl::OffsetDatetime::Wrapper::Field>";
 
     #[cfg(test)]
     pub(crate) const EXAMPLE: Self = Self {
@@ -330,9 +330,9 @@ impl OffsetDatetime {
         offset: Offset::EXAMPLE,
     };
     #[cfg(test)]
-    pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006+07:08";
+    pub(crate) const EXAMPLE_STR: &'static str = "2023-01-02T03:04:05.006+07:08";
     #[cfg(test)]
-    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
+    pub(crate) const EXAMPLE_BYTES: &'static [u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`OffsetDatetime`] from a byte slice.
     ///
@@ -454,8 +454,8 @@ pub struct LocalDatetime {
 }
 
 impl LocalDatetime {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDatetime::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDatetime::Wrapper::Field>";
+    pub(crate) const WRAPPER_TYPE: &'static str = "<soml::_impl::LocalDatetime::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &'static str = "<soml::_impl::LocalDatetime::Wrapper::Field>";
 
     #[cfg(test)]
     pub(crate) const EXAMPLE: Self = Self {
@@ -463,9 +463,9 @@ impl LocalDatetime {
         time: LocalTime::EXAMPLE,
     };
     #[cfg(test)]
-    pub(crate) const EXAMPLE_STR: &str = "2023-01-02T03:04:05.006";
+    pub(crate) const EXAMPLE_STR: &'static str = "2023-01-02T03:04:05.006";
     #[cfg(test)]
-    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
+    pub(crate) const EXAMPLE_BYTES: &'static [u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalDatetime`] from a byte slice.
     ///
@@ -594,8 +594,8 @@ pub struct LocalDate {
 pub type Date = LocalDate;
 
 impl LocalDate {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalDate::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalDate::Wrapper::Field>";
+    pub(crate) const WRAPPER_TYPE: &'static str = "<soml::_impl::LocalDate::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &'static str = "<soml::_impl::LocalDate::Wrapper::Field>";
 
     #[cfg(test)]
     pub(crate) const EXAMPLE: Self = Self {
@@ -604,9 +604,9 @@ impl LocalDate {
         day: 2,
     };
     #[cfg(test)]
-    pub(crate) const EXAMPLE_STR: &str = "2023-01-02";
+    pub(crate) const EXAMPLE_STR: &'static str = "2023-01-02";
     #[cfg(test)]
-    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
+    pub(crate) const EXAMPLE_BYTES: &'static [u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalDate`] from a byte slice.
     ///
@@ -769,8 +769,8 @@ pub struct LocalTime {
 pub type Time = LocalTime;
 
 impl LocalTime {
-    pub(crate) const WRAPPER_TYPE: &str = "<soml::_impl::LocalTime::Wrapper>";
-    pub(crate) const WRAPPER_FIELD: &str = "<soml::_impl::LocalTime::Wrapper::Field>";
+    pub(crate) const WRAPPER_TYPE: &'static str = "<soml::_impl::LocalTime::Wrapper>";
+    pub(crate) const WRAPPER_FIELD: &'static str = "<soml::_impl::LocalTime::Wrapper::Field>";
 
     #[cfg(test)]
     pub(crate) const EXAMPLE: Self = Self {
@@ -780,9 +780,9 @@ impl LocalTime {
         nanosecond: 6_000_000,
     };
     #[cfg(test)]
-    pub(crate) const EXAMPLE_STR: &str = "03:04:05.006";
+    pub(crate) const EXAMPLE_STR: &'static str = "03:04:05.006";
     #[cfg(test)]
-    pub(crate) const EXAMPLE_BYTES: &[u8] = Self::EXAMPLE_STR.as_bytes();
+    pub(crate) const EXAMPLE_BYTES: &'static [u8] = Self::EXAMPLE_STR.as_bytes();
 
     /// Parses a [`LocalTime`] from a byte slice.
     ///

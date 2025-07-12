@@ -170,17 +170,17 @@ impl PartialEq<soml::Value> for EncodedValue {
         match *value {
             soml::Value::String(ref str) => self.typ == "string" && self.value == *str,
             soml::Value::Integer(int) => {
-                self.typ == "integer" && self.value.parse::<i64>().is_ok_and(|v| v == int)
+                self.typ == "integer" && matches!(self.value.parse::<i64>(), Ok(v) if v == int)
             }
             soml::Value::Float(float) => {
                 self.typ == "float"
-                    && self
-                        .value
-                        .parse::<f64>()
-                        .is_ok_and(|v| (v.is_nan() && float.is_nan()) || (v == float))
+                    && matches!(
+                        self.value.parse::<f64>(),
+                        Ok(v) if (v.is_nan() && float.is_nan()) || (v == float)
+                    )
             }
             soml::Value::Boolean(bool) => {
-                self.typ == "bool" && self.value.parse::<bool>().is_ok_and(|v| v == bool)
+                self.typ == "bool" && matches!(self.value.parse::<bool>(), Ok(v) if v == bool)
             }
             soml::Value::Datetime(ref datetime) => {
                 ChronoDatetime::from(datetime.clone()) == ChronoDatetime::from(self.clone())
@@ -200,16 +200,16 @@ impl PartialEq<soml::Value> for EncodedItem {
     fn eq(&self, value: &soml::Value) -> bool {
         match *self {
             Self::Value(ref enc_value) => enc_value == value,
-            Self::Table(ref enc_table) => value.as_table().is_some_and(|table| {
-                if table.len() != enc_table.len() {
-                    return false;
-                }
-                table
-                    .iter()
-                    .all(|(key, value)| enc_table.get(key).is_some_and(|v| *value == *v))
-            }),
+            Self::Table(ref enc_table) => matches!(
+                value.as_table(),
+                Some(table)
+                    if table.len() == enc_table.len()
+                        && table.iter().all(
+                            |(key, value)| matches!(enc_table.get(key), Some(v) if *value == *v),
+                        )
+            ),
             Self::Array(ref enc_array) => {
-                value.as_array().is_some_and(|array| *enc_array == *array)
+                matches!(value.as_array(), Some(array) if *enc_array == *array)
             }
         }
     }

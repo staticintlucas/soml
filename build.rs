@@ -26,7 +26,7 @@ fn main() {
             continue;
         }
         let path = PathBuf::from(test);
-        if !path.extension().is_some_and(|ext| ext == "toml") {
+        if !matches!(path.extension(), Some(ext) if ext == "toml") {
             continue;
         }
         let mut path_iter = path.iter();

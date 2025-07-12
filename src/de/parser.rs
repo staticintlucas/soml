@@ -604,9 +604,11 @@ impl Parser<'_> {
             b'"' => Ok('"'),
             b'\\' => Ok('\\'),
             b'u' => {
-                let (bytes, rest) = rest
-                    .split_at_checked(4)
-                    .ok_or(ErrorKind::UnterminatedString)?;
+                let (bytes, rest) = if rest.len() >= 4 {
+                    rest.split_at(4)
+                } else {
+                    return Err(ErrorKind::UnterminatedString.into());
+                };
                 let str = str::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
                 let result = u32::from_str_radix(str, 16)
                     .ok()
@@ -616,9 +618,11 @@ impl Parser<'_> {
                 Ok(result)
             }
             b'U' => {
-                let (bytes, rest) = rest
-                    .split_at_checked(8)
-                    .ok_or(ErrorKind::UnterminatedString)?;
+                let (bytes, rest) = if rest.len() >= 8 {
+                    rest.split_at(8)
+                } else {
+                    return Err(ErrorKind::UnterminatedString.into());
+                };
                 let str = str::from_utf8(bytes).map_err(|_| ErrorKind::InvalidEncoding)?;
                 let result = u32::from_str_radix(str, 16)
                     .ok()
@@ -852,14 +856,14 @@ impl Parser<'_> {
 
     fn parse_number_special(&mut self) -> Result<SpecialFloat> {
         match *self.line {
-            [b'-', ref rest @ ..] => match rest.split_at_checked(3) {
-                Some((b"inf", rest)) => Ok((SpecialFloat::NegInfinity, rest)),
-                Some((b"nan", rest)) => Ok((SpecialFloat::NegNan, rest)),
+            [b'-', ref rest @ ..] => match *rest {
+                [b'i', b'n', b'f', ref rest @ ..] => Ok((SpecialFloat::NegInfinity, rest)),
+                [b'n', b'a', b'n', ref rest @ ..] => Ok((SpecialFloat::NegNan, rest)),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
             },
-            [b'+', ref rest @ ..] | ref rest => match rest.split_at_checked(3) {
-                Some((b"inf", rest)) => Ok((SpecialFloat::Infinity, rest)),
-                Some((b"nan", rest)) => Ok((SpecialFloat::Nan, rest)),
+            [b'+', ref rest @ ..] | ref rest => match *rest {
+                [b'i', b'n', b'f', ref rest @ ..] => Ok((SpecialFloat::Infinity, rest)),
+                [b'n', b'a', b'n', ref rest @ ..] => Ok((SpecialFloat::Nan, rest)),
                 _ => Err(ErrorKind::ExpectedToken("inf/nan".into()).into()),
             },
         }
@@ -1236,11 +1240,11 @@ mod tests {
     #[test]
     fn value_type() {
         assert_eq!(Value::String("foo".into()).typ(), Type::String);
-        assert_eq!(Value::Integer(b"123".into()).typ(), Type::Integer);
-        assert_eq!(Value::BinaryInt(b"123".into()).typ(), Type::Integer);
-        assert_eq!(Value::OctalInt(b"123".into()).typ(), Type::Integer);
-        assert_eq!(Value::HexInt(b"123".into()).typ(), Type::Integer);
-        assert_eq!(Value::Float(b"123".into()).typ(), Type::Float);
+        assert_eq!(Value::Integer(b"123".to_vec()).typ(), Type::Integer);
+        assert_eq!(Value::BinaryInt(b"123".to_vec()).typ(), Type::Integer);
+        assert_eq!(Value::OctalInt(b"123".to_vec()).typ(), Type::Integer);
+        assert_eq!(Value::HexInt(b"123".to_vec()).typ(), Type::Integer);
+        assert_eq!(Value::Float(b"123".to_vec()).typ(), Type::Float);
         assert_eq!(
             Value::SpecialFloat(SpecialFloat::Infinity).typ(),
             Type::Float
@@ -1304,8 +1308,8 @@ mod tests {
         assert_matches!(
             parser.parse(),
             Ok(Value::Table(t)) if t == hashmap! {
-                "a".into() => Value::Integer(b"1".into()),
-                "b".into() => Value::Integer(b"2".into()),
+                "a".into() => Value::Integer(b"1".to_vec()),
+                "b".into() => Value::Integer(b"2".to_vec()),
             }
         );
 
@@ -1313,8 +1317,8 @@ mod tests {
         assert_matches!(
             parser.parse(),
             Ok(Value::Table(t)) if t == hashmap! {
-                "a".into() => Value::Integer(b"1".into()),
-                "b".into() => Value::Integer(b"2".into()),
+                "a".into() => Value::Integer(b"1".to_vec()),
+                "b".into() => Value::Integer(b"2".to_vec()),
             }
         );
 
@@ -1370,11 +1374,11 @@ mod tests {
                 "database".into() => Value::Table(hashmap! {
                     "server".into() => Value::String("192.168.1.1".into()),
                     "ports".into() => Value::Array(vec![
-                        Value::Integer(b"8000".into()),
-                        Value::Integer(b"8001".into()),
-                        Value::Integer(b"8002".into()),
+                        Value::Integer(b"8000".to_vec()),
+                        Value::Integer(b"8001".to_vec()),
+                        Value::Integer(b"8002".to_vec()),
                     ]),
-                    "connection_max".into() => Value::Integer(b"5000".into()),
+                    "connection_max".into() => Value::Integer(b"5000".to_vec()),
                     "enabled".into() => Value::Boolean(true),
                 }),
                 "servers".into() => Value::Table(hashmap! {
@@ -1401,8 +1405,8 @@ mod tests {
                         },
                         hashmap! {
                             "value".into() => Value::Array(vec![
-                                Value::Integer(b"1".into()),
-                                Value::Integer(b"2".into()),
+                                Value::Integer(b"1".to_vec()),
+                                Value::Integer(b"2".to_vec()),
                             ]),
                         }
                     ]),
@@ -1708,9 +1712,9 @@ mod tests {
         assert_matches!(
             parser.parse_value(),
             Ok(Value::Array(a)) if a == [
-                Value::Integer(b"123".into()),
-                Value::Integer(b"456".into()),
-                Value::Integer(b"789".into()),
+                Value::Integer(b"123".to_vec()),
+                Value::Integer(b"456".to_vec()),
+                Value::Integer(b"789".to_vec()),
             ]
         );
 
@@ -1718,9 +1722,9 @@ mod tests {
         assert_matches!(
             parser.parse_value(),
             Ok(Value::InlineTable(t)) if t == hashmap! {
-                "a".into() => Value::Integer(b"123".into()),
-                "b".into() => Value::Integer(b"456".into()),
-                "c".into() => Value::Integer(b"789".into()),
+                "a".into() => Value::Integer(b"123".to_vec()),
+                "b".into() => Value::Integer(b"456".to_vec()),
+                "c".into() => Value::Integer(b"789".to_vec()),
             }
         );
     }
@@ -2442,13 +2446,13 @@ mod tests {
         let mut parser = start_parser(b"123]");
         assert_matches!(
             parser.parse_array(),
-            Ok(s) if s == [Value::Integer(b"123".into())]
+            Ok(s) if s == [Value::Integer(b"123".to_vec())]
         );
 
         let mut parser = start_parser(b"123,]");
         assert_matches!(
             parser.parse_array(),
-            Ok(s) if s == [Value::Integer(b"123".into())]
+            Ok(s) if s == [Value::Integer(b"123".to_vec())]
         );
 
         let mut parser = start_parser(indoc! {br"
@@ -2457,16 +2461,16 @@ mod tests {
         "});
         assert_matches!(
             parser.parse_array(),
-            Ok(s) if s == [Value::Integer(b"123".into())]
+            Ok(s) if s == [Value::Integer(b"123".to_vec())]
         );
 
         let mut parser = start_parser(br"123, 456, 789]");
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
-                Value::Integer(b"123".into()),
-                Value::Integer(b"456".into()),
-                Value::Integer(b"789".into())
+                Value::Integer(b"123".to_vec()),
+                Value::Integer(b"456".to_vec()),
+                Value::Integer(b"789".to_vec())
             ]
         );
 
@@ -2474,9 +2478,9 @@ mod tests {
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
-                Value::Integer(b"123".into()),
-                Value::Integer(b"456".into()),
-                Value::Integer(b"789".into())
+                Value::Integer(b"123".to_vec()),
+                Value::Integer(b"456".to_vec()),
+                Value::Integer(b"789".to_vec())
             ]
         );
 
@@ -2489,9 +2493,9 @@ mod tests {
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
-                Value::Integer(b"123".into()),
-                Value::Integer(b"456".into()),
-                Value::Integer(b"789".into())
+                Value::Integer(b"123".to_vec()),
+                Value::Integer(b"456".to_vec()),
+                Value::Integer(b"789".to_vec())
             ]
         );
 
@@ -2504,9 +2508,9 @@ mod tests {
         assert_matches!(
             parser.parse_array(),
             Ok(a) if a == [
-                Value::Integer(b"123".into()),
-                Value::Integer(b"456".into()),
-                Value::Integer(b"789".into())
+                Value::Integer(b"123".to_vec()),
+                Value::Integer(b"456".to_vec()),
+                Value::Integer(b"789".to_vec())
             ]
         );
 
@@ -2528,16 +2532,16 @@ mod tests {
         let mut parser = start_parser(b"abc = 123 }");
         assert_matches!(
             parser.parse_inline_table(),
-            Ok(t) if t == hashmap! { "abc".into() => Value::Integer(b"123".into()) }
+            Ok(t) if t == hashmap! { "abc".into() => Value::Integer(b"123".to_vec()) }
         );
 
         let mut parser = start_parser(br"abc = 123, def = 456, ghi = 789 }");
         assert_matches!(
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
-                "abc".into() => Value::Integer(b"123".into()),
-                "def".into() => Value::Integer(b"456".into()),
-                "ghi".into() => Value::Integer(b"789".into()),
+                "abc".into() => Value::Integer(b"123".to_vec()),
+                "def".into() => Value::Integer(b"456".to_vec()),
+                "ghi".into() => Value::Integer(b"789".to_vec()),
             }
         );
 
@@ -2546,8 +2550,8 @@ mod tests {
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
                 "abc".into() => Value::InlineTable(hashmap! {
-                    "def".into() => Value::Integer(b"123".into()),
-                    "ghi".into() => Value::Integer(b"456".into()),
+                    "def".into() => Value::Integer(b"123".to_vec()),
+                    "ghi".into() => Value::Integer(b"456".to_vec()),
                 }),
             }
         );
@@ -2557,8 +2561,8 @@ mod tests {
             parser.parse_inline_table(),
             Ok(t) if t == hashmap! {
                 "abc".into() => Value::DottedKeyTable(hashmap! {
-                    "def".into() => Value::Integer(b"123".into()),
-                    "ghi".into() => Value::Integer(b"456".into()),
+                    "def".into() => Value::Integer(b"123".to_vec()),
+                    "ghi".into() => Value::Integer(b"456".to_vec()),
                 }),
             }
         );
@@ -2697,7 +2701,7 @@ mod tests {
                 "e".into() => Value::Table(hashmap! {}),
                 "f".into() => Value::ArrayOfTables(vec![hashmap! {}]),
                 "g".into() => Value::InlineTable(hashmap! {}),
-                "h".into() => Value::Integer(b"123".into()),
+                "h".into() => Value::Integer(b"123".to_vec()),
             }),
         };
         assert_eq!(table.clone().get_subtable(&[]), Some(&mut table));

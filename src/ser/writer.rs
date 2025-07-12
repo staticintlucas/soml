@@ -541,18 +541,21 @@ mod tests {
         assert_eq!(buf, "");
 
         let path = ["a", "b", "c"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_table_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_table_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[a.b.c]\n");
 
         let path = ["a", "b.c", "d"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_table_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_table_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[a.\"b.c\".d]\n");
 
         let path = ["a", "😎", "b"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_table_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_table_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[a.\"😎\".b]\n");
     }
 
@@ -563,18 +566,21 @@ mod tests {
         assert_eq!(buf, "");
 
         let path = ["a", "b", "c"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_array_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_array_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[[a.b.c]]\n");
 
         let path = ["a", "b.c", "d"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_array_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_array_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[[a.\"b.c\".d]]\n");
 
         let path = ["a", "😎", "b"].map(ToString::to_string);
+        let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
-        Formatter::write_array_header(&path.each_ref(), &mut buf).unwrap();
+        Formatter::write_array_header(&path, &mut buf).unwrap();
         assert_eq!(buf, "[[a.\"😎\".b]]\n");
     }
 

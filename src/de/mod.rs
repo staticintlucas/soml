@@ -1168,7 +1168,7 @@ mod tests {
         assert_matches!(
             deserializer.parser.parse(),
             Ok(ParsedValue::Table(t)) if t == hashmap! {
-                "abc".into() => ParsedValue::Integer(b"123".into())
+                "abc".into() => ParsedValue::Integer(b"123".to_vec())
             }
         );
     }
@@ -1180,7 +1180,7 @@ mod tests {
         assert_matches!(
             deserializer.parser.parse(),
             Ok(ParsedValue::Table(t)) if t == hashmap! {
-                "abc".into() => ParsedValue::Integer(b"123".into()),
+                "abc".into() => ParsedValue::Integer(b"123".to_vec()),
             }
         );
     }
@@ -1210,19 +1210,19 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::String(s)) if &*s == "hello");
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(123)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(10)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(83)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"123".to_vec()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Integer(291)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".to_vec()));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Float(123.0)));
 
         let deserializer =
@@ -1263,9 +1263,9 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
-            ParsedValue::Integer(b"123".into()),
-            ParsedValue::Integer(b"456".into()),
-            ParsedValue::Integer(b"789".into()),
+            ParsedValue::Integer(b"123".to_vec()),
+            ParsedValue::Integer(b"456".to_vec()),
+            ParsedValue::Integer(b"789".to_vec()),
         ]));
         assert_matches!(
             Value::deserialize(deserializer),
@@ -1278,13 +1278,13 @@ mod tests {
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
             hashmap! {
-                "abc".into() => ParsedValue::Integer(b"123".into()),
+                "abc".into() => ParsedValue::Integer(b"123".to_vec()),
             },
             hashmap! {
-                "def".into() => ParsedValue::Integer(b"456".into()),
+                "def".into() => ParsedValue::Integer(b"456".to_vec()),
             },
             hashmap! {
-                "ghi".into() => ParsedValue::Integer(b"789".into()),
+                "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
             },
         ]));
         assert_matches!(
@@ -1303,7 +1303,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             Value::deserialize(deserializer),
@@ -1313,7 +1313,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             Value::deserialize(deserializer),
@@ -1323,7 +1323,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             Value::deserialize(deserializer),
@@ -1333,7 +1333,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             Value::deserialize(deserializer),
@@ -1358,16 +1358,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_i8() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(i8::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(i8::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(i8::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(i8::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1379,16 +1379,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_i16() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(i16::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(i16::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(i16::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(i16::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1400,16 +1400,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_i32() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(i32::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(i32::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(i32::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(i32::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1421,16 +1421,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_i64() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(i64::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(i64::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(i64::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(i64::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1442,16 +1442,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_i128() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(i128::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(i128::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(i128::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(i128::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1463,16 +1463,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_u8() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(u8::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(u8::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(u8::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(u8::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1484,16 +1484,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_u16() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(u16::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(u16::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(u16::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(u16::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1505,16 +1505,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_u32() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(u32::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(u32::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(u32::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(u32::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1526,16 +1526,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_u64() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(u64::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(u64::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(u64::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(u64::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1547,16 +1547,16 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_u128() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(u128::deserialize(deserializer), Ok(123));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::BinaryInt(b"1010".to_vec()));
         assert_matches!(u128::deserialize(deserializer), Ok(10));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::OctalInt(b"123".to_vec()));
         assert_matches!(u128::deserialize(deserializer), Ok(83));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::HexInt(b"5a".to_vec()));
         assert_matches!(u128::deserialize(deserializer), Ok(90));
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1568,7 +1568,7 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_f32() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".to_vec()));
         assert_matches!(f32::deserialize(deserializer), Ok(123.0));
 
         let deserializer =
@@ -1584,7 +1584,7 @@ mod tests {
 
     #[test]
     fn value_deserializer_deserialize_f64() {
-        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".to_vec()));
         assert_matches!(f64::deserialize(deserializer), Ok(123.0));
 
         let deserializer =
@@ -1612,7 +1612,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidValue(..)))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             char::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -1628,7 +1628,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidType(..)))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             <&str>::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -1640,7 +1640,7 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         assert_matches!(String::deserialize(deserializer), Ok(s) if s == "hello");
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             String::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -1656,7 +1656,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidType(..)))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             <&[u8]>::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -1668,7 +1668,7 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".to_string()));
         assert_matches!(ByteBuf::deserialize(deserializer), Ok(b) if &*b == b"hello");
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             ByteBuf::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -1707,7 +1707,7 @@ mod tests {
         #[derive(Debug, PartialEq, Eq, Deserialize)]
         struct Newtype(i32);
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(Newtype::deserialize(deserializer), Ok(Newtype(123)));
     }
 
@@ -1719,9 +1719,9 @@ mod tests {
         }
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
-            ParsedValue::Integer(b"123".into()),
-            ParsedValue::Integer(b"456".into()),
-            ParsedValue::Integer(b"789".into()),
+            ParsedValue::Integer(b"123".to_vec()),
+            ParsedValue::Integer(b"456".to_vec()),
+            ParsedValue::Integer(b"789".to_vec()),
         ]));
         assert_matches!(
             <Vec<i32>>::deserialize(deserializer),
@@ -1729,9 +1729,9 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
-            hashmap! { "val".into() => ParsedValue::Integer(b"123".into()) },
-            hashmap! { "val".into() => ParsedValue::Integer(b"456".into()) },
-            hashmap! { "val".into() => ParsedValue::Integer(b"789".into()) },
+            hashmap! { "val".into() => ParsedValue::Integer(b"123".to_vec()) },
+            hashmap! { "val".into() => ParsedValue::Integer(b"456".to_vec()) },
+            hashmap! { "val".into() => ParsedValue::Integer(b"789".to_vec()) },
         ]));
         assert_matches!(
             <Vec<Struct>>::deserialize(deserializer),
@@ -1757,7 +1757,7 @@ mod tests {
         }
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
-            ParsedValue::Integer(b"123".into()),
+            ParsedValue::Integer(b"123".to_vec()),
             ParsedValue::String("hello".into()),
             ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
         ]));
@@ -1767,7 +1767,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
-            hashmap! { "val".into() => ParsedValue::Integer(b"123".into()) },
+            hashmap! { "val".into() => ParsedValue::Integer(b"123".to_vec()) },
             hashmap! { "val".into() => ParsedValue::String("hello".into()) },
             hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()) },
         ]));
@@ -1793,7 +1793,7 @@ mod tests {
         struct TupleStruct(i32, String, LocalDate);
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
-            ParsedValue::Integer(b"123".into()),
+            ParsedValue::Integer(b"123".to_vec()),
             ParsedValue::String("hello".into()),
             ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
         ]));
@@ -1814,7 +1814,7 @@ mod tests {
     #[test]
     fn value_deserializer_deserialize_map() {
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             HashMap::<String, i32>::deserialize(deserializer),
@@ -1824,7 +1824,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             HashMap::<String, i32>::deserialize(deserializer),
@@ -1834,7 +1834,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             HashMap::<String, i32>::deserialize(deserializer),
@@ -1844,7 +1844,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             HashMap::<String, i32>::deserialize(deserializer),
@@ -1868,22 +1868,22 @@ mod tests {
         }
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Struct::deserialize(deserializer), Ok(Struct { abc: 123 }));
 
@@ -1965,29 +1965,29 @@ mod tests {
         assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantA));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(Enum::deserialize(deserializer), Ok(Enum::VariantB(123)));
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantC".into() => ParsedValue::InlineTable(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         }));
         assert_matches!(
@@ -1997,8 +1997,8 @@ mod tests {
 
         let deserializer = ValueDeserializer::new(ParsedValue::UndefinedTable(hashmap! {
             "VariantC".into() => ParsedValue::InlineTable(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         }));
         assert_matches!(
@@ -2008,8 +2008,8 @@ mod tests {
 
         let deserializer = ValueDeserializer::new(ParsedValue::DottedKeyTable(hashmap! {
             "VariantC".into() => ParsedValue::InlineTable(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         }));
         assert_matches!(
@@ -2019,8 +2019,8 @@ mod tests {
 
         let deserializer = ValueDeserializer::new(ParsedValue::InlineTable(hashmap! {
             "VariantC".into() => ParsedValue::InlineTable(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         }));
         assert_matches!(
@@ -2029,7 +2029,7 @@ mod tests {
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
-            "VariantA".into() => ParsedValue::Integer(b"123".into()),
+            "VariantA".into() => ParsedValue::Integer(b"123".to_vec()),
         }));
         assert_matches!(
             Enum::deserialize(deserializer),
@@ -2038,8 +2038,8 @@ mod tests {
 
         let deserializer = ValueDeserializer::new(ParsedValue::Table(hashmap! {
             "VariantB".into() => ParsedValue::InlineTable(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         }));
         assert_matches!(
@@ -2053,7 +2053,7 @@ mod tests {
             Err(Error(ErrorKind::InvalidType(..)))
         );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".into()));
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(
             Enum::deserialize(deserializer),
             Err(Error(ErrorKind::InvalidType(..)))
@@ -2093,9 +2093,9 @@ mod tests {
     #[test]
     fn seq_access_next_element() {
         let array = vec![
-            ParsedValue::Integer(b"123".into()),
-            ParsedValue::Integer(b"456".into()),
-            ParsedValue::Integer(b"789".into()),
+            ParsedValue::Integer(b"123".to_vec()),
+            ParsedValue::Integer(b"456".to_vec()),
+            ParsedValue::Integer(b"789".to_vec()),
         ];
         let mut seq = SeqAccess::new(array);
 
@@ -2105,9 +2105,9 @@ mod tests {
         assert_matches!(seq.next_element(), Ok(None::<i32>));
 
         let array = vec![
-            hashmap! { "abc".into() => ParsedValue::Integer(b"123".into()) },
-            hashmap! { "def".into() => ParsedValue::Integer(b"456".into()) },
-            hashmap! { "ghi".into() => ParsedValue::Integer(b"789".into()) },
+            hashmap! { "abc".into() => ParsedValue::Integer(b"123".to_vec()) },
+            hashmap! { "def".into() => ParsedValue::Integer(b"456".to_vec()) },
+            hashmap! { "ghi".into() => ParsedValue::Integer(b"789".to_vec()) },
         ];
         let mut seq = SeqAccess::new(array);
 
@@ -2129,18 +2129,18 @@ mod tests {
     #[test]
     fn seq_access_size_hint() {
         let array = vec![
-            ParsedValue::Integer(b"123".into()),
-            ParsedValue::Integer(b"456".into()),
-            ParsedValue::Integer(b"789".into()),
+            ParsedValue::Integer(b"123".to_vec()),
+            ParsedValue::Integer(b"456".to_vec()),
+            ParsedValue::Integer(b"789".to_vec()),
         ];
         let seq = SeqAccess::new(array);
 
         assert_eq!(seq.size_hint(), Some(3));
 
         let array = vec![
-            hashmap! { "abc".into() => ParsedValue::Integer(b"123".into()) },
-            hashmap! { "def".into() => ParsedValue::Integer(b"456".into()) },
-            hashmap! { "ghi".into() => ParsedValue::Integer(b"789".into()) },
+            hashmap! { "abc".into() => ParsedValue::Integer(b"123".to_vec()) },
+            hashmap! { "def".into() => ParsedValue::Integer(b"456".to_vec()) },
+            hashmap! { "ghi".into() => ParsedValue::Integer(b"789".to_vec()) },
         ];
         let seq = SeqAccess::new(array);
 
@@ -2150,9 +2150,9 @@ mod tests {
     #[test]
     fn map_access_new() {
         let table = hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
-            "def".into() => ParsedValue::Integer(b"456".into()),
-            "ghi".into() => ParsedValue::Integer(b"789".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
+            "def".into() => ParsedValue::Integer(b"456".to_vec()),
+            "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
         };
         let map = MapAccess::new(table.clone());
 
@@ -2165,9 +2165,9 @@ mod tests {
     #[test]
     fn map_access_next_key_value() {
         let table = hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
-            "def".into() => ParsedValue::Integer(b"456".into()),
-            "ghi".into() => ParsedValue::Integer(b"789".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
+            "def".into() => ParsedValue::Integer(b"456".to_vec()),
+            "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
         };
         let mut map = MapAccess::new(table);
 
@@ -2195,9 +2195,9 @@ mod tests {
     #[test]
     fn map_access_next_entry() {
         let table = hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
-            "def".into() => ParsedValue::Integer(b"456".into()),
-            "ghi".into() => ParsedValue::Integer(b"789".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
+            "def".into() => ParsedValue::Integer(b"456".to_vec()),
+            "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
         };
         let mut map = MapAccess::new(table);
 
@@ -2219,9 +2219,9 @@ mod tests {
     #[test]
     fn map_access_size_hint() {
         let table = hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
-            "def".into() => ParsedValue::Integer(b"456".into()),
-            "ghi".into() => ParsedValue::Integer(b"789".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
+            "def".into() => ParsedValue::Integer(b"456".to_vec()),
+            "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
         };
         let map = MapAccess::new(table);
         assert_eq!(map.size_hint(), Some(3));
@@ -2230,16 +2230,16 @@ mod tests {
     #[test]
     fn enum_access_new() {
         let table = hashmap! {
-            "Variant".into() => ParsedValue::Integer(b"123".into()),
+            "Variant".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let enum_ = EnumAccess::new(table).unwrap();
         assert_eq!(enum_.variant, "Variant");
-        assert_eq!(enum_.value, ParsedValue::Integer(b"123".into()));
+        assert_eq!(enum_.value, ParsedValue::Integer(b"123".to_vec()));
 
         let table = hashmap! {
-            "abc".into() => ParsedValue::Integer(b"123".into()),
-            "def".into() => ParsedValue::Integer(b"456".into()),
-            "ghi".into() => ParsedValue::Integer(b"789".into()),
+            "abc".into() => ParsedValue::Integer(b"123".to_vec()),
+            "def".into() => ParsedValue::Integer(b"456".to_vec()),
+            "ghi".into() => ParsedValue::Integer(b"789".to_vec()),
         };
         assert_matches!(
             EnumAccess::new(table),
@@ -2262,15 +2262,15 @@ mod tests {
         assert_matches!(access.variant::<String>(), Ok((v, _)) if v == "VariantA");
 
         let table = hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let access = EnumAccess::new(table).unwrap();
         assert_matches!(access.variant::<String>(), Ok((v, _)) if v == "VariantB");
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Table(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2286,7 +2286,7 @@ mod tests {
         access.unit_variant().unwrap();
 
         let table = hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let access = EnumAccess::new(table).unwrap();
         assert_matches!(
@@ -2296,8 +2296,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
-                ParsedValue::Integer(b"123".into()),
-                ParsedValue::Integer(b"456".into()),
+                ParsedValue::Integer(b"123".to_vec()),
+                ParsedValue::Integer(b"456".to_vec()),
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2308,8 +2308,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2331,15 +2331,15 @@ mod tests {
         );
 
         let table = hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let access = EnumAccess::new(table).unwrap();
         assert_matches!(access.newtype_variant::<i32>(), Ok(123));
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
-                ParsedValue::Integer(b"123".into()),
-                ParsedValue::Integer(b"456".into()),
+                ParsedValue::Integer(b"123".to_vec()),
+                ParsedValue::Integer(b"456".to_vec()),
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2350,8 +2350,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2394,7 +2394,7 @@ mod tests {
         );
 
         let table = hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let access = EnumAccess::new(table).unwrap();
         assert_matches!(
@@ -2404,8 +2404,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
-                ParsedValue::Integer(b"123".into()),
-                ParsedValue::Integer(b"456".into()),
+                ParsedValue::Integer(b"123".to_vec()),
+                ParsedValue::Integer(b"456".to_vec()),
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2413,8 +2413,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2454,7 +2454,7 @@ mod tests {
         assert_matches!(access.struct_variant(&[], Visitor), Ok(m) if m.is_empty());
 
         let table = hashmap! {
-            "VariantB".into() => ParsedValue::Integer(b"123".into()),
+            "VariantB".into() => ParsedValue::Integer(b"123".to_vec()),
         };
         let access = EnumAccess::new(table).unwrap();
         assert_matches!(
@@ -2464,8 +2464,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantC".into() => ParsedValue::Array(vec![
-                ParsedValue::Integer(b"123".into()),
-                ParsedValue::Integer(b"456".into()),
+                ParsedValue::Integer(b"123".to_vec()),
+                ParsedValue::Integer(b"456".to_vec()),
             ]),
         };
         let access = EnumAccess::new(table).unwrap();
@@ -2476,8 +2476,8 @@ mod tests {
 
         let table = hashmap! {
             "VariantD".into() => ParsedValue::Table(hashmap! {
-                "a".into() => ParsedValue::Integer(b"123".into()),
-                "b".into() => ParsedValue::Integer(b"456".into()),
+                "a".into() => ParsedValue::Integer(b"123".to_vec()),
+                "b".into() => ParsedValue::Integer(b"456".to_vec()),
             }),
         };
         let access = EnumAccess::new(table).unwrap();
