@@ -9,7 +9,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, 1.65.0]
+        rust:
+          - version: stable
+            flags:
+          - version: 1.65.0
+            flags: --ignore-rust-version
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -18,13 +22,13 @@ jobs:
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
-        toolchain: ${{ matrix.rust }}
+        toolchain: ${{ matrix.rust.version }}
     - name: Build
-      run: cargo build --all-targets
+      run: cargo build --all-targets ${{ matrix.rust.flags }}
       # env:
       #   RUSTFLAGS: -D warnings # We get warnings for unknown lints on older rust versions
     - name: Test
-      run: cargo test --all
+      run: cargo test --all ${{ matrix.rust.flags }}
 
   docs:
     name: Docs
