@@ -4,7 +4,7 @@ use crate::ser::tree;
 
 #[derive(Debug)]
 pub struct IoWriter<T: io::Write> {
-    writer: T,
+    pub(super) writer: T,
 }
 
 impl<T> IoWriter<T>
@@ -211,8 +211,8 @@ impl Formatter {
         path: &[&String],
         f: &mut dyn fmt::Write,
     ) -> fmt::Result {
-        for table in array {
-            let (inlines, subtables) = split_inlines_and_subtables(table);
+        if let Some((first, rest)) = array.split_first() {
+            let (inlines, subtables) = split_inlines_and_subtables(first);
 
             // We need a newline between inlines and subtables only if both exist
             let need_nl = !inlines.is_empty() && !subtables.is_empty();
@@ -226,6 +226,25 @@ impl Formatter {
                 writeln!(f)?;
             }
             Self::write_subtables(&subtables, path, f)?;
+
+            for table in rest {
+                writeln!(f)?; // Newline between subtables
+
+                let (inlines, subtables) = split_inlines_and_subtables(table);
+
+                // We need a newline between inlines and subtables only if both exist
+                let need_nl = !inlines.is_empty() && !subtables.is_empty();
+
+                // Unlike a table, we always need to write the array header to create a new element
+                // We also know the path here is never empty (can't have a root array of tables)
+                Self::write_array_header(path, f)?;
+
+                Self::write_inlines(&inlines, f)?;
+                if need_nl {
+                    writeln!(f)?;
+                }
+                Self::write_subtables(&subtables, path, f)?;
+            }
         }
 
         Ok(())
@@ -627,16 +646,19 @@ mod tests {
 
         let mut buf = String::new();
         Formatter::write_array_of_tables(
-            &[vec![
-                ("bar".to_string(), Value::Inline("baz".to_string())),
-                (
-                    "qux".to_string(),
-                    Value::Table(Table::Table(vec![(
-                        "quux".to_string(),
-                        Value::Inline("corge".to_string()),
-                    )])),
-                ),
-            ]],
+            &[
+                vec![
+                    ("bar".to_string(), Value::Inline("baz".to_string())),
+                    (
+                        "qux".to_string(),
+                        Value::Table(Table::Table(vec![(
+                            "quux".to_string(),
+                            Value::Inline("corge".to_string()),
+                        )])),
+                    ),
+                ],
+                vec![("grault".to_string(), Value::Inline("garply".to_string()))],
+            ],
             &[&"foo".to_string()],
             &mut buf,
         )
@@ -649,6 +671,9 @@ mod tests {
 
                 [foo.qux]
                 quux = corge
+
+                [[foo]]
+                grault = garply
             "}
         );
 
