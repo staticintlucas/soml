@@ -28,7 +28,7 @@ where
     T: ser::Serialize,
 {
     let mut dst = String::new();
-    value.serialize(Serializer::from_fmt_writer(&mut dst))?;
+    value.serialize(Serializer::new(&mut dst))?;
     Ok(dst)
 }
 
@@ -364,5 +364,537 @@ where
             &mut self.writer,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use assert_matches::assert_matches;
+    use indoc::indoc;
+    use maplit::btreemap;
+    use serde::Serializer as _;
+
+    use super::*;
+    use crate::value::Offset;
+
+    mod example {
+        use std::collections::BTreeMap;
+
+        use crate::value::OffsetDatetime;
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Struct {
+            pub title: String,
+            pub owner: Owner,
+            pub database: Database,
+            pub servers: BTreeMap<String, Server>,
+            pub clients: Clients,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Owner {
+            pub name: String,
+            pub dob: OffsetDatetime,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Database {
+            pub server: String,
+            pub ports: Vec<u16>,
+            pub connection_max: usize,
+            pub enabled: bool,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Server {
+            pub ip: String,
+            pub dc: String,
+        }
+
+        #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+        pub struct Clients {
+            pub hosts: Vec<String>,
+            pub data: BTreeMap<String, usize>,
+        }
+    }
+
+    #[test]
+    fn ser_to_string() {
+        let result = to_string(&example::Struct {
+            title: "TOML Example".into(),
+            owner: example::Owner {
+                name: "Tom Preston-Werner".into(),
+                dob: OffsetDatetime {
+                    date: LocalDate {
+                        year: 1979,
+                        month: 5,
+                        day: 27,
+                    },
+                    time: LocalTime {
+                        hour: 7,
+                        minute: 32,
+                        second: 0,
+                        nanosecond: 0,
+                    },
+                    offset: Offset::Custom { minutes: -480 },
+                },
+            },
+            database: example::Database {
+                server: "192.168.1.1".into(),
+                ports: vec![8000, 8001, 8002],
+                connection_max: 5000,
+                enabled: true,
+            },
+            servers: btreemap! {
+                "alpha".into() => example::Server {
+                    ip: "10.0.0.1".into(),
+                    dc: "eqdc10".into(),
+                },
+                "beta".into() => example::Server {
+                    ip: "10.0.0.2".into(),
+                    dc: "eqdc10".into(),
+                },
+            },
+            clients: example::Clients {
+                hosts: vec!["alpha".into(), "omega".into()],
+                data: btreemap! {
+                    "gamma".into() => 1,
+                    "delta".into() => 2,
+                },
+            },
+        })
+        .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                title = "TOML Example"
+
+                [owner]
+                name = "Tom Preston-Werner"
+                dob = 1979-05-27T07:32:00-08:00
+
+                [database]
+                server = "192.168.1.1"
+                ports = [8000, 8001, 8002]
+                connection_max = 5000
+                enabled = true
+
+                [servers.alpha]
+                ip = "10.0.0.1"
+                dc = "eqdc10"
+
+                [servers.beta]
+                ip = "10.0.0.2"
+                dc = "eqdc10"
+
+                [clients]
+                hosts = ["alpha", "omega"]
+
+                [clients.data]
+                delta = 2
+                gamma = 1
+            "#}
+        );
+    }
+
+    #[test]
+    fn ser_to_io_writer() {
+        let mut result = Vec::new();
+        to_io_writer(
+            &mut result,
+            &example::Struct {
+                title: "TOML Example".into(),
+                owner: example::Owner {
+                    name: "Tom Preston-Werner".into(),
+                    dob: OffsetDatetime {
+                        date: LocalDate {
+                            year: 1979,
+                            month: 5,
+                            day: 27,
+                        },
+                        time: LocalTime {
+                            hour: 7,
+                            minute: 32,
+                            second: 0,
+                            nanosecond: 0,
+                        },
+                        offset: Offset::Custom { minutes: -480 },
+                    },
+                },
+                database: example::Database {
+                    server: "192.168.1.1".into(),
+                    ports: vec![8000, 8001, 8002],
+                    connection_max: 5000,
+                    enabled: true,
+                },
+                servers: btreemap! {
+                    "alpha".into() => example::Server {
+                        ip: "10.0.0.1".into(),
+                        dc: "eqdc10".into(),
+                    },
+                    "beta".into() => example::Server {
+                        ip: "10.0.0.2".into(),
+                        dc: "eqdc10".into(),
+                    },
+                },
+                clients: example::Clients {
+                    hosts: vec!["alpha".into(), "omega".into()],
+                    data: btreemap! {
+                        "gamma".into() => 1,
+                        "delta".into() => 2,
+                    },
+                },
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {br#"
+                title = "TOML Example"
+
+                [owner]
+                name = "Tom Preston-Werner"
+                dob = 1979-05-27T07:32:00-08:00
+
+                [database]
+                server = "192.168.1.1"
+                ports = [8000, 8001, 8002]
+                connection_max = 5000
+                enabled = true
+
+                [servers.alpha]
+                ip = "10.0.0.1"
+                dc = "eqdc10"
+
+                [servers.beta]
+                ip = "10.0.0.2"
+                dc = "eqdc10"
+
+                [clients]
+                hosts = ["alpha", "omega"]
+
+                [clients.data]
+                delta = 2
+                gamma = 1
+            "#}
+        );
+    }
+
+    #[test]
+    fn ser_to_fmt_writer() {
+        let mut result = String::new();
+        to_fmt_writer(
+            &mut result,
+            &example::Struct {
+                title: "TOML Example".into(),
+                owner: example::Owner {
+                    name: "Tom Preston-Werner".into(),
+                    dob: OffsetDatetime {
+                        date: LocalDate {
+                            year: 1979,
+                            month: 5,
+                            day: 27,
+                        },
+                        time: LocalTime {
+                            hour: 7,
+                            minute: 32,
+                            second: 0,
+                            nanosecond: 0,
+                        },
+                        offset: Offset::Custom { minutes: -480 },
+                    },
+                },
+                database: example::Database {
+                    server: "192.168.1.1".into(),
+                    ports: vec![8000, 8001, 8002],
+                    connection_max: 5000,
+                    enabled: true,
+                },
+                servers: btreemap! {
+                    "alpha".into() => example::Server {
+                        ip: "10.0.0.1".into(),
+                        dc: "eqdc10".into(),
+                    },
+                    "beta".into() => example::Server {
+                        ip: "10.0.0.2".into(),
+                        dc: "eqdc10".into(),
+                    },
+                },
+                clients: example::Clients {
+                    hosts: vec!["alpha".into(), "omega".into()],
+                    data: btreemap! {
+                        "gamma".into() => 1,
+                        "delta".into() => 2,
+                    },
+                },
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            indoc! {r#"
+                title = "TOML Example"
+
+                [owner]
+                name = "Tom Preston-Werner"
+                dob = 1979-05-27T07:32:00-08:00
+
+                [database]
+                server = "192.168.1.1"
+                ports = [8000, 8001, 8002]
+                connection_max = 5000
+                enabled = true
+
+                [servers.alpha]
+                ip = "10.0.0.1"
+                dc = "eqdc10"
+
+                [servers.beta]
+                ip = "10.0.0.2"
+                dc = "eqdc10"
+
+                [clients]
+                hosts = ["alpha", "omega"]
+
+                [clients.data]
+                delta = 2
+                gamma = 1
+            "#}
+        );
+    }
+
+    #[test]
+    fn serializer_new() {
+        let mut buf = String::new();
+        let serializer = Serializer::new(&mut buf);
+        assert_eq!(serializer.writer, "");
+    }
+
+    #[test]
+    fn serializer_from_io_writer() {
+        let mut buf = Vec::new();
+        let serializer = Serializer::from_io_writer(&mut buf);
+        assert_eq!(serializer.writer.writer, b"");
+    }
+
+    #[test]
+    fn serializer_from_fmt_writer() {
+        let mut buf = String::new();
+        let serializer = Serializer::from_fmt_writer(&mut buf);
+        assert_eq!(serializer.writer, "");
+    }
+
+    #[test]
+    fn serializer_serialize_newtype_variant() {
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        serializer
+            .serialize_newtype_variant("name", 0, "foo", &42)
+            .unwrap();
+
+        assert_eq!(
+            buf,
+            indoc! {r"
+                foo = 42
+            "}
+        );
+    }
+
+    #[test]
+    fn serializer_serialize_tuple_variant() {
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        let seq = serializer
+            .serialize_tuple_variant("name", 0, "foo", 2)
+            .unwrap();
+
+        assert_matches!(seq, WrappedArraySerializer {
+            writer: _,
+            key: "foo",
+            arr: tree::ArraySerializer { arr },
+        } if arr.capacity() == 2);
+    }
+
+    #[test]
+    fn serializer_serialize_map() {
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        let seq = serializer.serialize_map(Some(2)).unwrap();
+
+        assert_matches!(seq, TableSerializer {
+            writer: _,
+            table: tree::TableSerializer { table, .. }
+        } if table.capacity() == 2);
+    }
+
+    #[test]
+    fn serializer_serialize_struct() {
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        let seq = serializer.serialize_struct("name", 2).unwrap();
+
+        assert_matches!(seq, TableSerializer {
+            writer: _,
+            table: tree::TableSerializer { table, .. }
+        } if table.capacity() == 2);
+
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        let seq = serializer.serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1);
+        assert_matches!(seq, Err(Error(ErrorKind::UnsupportedType(..))));
+    }
+
+    #[test]
+    fn serializer_serialize_struct_variant() {
+        let mut buf = String::new();
+        let serializer = Serializer { writer: &mut buf };
+
+        let seq = serializer
+            .serialize_struct_variant("name", 0, "foo", 2)
+            .unwrap();
+
+        assert_matches!(seq, WrappedTableSerializer {
+            writer: _,
+            key: "foo",
+            table: tree::TableSerializer { table, .. },
+        } if table.capacity() == 2);
+    }
+
+    #[test]
+    fn wrapped_array_serializer() {
+        use ser::SerializeTupleVariant as _;
+
+        let mut buf = String::new();
+        let mut array = WrappedArraySerializer::start(&mut buf, "foo", 2);
+        assert_eq!(array.key, "foo");
+        assert!(array.arr.arr.is_empty());
+        assert_eq!(array.arr.arr.capacity(), 2);
+
+        array.serialize_field(&42).unwrap();
+        assert_eq!(array.arr.arr.len(), 1);
+
+        array.serialize_field("bar").unwrap();
+        assert_eq!(array.arr.arr.len(), 2);
+
+        array.end().unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                foo = [42, "bar"]
+            "#}
+        );
+
+        let mut buf = String::new();
+        let mut array = WrappedArraySerializer::start(&mut buf, "foo", 2);
+        assert_eq!(array.key, "foo");
+        assert!(array.arr.arr.is_empty());
+        assert_eq!(array.arr.arr.capacity(), 2);
+
+        array.serialize_field(&btreemap! {"bar" => 42}).unwrap();
+        assert_eq!(array.arr.arr.len(), 1);
+
+        array.serialize_field(&btreemap! {"baz" => "qux"}).unwrap();
+        assert_eq!(array.arr.arr.len(), 2);
+
+        array.end().unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                [[foo]]
+                bar = 42
+
+                [[foo]]
+                baz = "qux"
+            "#}
+        );
+    }
+
+    #[test]
+    fn table_serializer_map() {
+        use ser::SerializeMap as _;
+
+        let mut buf = String::new();
+        let mut table = TableSerializer::start(&mut buf, None);
+        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table.capacity(), 0);
+
+        table.serialize_key("foo").unwrap();
+        assert!(table.table.table.is_empty());
+
+        table.serialize_value(&42).unwrap();
+        assert_eq!(table.table.table.len(), 1);
+
+        table.serialize_entry("bar", &"baz").unwrap();
+        assert_eq!(table.table.table.len(), 2);
+
+        table.end().unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                foo = 42
+                bar = "baz"
+            "#}
+        );
+    }
+
+    #[test]
+    fn table_serializer_struct() {
+        use ser::SerializeStruct as _;
+
+        let mut buf = String::new();
+        let mut table = TableSerializer::start(&mut buf, Some(2));
+        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table.capacity(), 2);
+
+        table.serialize_field("foo", &42).unwrap();
+        assert_eq!(table.table.table.len(), 1);
+
+        table.serialize_field("bar", &"baz").unwrap();
+        assert_eq!(table.table.table.len(), 2);
+
+        table.end().unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                foo = 42
+                bar = "baz"
+            "#}
+        );
+    }
+
+    #[test]
+    fn wrapped_table_serializer() {
+        use ser::SerializeStructVariant as _;
+
+        let mut buf = String::new();
+        let mut table = WrappedTableSerializer::start(&mut buf, "foo", 2);
+        assert_eq!(table.key, "foo");
+        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table.capacity(), 2);
+
+        table.serialize_field("bar", &42).unwrap();
+        assert_eq!(table.table.table.len(), 1);
+
+        table.serialize_field("baz", &"qux").unwrap();
+        assert_eq!(table.table.table.len(), 2);
+
+        table.end().unwrap();
+        assert_eq!(
+            buf,
+            indoc! {r#"
+                [foo]
+                bar = 42
+                baz = "qux"
+            "#}
+        );
     }
 }

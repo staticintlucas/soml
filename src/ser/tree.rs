@@ -454,7 +454,7 @@ impl ser::SerializeTupleVariant for WrappedArraySerializer {
 
 #[derive(Debug)]
 pub struct TableSerializer {
-    table: Vec<(String, Value)>,
+    pub table: Vec<(String, Value)>,
     key: Option<String>,
 }
 
