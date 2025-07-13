@@ -974,8 +974,8 @@ impl Parser<'_> {
 
     fn skip_comment(&mut self) -> Result<()> {
         if let Some(rest) = self.line.strip_prefix(b"#") {
-            // Only validate comments without feature = "fast"
-            if cfg!(not(feature = "fast")) {
+            #[cfg(feature = "strict")] // Only validate comments with feature = "strict"
+            {
                 // validate UTF-8
                 _ = str::from_utf8(rest).map_err(|_| ErrorKind::InvalidEncoding)?;
                 // Check for any invalid characters in the comment

@@ -641,7 +641,7 @@ impl LocalDate {
             .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
         let day = u8::from_str(day).map_err(|_| ErrorKind::InvalidDatetime)?;
 
-        #[cfg(not(feature = "fast"))]
+        #[cfg(feature = "strict")]
         {
             let is_valid = match month {
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => (1..=31).contains(&day),
@@ -849,7 +849,7 @@ impl LocalTime {
             0
         };
 
-        #[cfg(not(feature = "fast"))]
+        #[cfg(feature = "strict")]
         if hour >= 24 || minute >= 60 || second >= 61 {
             // second == 60 is valid for a leap second
             return Err(ErrorKind::InvalidDatetime.into());
@@ -1019,7 +1019,7 @@ impl Offset {
                 .unwrap_or_else(|_| unreachable!("we should only have ASCII digits at this point"));
             let minutes = i16::from_str(minutes).map_err(|_| ErrorKind::InvalidDatetime)?;
 
-            #[cfg(not(feature = "fast"))]
+            #[cfg(feature = "strict")]
             if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
                 return Err(ErrorKind::InvalidDatetime.into());
             }

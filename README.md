@@ -30,22 +30,25 @@ We also aim to maintain API-compatibility with the toml crate, so migrating to (
 Feature    | Default | Description
 :----------|:-------:|:----------------------------------------------
 `std`      |    ✅    | Enables `std` support
-`alloc`    |         | Enables `alloc` support for `no_std` targets
+`strict`   |    ✅    | Enables extra checks for strict compliance with the TOML spec (see below)
 `datetime` |    ✅    | Enables support for TOML date-time values
-`fast`     |         | Disables certain checks required by the TOML spec to improve performance (see below)
 
-### The `fast` feature
+### The `strict` feature
 
-The `fast` feature disables certain checks required by the TOML spec to improve overall performance.
-This will produce the same result for any valid TOML document, but the parser will be slightly more permissive of not-technically-valid input.
-The `fast` feature should not be enabled if strict compliance with the TOML spec is required.
+The (enabled by default) `strict` feature adds certain checks required to validate compliance with the TOML spec.
+These checks can be disabled allowing the parser accept some unambiguous but not-technically-valid TOML.
+For some applications disabling the `strict` feature could yield a small performance improvement.
 
-The following checks are currently disabled:
+The following checks are currently disabled without the `strict` feature:
 
-- Doesn't check comments for valid UTF-8
-- Doesn't check comments for disallowed control characters
-- Skips range checking date-time values
-  - For example, `2024-14-35T25:61:63` will not be rejected as invalid
+- Validate comments are valid UTF-8
+- Scan comments for disallowed control characters
+- Range checking on date-time values
+  - For example, `2024-14-35T25:61:63` is invalid
+
+**ℹ️ Important** \
+The exact list of checks controlled by the `strict` feature is considered an implementation detail and is subject to change.
+Changes to which not-strictly-valid TOML is accepted when `strict` is disabled is not considered a breaking change.
 
 <!-- binsize start -->
 

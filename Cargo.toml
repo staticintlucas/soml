@@ -11,11 +11,11 @@ keywords = ["serde", "toml", "parsing", "deserializing"]
 categories = ["config", "parser-implementations", "parsing"]
 
 [features]
-default = ["std", "datetime"]
+default = ["std", "datetime", "strict"]
 std = []
 # alloc = [] # TODO
 datetime = [] # TODO
-fast = []
+strict = []
 
 [dependencies]
 ryu = "1.0"
