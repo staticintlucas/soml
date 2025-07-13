@@ -6,14 +6,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        rust:
-          - version: stable
-            flags:
-          - version: 1.65.0
-            flags: --ignore-rust-version
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -22,13 +14,38 @@ jobs:
     - name: Setup toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
-        toolchain: ${{ matrix.rust.version }}
+        toolchain: stable
+    - name: Update lockfile
+      run: cargo update
     - name: Build
-      run: cargo build --all-targets ${{ matrix.rust.flags }}
-      # env:
-      #   RUSTFLAGS: -D warnings # We get warnings for unknown lints on older rust versions
+      run: cargo build --all-targets
+      env:
+        RUSTFLAGS: -D warnings
     - name: Test
-      run: cargo test --all ${{ matrix.rust.flags }}
+      run: cargo test --all
+
+  msrv:
+    name: Test MSRV
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Detect MSRV
+      uses: SebRollen/toml-action@v1.2.0
+      id: msrv
+      with:
+        file: 'Cargo.toml'
+        field: 'package.rust-version'
+    - name: Setup toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: ${{ steps.msrv.outputs.value }}
+    - name: Build
+      run: cargo build --all-targets --locked
+    - name: Test
+      run: cargo test --all --locked
 
   docs:
     name: Docs
