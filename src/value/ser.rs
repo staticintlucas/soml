@@ -627,46 +627,71 @@ mod tests {
     use maplit::btreemap;
     use serde::Serializer as _;
     use serde_bytes::Bytes;
+    use serde_test::{assert_ser_tokens, Token};
 
     use super::*;
     use crate::value::Datetime;
 
     #[test]
     fn serialize_value() {
-        let result = serde_json::to_string(&Value::String("Hello!".to_string())).unwrap();
-        assert_eq!(result, r#""Hello!""#);
+        let value = Value::String("Hello!".to_string());
+        let tokens = [Token::Str("Hello!")];
+        assert_ser_tokens(&value, &tokens);
 
-        let result = serde_json::to_string(&Value::Integer(42)).unwrap();
-        assert_eq!(result, "42");
+        let value = Value::Integer(42);
+        let tokens = [Token::I64(42)];
+        assert_ser_tokens(&value, &tokens);
 
-        let result = serde_json::to_string(&Value::Float(42.0)).unwrap();
-        assert_eq!(result, "42.0");
+        let value = Value::Float(42.0);
+        let tokens = [Token::F64(42.0)];
+        assert_ser_tokens(&value, &tokens);
 
-        let result = serde_json::to_string(&Value::Boolean(true)).unwrap();
-        assert_eq!(result, "true");
+        let value = Value::Boolean(true);
+        let tokens = [Token::Bool(true)];
+        assert_ser_tokens(&value, &tokens);
 
-        let result =
-            serde_json::to_string(&Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)).unwrap();
-        assert_eq!(
-            result,
-            r#"{"<soml::_impl::OffsetDatetime::Wrapper::Field>":[50,48,50,51,45,48,49,45,48,50,84,48,51,58,48,52,58,48,53,46,48,48,54,43,48,55,58,48,56]}"#
-        );
+        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+        let tokens = [
+            Token::Struct {
+                name: AnyDatetime::WRAPPER_TYPE,
+                len: 1,
+            },
+            Token::Str(OffsetDatetime::WRAPPER_FIELD),
+            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
+            Token::StructEnd,
+        ];
+        assert_ser_tokens(&value, &tokens);
 
-        let result = serde_json::to_string(&Value::Array(vec![
+        let value = Value::Array(vec![
             Value::Integer(1),
             Value::Integer(2),
             Value::Integer(3),
-        ]))
-        .unwrap();
-        assert_eq!(result, "[1,2,3]");
+        ]);
+        let tokens = [
+            Token::Seq { len: Some(3) },
+            Token::I64(1),
+            Token::I64(2),
+            Token::I64(3),
+            Token::SeqEnd,
+        ];
+        assert_ser_tokens(&value, &tokens);
 
-        let result = serde_json::to_string(&Value::Table(btreemap! {
+        let value = Value::Table(btreemap! {
             "one".to_string() => Value::Integer(1),
             "two".to_string() => Value::Integer(2),
             "three".to_string() => Value::Integer(3),
-        }))
-        .unwrap();
-        assert_eq!(result, r#"{"one":1,"three":3,"two":2}"#);
+        });
+        let tokens = [
+            Token::Map { len: Some(3) },
+            Token::Str("one"),
+            Token::I64(1),
+            Token::Str("three"), // BTreeMap will alphabetise the keys
+            Token::I64(3),
+            Token::Str("two"),
+            Token::I64(2),
+            Token::MapEnd,
+        ];
+        assert_ser_tokens(&value, &tokens);
     }
 
     #[test]
