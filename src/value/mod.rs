@@ -598,6 +598,41 @@ impl From<Datetime> for Value {
     }
 }
 
+impl From<AnyDatetime> for Value {
+    #[inline]
+    fn from(value: AnyDatetime) -> Self {
+        Self::Datetime(value.into())
+    }
+}
+
+impl From<OffsetDatetime> for Value {
+    #[inline]
+    fn from(value: OffsetDatetime) -> Self {
+        Self::Datetime(value.into())
+    }
+}
+
+impl From<LocalDatetime> for Value {
+    #[inline]
+    fn from(value: LocalDatetime) -> Self {
+        Self::Datetime(value.into())
+    }
+}
+
+impl From<LocalDate> for Value {
+    #[inline]
+    fn from(value: LocalDate) -> Self {
+        Self::Datetime(value.into())
+    }
+}
+
+impl From<LocalTime> for Value {
+    #[inline]
+    fn from(value: LocalTime) -> Self {
+        Self::Datetime(value.into())
+    }
+}
+
 impl<V> From<Vec<V>> for Value
 where
     V: Into<Self>,
