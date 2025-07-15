@@ -6,6 +6,12 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flags:
+        - --all-targets
+        - --lib --no-default-features --features=std,strict # datetime disabled
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -18,11 +24,11 @@ jobs:
     - name: Update lockfile
       run: cargo update
     - name: Build
-      run: cargo build --all-targets
+      run: cargo build ${{ matrix.flags }}
       env:
         RUSTFLAGS: -D warnings
     - name: Test
-      run: cargo test --all
+      run: cargo test --no-fail-fast ${{ matrix.flags }}
 
   msrv:
     name: Test MSRV
@@ -45,7 +51,7 @@ jobs:
     - name: Build
       run: cargo build --all-targets --locked
     - name: Test
-      run: cargo test --all --locked
+      run: cargo test --no-fail-fast --locked
 
   docs:
     name: Docs
