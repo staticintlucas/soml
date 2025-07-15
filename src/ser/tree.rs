@@ -3,6 +3,7 @@ use std::result::Result as StdResult;
 use serde::ser;
 
 use crate::ser::{utils, writer, Error, ErrorKind, Result};
+#[cfg(feature = "datetime")]
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -89,7 +90,10 @@ impl ser::Serializer for Serializer {
     type SerializeTupleStruct = ArraySerializer;
     type SerializeTupleVariant = WrappedArraySerializer;
     type SerializeMap = TableSerializer;
+    #[cfg(feature = "datetime")]
     type SerializeStruct = TableOrDatetimeSerializer;
+    #[cfg(not(feature = "datetime"))]
+    type SerializeStruct = TableSerializer;
     type SerializeStructVariant = WrappedTableSerializer;
 
     fn serialize_bool(self, value: bool) -> Result<Self::Ok> {
@@ -274,7 +278,12 @@ impl ser::Serializer for Serializer {
 
     #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        Ok(Self::SerializeStruct::start(name, len))
+        match name {
+            #[cfg(feature = "datetime")]
+            name => Ok(Self::SerializeStruct::start(name, len)),
+            #[cfg(not(feature = "datetime"))]
+            _ => Ok(Self::SerializeStruct::start(Some(len))),
+        }
     }
 
     #[inline]
@@ -535,6 +544,7 @@ impl ser::SerializeStruct for TableSerializer {
     }
 }
 
+#[cfg(feature = "datetime")]
 #[derive(Debug)]
 enum TableOrDatetimeSerializer {
     // Used if type name is AnyDatetime::WRAPPER_TYPE. To detect the datetime type we use the field
@@ -546,6 +556,7 @@ enum TableOrDatetimeSerializer {
     Table(TableSerializer),
 }
 
+#[cfg(feature = "datetime")]
 impl TableOrDatetimeSerializer {
     #[inline]
     pub fn start(name: &'static str, len: usize) -> Self {
@@ -560,6 +571,7 @@ impl TableOrDatetimeSerializer {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl ser::SerializeStruct for TableOrDatetimeSerializer {
     type Ok = <TableSerializer as ser::SerializeStruct>::Ok;
     type Error = <TableSerializer as ser::SerializeStruct>::Error;
@@ -807,6 +819,7 @@ mod tests {
     use indoc::indoc;
     use maplit::hashmap;
     use serde::Serializer as _;
+    #[cfg(feature = "datetime")]
     use serde_bytes::Bytes;
     use serde_test::{assert_ser_tokens, Token};
 
@@ -1115,9 +1128,17 @@ mod tests {
 
     #[test]
     fn serializer_serialize_struct() {
+        #[cfg(feature = "datetime")]
         assert_matches!(
             Serializer.serialize_struct("name", 2),
             Ok(TableOrDatetimeSerializer::Table(TableSerializer { table, key: None }))
+                if table.capacity() == 2
+        );
+
+        #[cfg(not(feature = "datetime"))]
+        assert_matches!(
+            Serializer.serialize_struct("name", 2),
+            Ok(TableSerializer { table, key: None })
                 if table.capacity() == 2
         );
     }
@@ -1305,6 +1326,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_struct() {
         use ser::SerializeStruct as _;
@@ -1336,6 +1358,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_offset_datetime() {
         use ser::SerializeStruct as _;
@@ -1358,6 +1381,7 @@ mod tests {
         assert_matches!(table.end().unwrap(), Value::Inline(v) if v == OffsetDatetime::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_local_datetime() {
         use ser::SerializeStruct as _;
@@ -1377,6 +1401,7 @@ mod tests {
         assert_matches!(table.end().unwrap(), Value::Inline(v) if v == LocalDatetime::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_local_date() {
         use ser::SerializeStruct as _;
@@ -1396,6 +1421,7 @@ mod tests {
         assert_matches!(table.end().unwrap(), Value::Inline(v) if v == LocalDate::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_local_time() {
         use ser::SerializeStruct as _;
@@ -1415,6 +1441,7 @@ mod tests {
         assert_matches!(table.end().unwrap(), Value::Inline(v) if v == LocalTime::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_any_datetime() {
         use ser::SerializeStruct as _;
@@ -1476,6 +1503,7 @@ mod tests {
         assert_matches!(table.end().unwrap(), Value::Inline(v) if v == LocalTime::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_multiple_fields() {
         use ser::SerializeStruct as _;
@@ -1497,6 +1525,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_incorrect_key() {
         use ser::SerializeStruct as _;
@@ -1511,6 +1540,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_incorrect_type() {
         use ser::SerializeStruct as _;
@@ -1522,6 +1552,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn table_or_datetime_serializer_no_fields() {
         use ser::SerializeStruct as _;

@@ -14,7 +14,7 @@ categories = ["config", "parser-implementations", "parsing"]
 default = ["std", "datetime", "strict"]
 std = []
 # alloc = [] # TODO
-datetime = [] # TODO
+datetime = []
 strict = []
 
 [dependencies]

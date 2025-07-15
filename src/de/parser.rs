@@ -20,6 +20,7 @@ pub(super) enum Type {
     Integer,
     Float,
     Boolean,
+    #[cfg(feature = "datetime")]
     Datetime,
     Array,
     Table,
@@ -32,6 +33,7 @@ impl Type {
             Self::Integer => "integer",
             Self::Float => "float",
             Self::Boolean => "boolean",
+            #[cfg(feature = "datetime")]
             Self::Datetime => "datetime",
             Self::Array => "array",
             Self::Table => "table",
@@ -72,12 +74,16 @@ pub(super) enum Value {
     // Boolean
     Boolean(bool),
     // Offset Datetime
+    #[cfg(feature = "datetime")]
     OffsetDatetime(Vec<u8>),
     // Local Datetime
+    #[cfg(feature = "datetime")]
     LocalDatetime(Vec<u8>),
     // Local Date
+    #[cfg(feature = "datetime")]
     LocalDate(Vec<u8>),
     // Local Time
+    #[cfg(feature = "datetime")]
     LocalTime(Vec<u8>),
     // Just a regular inline array
     Array(Vec<Self>),
@@ -104,6 +110,7 @@ impl Value {
             }
             Self::Float(_) | Self::SpecialFloat(_) => Type::Float,
             Self::Boolean(_) => Type::Boolean,
+            #[cfg(feature = "datetime")]
             Self::OffsetDatetime(_)
             | Self::LocalDatetime(_)
             | Self::LocalDate(_)
@@ -974,8 +981,8 @@ impl Parser<'_> {
 
     fn skip_comment(&mut self) -> Result<()> {
         if let Some(rest) = self.line.strip_prefix(b"#") {
-            #[cfg(feature = "strict")] // Only validate comments with feature = "strict"
-            {
+            // Only validate comments with feature = "strict"
+            if cfg!(feature = "strict") {
                 // validate UTF-8
                 _ = str::from_utf8(rest).map_err(|_| ErrorKind::InvalidEncoding)?;
                 // Check for any invalid characters in the comment
@@ -1101,6 +1108,7 @@ trait TomlByte {
     /// If the byte is a TOML word (ASCII alphanumeric or hyphen or underscore)
     fn is_toml_word(&self) -> bool;
     /// If the byte is present in a datetime (ASCII numeric, plus, minus, period, colon, T, t, Z, z)
+    #[cfg(feature = "datetime")]
     fn is_toml_datetime(&self) -> bool;
     /// If the byte is valid in a TOML comment (disallows all ASCII control chars except for tab)
     fn is_toml_comment(&self) -> bool;
@@ -1127,6 +1135,7 @@ impl TomlByte for u8 {
         matches!(*self, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-')
     }
 
+    #[cfg(feature = "datetime")]
     #[inline]
     fn is_toml_datetime(&self) -> bool {
         matches!(
@@ -1189,6 +1198,7 @@ mod tests {
         assert_eq!(Type::Integer.to_str(), "integer");
         assert_eq!(Type::Float.to_str(), "float");
         assert_eq!(Type::Boolean.to_str(), "boolean");
+        #[cfg(feature = "datetime")]
         assert_eq!(Type::Datetime.to_str(), "datetime");
         assert_eq!(Type::Array.to_str(), "array");
         assert_eq!(Type::Table.to_str(), "table");
@@ -1200,6 +1210,7 @@ mod tests {
         assert_eq!(Type::Integer.to_string(), "integer");
         assert_eq!(Type::Float.to_string(), "float");
         assert_eq!(Type::Boolean.to_string(), "boolean");
+        #[cfg(feature = "datetime")]
         assert_eq!(Type::Datetime.to_string(), "datetime");
         assert_eq!(Type::Array.to_string(), "array");
         assert_eq!(Type::Table.to_string(), "table");
@@ -1223,6 +1234,7 @@ mod tests {
             de::Unexpected::from(Type::Boolean),
             de::Unexpected::Other("boolean")
         );
+        #[cfg(feature = "datetime")]
         assert_eq!(
             de::Unexpected::from(Type::Datetime),
             de::Unexpected::Other("datetime")
@@ -1250,10 +1262,13 @@ mod tests {
             Type::Float
         );
         assert_eq!(Value::Boolean(true).typ(), Type::Boolean);
-        assert_eq!(Value::OffsetDatetime(Vec::new()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDatetime(Vec::new()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalDate(Vec::new()).typ(), Type::Datetime);
-        assert_eq!(Value::LocalTime(Vec::new()).typ(), Type::Datetime);
+        #[cfg(feature = "datetime")]
+        {
+            assert_eq!(Value::OffsetDatetime(Vec::new()).typ(), Type::Datetime);
+            assert_eq!(Value::LocalDatetime(Vec::new()).typ(), Type::Datetime);
+            assert_eq!(Value::LocalDate(Vec::new()).typ(), Type::Datetime);
+            assert_eq!(Value::LocalTime(Vec::new()).typ(), Type::Datetime);
+        };
         assert_eq!(Value::Array(vec![]).typ(), Type::Array);
         assert_eq!(Value::ArrayOfTables(vec![]).typ(), Type::Array);
         assert_eq!(Value::Table(Table::new()).typ(), Type::Table);
@@ -1322,54 +1337,70 @@ mod tests {
             }
         );
 
-        let mut parser = Parser::from_slice(indoc! {br#"
-            # This is a TOML document.
+        let toml = [
+            indoc! {r#"
+                # This is a TOML document.
 
-            title = "TOML Example"
+                title = "TOML Example"
 
-            [owner]
-            name = "Tom Preston-Werner"
-            dob = 1979-05-27T07:32:00-08:00 # First class dates
+                [owner]
+                name = "Tom Preston-Werner"
+            "#},
+            if cfg!(feature = "datetime") {
+                "dob = 1979-05-27T07:32:00-08:00 # First class dates\n"
+            } else {
+                ""
+            },
+            indoc! {r#"
+                [database]
+                server = "192.168.1.1"
+                ports = [ 8000, 8001, 8002 ]
+                connection_max = 5000
+                enabled = true
 
-            [database]
-            server = "192.168.1.1"
-            ports = [ 8000, 8001, 8002 ]
-            connection_max = 5000
-            enabled = true
+                [servers]
 
-            [servers]
+                    # Indentation (tabs and/or spaces) is allowed but not required
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-                # Indentation (tabs and/or spaces) is allowed but not required
-                [servers.alpha]
-                ip = "10.0.0.1"
-                dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-                [servers.beta]
-                ip = "10.0.0.2"
-                dc = "eqdc10"
+                [clients]
 
-            [clients]
+                # Line breaks are OK when inside arrays
+                hosts = [
+                    "alpha",
+                    "omega"
+                ]
 
-            # Line breaks are OK when inside arrays
-            hosts = [
-                "alpha",
-                "omega"
-            ]
+                [[clients.data]]
+                    value = ["gamma", "delta"]
 
-            [[clients.data]]
-                value = ["gamma", "delta"]
-
-            [[clients.data]]
-                value = [1, 2]
-        "#});
+                [[clients.data]]
+                    value = [1, 2]
+            "#},
+        ]
+        .join("")
+        .into_bytes();
 
         assert_matches!(
-            parser.parse(),
+            Parser::from_slice(&toml).parse(),
             Ok(Value::Table(t)) if t == hashmap! {
                 "title".into() => Value::String("TOML Example".into()),
-                "owner".into() => Value::Table(hashmap! {
-                    "name".into() => Value::String("Tom Preston-Werner".into()),
-                    "dob".into() => Value::OffsetDatetime(b"1979-05-27T07:32:00-08:00".to_vec()),
+                "owner".into() => Value::Table(match () {
+                    #[cfg(feature = "datetime")]
+                    () => hashmap! {
+                        "name".into() => Value::String("Tom Preston-Werner".into()),
+                        "dob".into() => Value::OffsetDatetime(b"1979-05-27T07:32:00-08:00".to_vec()),
+                    },
+                    #[cfg(not(feature = "datetime"))]
+                    () => hashmap! {
+                        "name".into() => Value::String("Tom Preston-Werner".into()),
+                    },
                 }),
                 "database".into() => Value::Table(hashmap! {
                     "server".into() => Value::String("192.168.1.1".into()),
@@ -1645,17 +1676,20 @@ mod tests {
         let mut parser = start_parser(b"0x123abc");
         assert_matches!(parser.parse_value(), Ok(Value::HexInt(v)) if &*v == b"123abc");
 
-        let mut parser = start_parser(b"0001-01-01");
-        assert_matches!(
-            parser.parse_value(),
-            Ok(Value::LocalDate(date)) if date == b"0001-01-01"
-        );
+        #[cfg(feature = "datetime")]
+        {
+            let mut parser = start_parser(b"0001-01-01");
+            assert_matches!(
+                parser.parse_value(),
+                Ok(Value::LocalDate(date)) if date == b"0001-01-01"
+            );
 
-        let mut parser = start_parser(b"00:00:00");
-        assert_matches!(
-            parser.parse_value(),
-            Ok(Value::LocalTime(time)) if time == b"00:00:00"
-        );
+            let mut parser = start_parser(b"00:00:00");
+            assert_matches!(
+                parser.parse_value(),
+                Ok(Value::LocalTime(time)) if time == b"00:00:00"
+            );
+        };
 
         let mut parser = start_parser(b"0");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"0");
@@ -1666,17 +1700,20 @@ mod tests {
         let mut parser = start_parser(b"1234");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(b)) if &*b == b"1234");
 
-        let mut parser = start_parser(b"1234-05-06");
-        assert_matches!(
-            parser.parse_value(),
-            Ok(Value::LocalDate(date)) if date == b"1234-05-06"
-        );
+        #[cfg(feature = "datetime")]
+        {
+            let mut parser = start_parser(b"1234-05-06");
+            assert_matches!(
+                parser.parse_value(),
+                Ok(Value::LocalDate(date)) if date == b"1234-05-06"
+            );
 
-        let mut parser = start_parser(b"12:34:56");
-        assert_matches!(
-            parser.parse_value(),
-            Ok(Value::LocalTime(time)) if time == b"12:34:56"
-        );
+            let mut parser = start_parser(b"12:34:56");
+            assert_matches!(
+                parser.parse_value(),
+                Ok(Value::LocalTime(time)) if time == b"12:34:56"
+            );
+        };
 
         let mut parser = start_parser(b"-123");
         assert_matches!(parser.parse_value(), Ok(Value::Integer(v)) if &*v == b"-123");
@@ -2160,35 +2197,38 @@ mod tests {
         let mut parser = start_parser(b"0b101");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::BinaryInt(_)));
 
-        let mut parser = start_parser(b"1980-01-01T12:00:00.000+02:30");
-        assert_matches!(
-            parser.parse_number_or_datetime(),
-            Ok(Value::OffsetDatetime { .. })
-        );
+        #[cfg(feature = "datetime")]
+        {
+            let mut parser = start_parser(b"1980-01-01T12:00:00.000+02:30");
+            assert_matches!(
+                parser.parse_number_or_datetime(),
+                Ok(Value::OffsetDatetime { .. })
+            );
 
-        let mut parser = start_parser(b"1980-01-01 12:00:00Z");
-        assert_matches!(
-            parser.parse_number_or_datetime(),
-            Ok(Value::OffsetDatetime { .. })
-        );
+            let mut parser = start_parser(b"1980-01-01 12:00:00Z");
+            assert_matches!(
+                parser.parse_number_or_datetime(),
+                Ok(Value::OffsetDatetime { .. })
+            );
 
-        let mut parser = start_parser(b"1980-01-01T12:00:00.000");
-        assert_matches!(
-            parser.parse_number_or_datetime(),
-            Ok(Value::LocalDatetime { .. })
-        );
+            let mut parser = start_parser(b"1980-01-01T12:00:00.000");
+            assert_matches!(
+                parser.parse_number_or_datetime(),
+                Ok(Value::LocalDatetime { .. })
+            );
 
-        let mut parser = start_parser(b"1980-01-01 12:00:00");
-        assert_matches!(
-            parser.parse_number_or_datetime(),
-            Ok(Value::LocalDatetime { .. })
-        );
+            let mut parser = start_parser(b"1980-01-01 12:00:00");
+            assert_matches!(
+                parser.parse_number_or_datetime(),
+                Ok(Value::LocalDatetime { .. })
+            );
 
-        let mut parser = start_parser(b"1980-01-01");
-        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalDate(_)));
+            let mut parser = start_parser(b"1980-01-01");
+            assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalDate(_)));
 
-        let mut parser = start_parser(b"12:00:00.000000000");
-        assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalTime(_)));
+            let mut parser = start_parser(b"12:00:00.000000000");
+            assert_matches!(parser.parse_number_or_datetime(), Ok(Value::LocalTime(_)));
+        };
 
         let mut parser = start_parser(b"123");
         assert_matches!(parser.parse_number_or_datetime(), Ok(Value::Integer(_)));

@@ -9,6 +9,7 @@ pub use self::error::{Error, Result};
 pub(crate) use self::utils::Impossible;
 pub use self::value::Serializer as ValueSerializer;
 use self::writer::{Formatter, IoWriter};
+#[cfg(feature = "datetime")]
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
@@ -164,6 +165,7 @@ where
         len: usize,
     ) -> std::result::Result<Self::SerializeStruct, Self::Error> {
         match name {
+            #[cfg(feature = "datetime")]
             AnyDatetime::WRAPPER_TYPE
             | OffsetDatetime::WRAPPER_TYPE
             | LocalDatetime::WRAPPER_TYPE
@@ -376,11 +378,13 @@ mod tests {
     use serde::Serializer as _;
 
     use super::*;
+    #[cfg(feature = "datetime")]
     use crate::value::Offset;
 
     mod example {
         use std::collections::BTreeMap;
 
+        #[cfg(feature = "datetime")]
         use crate::value::OffsetDatetime;
 
         #[derive(Debug, PartialEq, Eq, serde::Serialize)]
@@ -395,6 +399,7 @@ mod tests {
         #[derive(Debug, PartialEq, Eq, serde::Serialize)]
         pub struct Owner {
             pub name: String,
+            #[cfg(feature = "datetime")]
             pub dob: OffsetDatetime,
         }
 
@@ -425,6 +430,7 @@ mod tests {
             title: "TOML Example".into(),
             owner: example::Owner {
                 name: "Tom Preston-Werner".into(),
+                #[cfg(feature = "datetime")]
                 dob: OffsetDatetime {
                     date: LocalDate {
                         year: 1979,
@@ -468,34 +474,43 @@ mod tests {
 
         assert_eq!(
             result,
-            indoc! {r#"
-                title = "TOML Example"
+            [
+                indoc! {r#"
+                    title = "TOML Example"
 
-                [owner]
-                name = "Tom Preston-Werner"
-                dob = 1979-05-27T07:32:00-08:00
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
 
-                [database]
-                server = "192.168.1.1"
-                ports = [8000, 8001, 8002]
-                connection_max = 5000
-                enabled = true
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [8000, 8001, 8002]
+                    connection_max = 5000
+                    enabled = true
 
-                [servers.alpha]
-                ip = "10.0.0.1"
-                dc = "eqdc10"
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-                [servers.beta]
-                ip = "10.0.0.2"
-                dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-                [clients]
-                hosts = ["alpha", "omega"]
+                    [clients]
+                    hosts = ["alpha", "omega"]
 
-                [clients.data]
-                delta = 2
-                gamma = 1
-            "#}
+                    [clients.data]
+                    delta = 2
+                    gamma = 1
+                "#}
+            ]
+            .join("")
         );
     }
 
@@ -508,6 +523,7 @@ mod tests {
                 title: "TOML Example".into(),
                 owner: example::Owner {
                     name: "Tom Preston-Werner".into(),
+                    #[cfg(feature = "datetime")]
                     dob: OffsetDatetime {
                         date: LocalDate {
                             year: 1979,
@@ -552,34 +568,44 @@ mod tests {
 
         assert_eq!(
             result,
-            indoc! {br#"
-                title = "TOML Example"
+            [
+                indoc! {r#"
+                    title = "TOML Example"
 
-                [owner]
-                name = "Tom Preston-Werner"
-                dob = 1979-05-27T07:32:00-08:00
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
 
-                [database]
-                server = "192.168.1.1"
-                ports = [8000, 8001, 8002]
-                connection_max = 5000
-                enabled = true
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [8000, 8001, 8002]
+                    connection_max = 5000
+                    enabled = true
 
-                [servers.alpha]
-                ip = "10.0.0.1"
-                dc = "eqdc10"
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-                [servers.beta]
-                ip = "10.0.0.2"
-                dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-                [clients]
-                hosts = ["alpha", "omega"]
+                    [clients]
+                    hosts = ["alpha", "omega"]
 
-                [clients.data]
-                delta = 2
-                gamma = 1
-            "#}
+                    [clients.data]
+                    delta = 2
+                    gamma = 1
+                "#}
+            ]
+            .join("")
+            .into_bytes()
         );
     }
 
@@ -592,6 +618,7 @@ mod tests {
                 title: "TOML Example".into(),
                 owner: example::Owner {
                     name: "Tom Preston-Werner".into(),
+                    #[cfg(feature = "datetime")]
                     dob: OffsetDatetime {
                         date: LocalDate {
                             year: 1979,
@@ -636,34 +663,43 @@ mod tests {
 
         assert_eq!(
             result,
-            indoc! {r#"
-                title = "TOML Example"
+            [
+                indoc! {r#"
+                    title = "TOML Example"
 
-                [owner]
-                name = "Tom Preston-Werner"
-                dob = 1979-05-27T07:32:00-08:00
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
 
-                [database]
-                server = "192.168.1.1"
-                ports = [8000, 8001, 8002]
-                connection_max = 5000
-                enabled = true
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [8000, 8001, 8002]
+                    connection_max = 5000
+                    enabled = true
 
-                [servers.alpha]
-                ip = "10.0.0.1"
-                dc = "eqdc10"
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-                [servers.beta]
-                ip = "10.0.0.2"
-                dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-                [clients]
-                hosts = ["alpha", "omega"]
+                    [clients]
+                    hosts = ["alpha", "omega"]
 
-                [clients.data]
-                delta = 2
-                gamma = 1
-            "#}
+                    [clients.data]
+                    delta = 2
+                    gamma = 1
+                "#}
+            ]
+            .join("")
         );
     }
 
@@ -746,11 +782,14 @@ mod tests {
             table: tree::TableSerializer { table, .. }
         } if table.capacity() == 2);
 
-        let mut buf = String::new();
-        let serializer = Serializer { writer: &mut buf };
+        #[cfg(feature = "datetime")]
+        {
+            let mut buf = String::new();
+            let serializer = Serializer { writer: &mut buf };
 
-        let seq = serializer.serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1);
-        assert_matches!(seq, Err(Error(ErrorKind::UnsupportedType(..))));
+            let seq = serializer.serialize_struct(OffsetDatetime::WRAPPER_TYPE, 1);
+            assert_matches!(seq, Err(Error(ErrorKind::UnsupportedType(..))));
+        }
     }
 
     #[test]

@@ -6,12 +6,14 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::{fmt, ops};
 
+#[cfg(feature = "datetime")]
 pub use self::datetime::{
     AnyDatetime, Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
 use self::ser::ToValueSerializer;
 use crate::Table;
 
+#[cfg(feature = "datetime")]
 pub(crate) mod datetime;
 mod de;
 mod ser;
@@ -26,6 +28,7 @@ pub(crate) enum Type {
     Integer,
     Float,
     Boolean,
+    #[cfg(feature = "datetime")]
     Datetime,
     Array,
     Table,
@@ -39,6 +42,7 @@ impl Type {
             Self::Integer => "integer",
             Self::Float => "float",
             Self::Boolean => "boolean",
+            #[cfg(feature = "datetime")]
             Self::Datetime => "datetime",
             Self::Array => "array",
             Self::Table => "table",
@@ -65,6 +69,7 @@ pub enum Value {
     /// A boolean.
     Boolean(bool),
     /// A datetime.
+    #[cfg(feature = "datetime")]
     Datetime(Datetime),
     /// An array of values.
     Array(Vec<Self>),
@@ -151,6 +156,7 @@ impl Value {
     }
 
     /// Returns `true` if `self` is a datetime.
+    #[cfg(feature = "datetime")]
     #[must_use]
     #[inline]
     pub fn is_datetime(&self) -> bool {
@@ -212,6 +218,7 @@ impl Value {
     }
 
     /// If `self` is a datetime, returns it as a [`Datetime`].
+    #[cfg(feature = "datetime")]
     #[must_use]
     #[inline]
     pub fn as_datetime(&self) -> Option<&Datetime> {
@@ -276,6 +283,7 @@ impl Value {
             Self::Integer(_) => Type::Integer,
             Self::Float(_) => Type::Float,
             Self::Boolean(_) => Type::Boolean,
+            #[cfg(feature = "datetime")]
             Self::Datetime(_) => Type::Datetime,
             Self::Array(_) => Type::Array,
             Self::Table(_) => Type::Table,
@@ -591,6 +599,7 @@ impl From<bool> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<Datetime> for Value {
     #[inline]
     fn from(value: Datetime) -> Self {
@@ -598,6 +607,7 @@ impl From<Datetime> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<AnyDatetime> for Value {
     #[inline]
     fn from(value: AnyDatetime) -> Self {
@@ -605,6 +615,7 @@ impl From<AnyDatetime> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<OffsetDatetime> for Value {
     #[inline]
     fn from(value: OffsetDatetime) -> Self {
@@ -612,6 +623,7 @@ impl From<OffsetDatetime> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<LocalDatetime> for Value {
     #[inline]
     fn from(value: LocalDatetime) -> Self {
@@ -619,6 +631,7 @@ impl From<LocalDatetime> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<LocalDate> for Value {
     #[inline]
     fn from(value: LocalDate) -> Self {
@@ -626,6 +639,7 @@ impl From<LocalDate> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl From<LocalTime> for Value {
     #[inline]
     fn from(value: LocalTime) -> Self {
@@ -849,6 +863,7 @@ impl PartialEq<Value> for bool {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl PartialEq<Datetime> for Value {
     #[inline]
     fn eq(&self, other: &Datetime) -> bool {
@@ -859,6 +874,7 @@ impl PartialEq<Datetime> for Value {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl PartialEq<Value> for Datetime {
     #[inline]
     fn eq(&self, other: &Value) -> bool {
@@ -887,6 +903,7 @@ mod tests {
         assert_eq!(Type::Integer.to_str(), "integer");
         assert_eq!(Type::Float.to_str(), "float");
         assert_eq!(Type::Boolean.to_str(), "boolean");
+        #[cfg(feature = "datetime")]
         assert_eq!(Type::Datetime.to_str(), "datetime");
         assert_eq!(Type::Array.to_str(), "array");
         assert_eq!(Type::Table.to_str(), "table");
@@ -898,6 +915,7 @@ mod tests {
         assert_eq!(Type::Integer.to_string(), "integer");
         assert_eq!(Type::Float.to_string(), "float");
         assert_eq!(Type::Boolean.to_string(), "boolean");
+        #[cfg(feature = "datetime")]
         assert_eq!(Type::Datetime.to_string(), "datetime");
         assert_eq!(Type::Array.to_string(), "array");
         assert_eq!(Type::Table.to_string(), "table");
@@ -917,8 +935,11 @@ mod tests {
         let value: Value = Value::try_from(true).unwrap();
         assert_eq!(value, Value::Boolean(true));
 
-        let value: Value = Value::try_from(OffsetDatetime::EXAMPLE).unwrap();
-        assert_eq!(value, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
+        #[cfg(feature = "datetime")]
+        {
+            let value: Value = Value::try_from(OffsetDatetime::EXAMPLE).unwrap();
+            assert_eq!(value, Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME));
+        };
 
         let value: Value = Value::try_from(vec![1, 2, 3]).unwrap();
         assert_eq!(
@@ -983,6 +1004,7 @@ mod tests {
         assert!(!value.is_float());
         assert!(!value.is_boolean());
         assert!(!value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(!value.is_array());
         assert!(!value.is_table());
@@ -994,6 +1016,7 @@ mod tests {
         assert!(!value.is_float());
         assert!(!value.is_boolean());
         assert!(!value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(!value.is_array());
         assert!(!value.is_table());
@@ -1005,6 +1028,7 @@ mod tests {
         assert!(value.is_float());
         assert!(!value.is_boolean());
         assert!(!value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(!value.is_array());
         assert!(!value.is_table());
@@ -1016,20 +1040,24 @@ mod tests {
         assert!(!value.is_float());
         assert!(value.is_boolean());
         assert!(value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(!value.is_array());
         assert!(!value.is_table());
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert!(!value.is_string());
-        assert!(!value.is_str());
-        assert!(!value.is_integer());
-        assert!(!value.is_float());
-        assert!(!value.is_boolean());
-        assert!(!value.is_bool());
-        assert!(value.is_datetime());
-        assert!(!value.is_array());
-        assert!(!value.is_table());
+        #[cfg(feature = "datetime")]
+        {
+            let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+            assert!(!value.is_string());
+            assert!(!value.is_str());
+            assert!(!value.is_integer());
+            assert!(!value.is_float());
+            assert!(!value.is_boolean());
+            assert!(!value.is_bool());
+            assert!(value.is_datetime());
+            assert!(!value.is_array());
+            assert!(!value.is_table());
+        };
 
         let value = Value::Array(vec![
             Value::Integer(1),
@@ -1042,6 +1070,7 @@ mod tests {
         assert!(!value.is_float());
         assert!(!value.is_boolean());
         assert!(!value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(value.is_array());
         assert!(!value.is_table());
@@ -1057,6 +1086,7 @@ mod tests {
         assert!(!value.is_float());
         assert!(!value.is_boolean());
         assert!(!value.is_bool());
+        #[cfg(feature = "datetime")]
         assert!(!value.is_datetime());
         assert!(!value.is_array());
         assert!(value.is_table());
@@ -1070,6 +1100,7 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
@@ -1081,6 +1112,7 @@ mod tests {
         assert_matches!(value.as_integer(), Some(42));
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
@@ -1092,6 +1124,7 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert_matches!(value.as_float(), Some(42.0));
         assert!(value.as_bool().is_none());
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
@@ -1103,23 +1136,27 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert_matches!(value.as_bool(), Some(true));
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
         assert!(value.as_table().is_none());
         assert!(value.as_table_mut().is_none());
 
-        let datetime = Datetime::EXAMPLE_OFFSET_DATETIME;
-        let mut value = Value::Datetime(datetime.clone());
-        assert!(value.as_str().is_none());
-        assert!(value.as_integer().is_none());
-        assert!(value.as_float().is_none());
-        assert!(value.as_bool().is_none());
-        assert_matches!(value.as_datetime(), Some(d) if d == &datetime);
-        assert!(value.as_array().is_none());
-        assert!(value.as_array_mut().is_none());
-        assert!(value.as_table().is_none());
-        assert!(value.as_table_mut().is_none());
+        #[cfg(feature = "datetime")]
+        {
+            let datetime = Datetime::EXAMPLE_OFFSET_DATETIME;
+            let mut value = Value::Datetime(datetime.clone());
+            assert!(value.as_str().is_none());
+            assert!(value.as_integer().is_none());
+            assert!(value.as_float().is_none());
+            assert!(value.as_bool().is_none());
+            assert_matches!(value.as_datetime(), Some(d) if d == &datetime);
+            assert!(value.as_array().is_none());
+            assert!(value.as_array_mut().is_none());
+            assert!(value.as_table().is_none());
+            assert!(value.as_table_mut().is_none());
+        };
 
         let array = vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)];
         let mut value = Value::Array(array.clone());
@@ -1127,6 +1164,7 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert_matches!(value.as_array(), Some(a) if a == &array);
         assert_matches!(value.as_array_mut(), Some(a) if a == &array);
@@ -1143,6 +1181,7 @@ mod tests {
         assert!(value.as_integer().is_none());
         assert!(value.as_float().is_none());
         assert!(value.as_bool().is_none());
+        #[cfg(feature = "datetime")]
         assert!(value.as_datetime().is_none());
         assert!(value.as_array().is_none());
         assert!(value.as_array_mut().is_none());
@@ -1157,6 +1196,7 @@ mod tests {
             Value::Integer(42),
             Value::Float(42.0),
             Value::Boolean(true),
+            #[cfg(feature = "datetime")]
             Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME),
             Value::Array(vec![
                 Value::Integer(1),
@@ -1175,6 +1215,7 @@ mod tests {
             Value::Integer(123),
             Value::Float(123.4),
             Value::Boolean(false),
+            #[cfg(feature = "datetime")]
             Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME),
             Value::Array(vec![
                 Value::Integer(4),
@@ -1213,8 +1254,11 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.typ(), Type::Boolean);
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert_eq!(value.typ(), Type::Datetime);
+        #[cfg(feature = "datetime")]
+        {
+            let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+            assert_eq!(value.typ(), Type::Datetime);
+        };
 
         let value = Value::Array(vec![
             Value::Integer(1),
@@ -1245,8 +1289,11 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.type_str(), "boolean");
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert_eq!(value.type_str(), "datetime");
+        #[cfg(feature = "datetime")]
+        {
+            let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+            assert_eq!(value.type_str(), "datetime");
+        };
 
         let value = Value::Array(vec![
             Value::Integer(1),
@@ -1277,8 +1324,11 @@ mod tests {
         let value = Value::Boolean(true);
         assert_eq!(value.to_string(), "true");
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        assert_eq!(value.to_string(), OffsetDatetime::EXAMPLE_STR);
+        #[cfg(feature = "datetime")]
+        {
+            let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+            assert_eq!(value.to_string(), OffsetDatetime::EXAMPLE_STR);
+        };
 
         let value = Value::Array(vec![
             Value::Integer(1),
@@ -1738,6 +1788,7 @@ mod tests {
         assert_eq!(Value::from(42.0_f32), Value::Float(42.0));
         assert_eq!(Value::from(42.0_f64), Value::Float(42.0));
         assert_eq!(Value::from(true), Value::Boolean(true));
+        #[cfg(feature = "datetime")]
         assert_eq!(
             Value::from(Datetime::EXAMPLE_OFFSET_DATETIME),
             Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME)
@@ -1824,63 +1875,80 @@ mod tests {
 
     #[test]
     fn value_from_str() {
-        let result = Value::from_str(indoc! {r#"
-            # This is a TOML document.
+        let result = Value::from_str(
+            &[
+                indoc! {r#"
+                    # This is a TOML document.
 
-            title = "TOML Example"
+                    title = "TOML Example"
 
-            [owner]
-            name = "Tom Preston-Werner"
-            dob = 1979-05-27T07:32:00-08:00 # First class dates
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00 # First class dates\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [ 8000, 8001, 8002 ]
+                    connection_max = 5000
+                    enabled = true
 
-            [database]
-            server = "192.168.1.1"
-            ports = [ 8000, 8001, 8002 ]
-            connection_max = 5000
-            enabled = true
+                    [servers]
 
-            [servers]
+                        # Indentation (tabs and/or spaces) is allowed but not required
+                        [servers.alpha]
+                        ip = "10.0.0.1"
+                        dc = "eqdc10"
 
-              # Indentation (tabs and/or spaces) is allowed but not required
-              [servers.alpha]
-              ip = "10.0.0.1"
-              dc = "eqdc10"
+                        [servers.beta]
+                        ip = "10.0.0.2"
+                        dc = "eqdc10"
 
-              [servers.beta]
-              ip = "10.0.0.2"
-              dc = "eqdc10"
+                    [clients]
+                    data = { "gamma" = 1, "delta" = 2 }
 
-            [clients]
-            data = { "gamma" = 1, "delta" = 2 }
-
-            # Line breaks are OK when inside arrays
-            hosts = [
-              "alpha",
-              "omega"
+                    # Line breaks are OK when inside arrays
+                    hosts = [
+                        "alpha",
+                        "omega"
+                    ]
+                "#},
             ]
-        "#})
+            .join(""),
+        )
         .unwrap();
 
         assert_eq!(
             result,
             Value::Table(btreemap! {
                 "title".to_string() => Value::String("TOML Example".to_string()),
-                "owner".to_string() => Value::Table(btreemap! {
-                    "name".to_string() => Value::String("Tom Preston-Werner".to_string()),
-                    "dob".to_string() => Value::Datetime(Datetime {
-                        date: Some(LocalDate {
-                            year: 1979,
-                            month: 5,
-                            day: 27,
+                "owner".to_string() => Value::Table(match () {
+                    #[cfg(feature = "datetime")]
+                    () => btreemap! {
+                        "name".to_string() => Value::String("Tom Preston-Werner".to_string()),
+                        "dob".to_string() => Value::Datetime(Datetime {
+                            date: Some(LocalDate {
+                                year: 1979,
+                                month: 5,
+                                day: 27,
+                            }),
+                            time: Some(LocalTime {
+                                hour: 7,
+                                minute: 32,
+                                second: 0,
+                                nanosecond: 0,
+                            }),
+                            offset: Some(Offset::Custom { minutes: -480 }),
                         }),
-                        time: Some(LocalTime {
-                            hour: 7,
-                            minute: 32,
-                            second: 0,
-                            nanosecond: 0,
-                        }),
-                        offset: Some(Offset::Custom { minutes: -480 }),
-                    }),
+                    },
+                    #[cfg(not(feature = "datetime"))]
+                    () => btreemap! {
+                        "name".to_string() => Value::String("Tom Preston-Werner".to_string()),
+                    },
                 }),
                 "database".to_string() => Value::Table(btreemap! {
                     "server".to_string() => Value::String("192.168.1.1".to_string()),
@@ -1957,8 +2025,11 @@ mod tests {
         assert_ne!(42.0, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
-        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        #[cfg(feature = "datetime")]
+        {
+            assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+            assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        }
     }
 
     #[test]
@@ -1982,8 +2053,11 @@ mod tests {
         assert_ne!(42.0, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
-        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        #[cfg(feature = "datetime")]
+        {
+            assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+            assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        }
     }
 
     #[test]
@@ -2007,8 +2081,11 @@ mod tests {
         assert_ne!(42, value);
         assert_ne!(value, true);
         assert_ne!(true, value);
-        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
-        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        #[cfg(feature = "datetime")]
+        {
+            assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+            assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        }
     }
 
     #[test]
@@ -2032,10 +2109,14 @@ mod tests {
         assert_ne!(42, value);
         assert_ne!(value, 42.0);
         assert_ne!(42.0, value);
-        assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
-        assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        #[cfg(feature = "datetime")]
+        {
+            assert_ne!(value, Datetime::EXAMPLE_OFFSET_DATETIME,);
+            assert_ne!(Datetime::EXAMPLE_OFFSET_DATETIME, value);
+        }
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     #[allow(clippy::float_cmp)] // not really float cmp, but clippy doesn't know
     fn value_partial_eq_datetime() {

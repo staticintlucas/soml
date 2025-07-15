@@ -12,9 +12,11 @@ pub(crate) use self::error::ErrorKind;
 pub use self::error::{Error, Result};
 use self::parser::{Parser, SpecialFloat, Table as ParsedTable, Value as ParsedValue};
 use self::reader::Reader;
+#[cfg(feature = "datetime")]
 use crate::value::datetime::{
     LocalDateAccess, LocalDatetimeAccess, LocalTimeAccess, OffsetDatetimeAccess,
 };
+#[cfg(feature = "datetime")]
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 mod error;
@@ -136,13 +138,17 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
             ParsedValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
             ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
             ParsedValue::Boolean(bool) => visitor.visit_bool(bool),
+            #[cfg(feature = "datetime")]
             ParsedValue::OffsetDatetime(datetime) => {
                 visitor.visit_map(OffsetDatetimeAccess::new(datetime))
             }
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalDatetime(datetime) => {
                 visitor.visit_map(LocalDatetimeAccess::new(datetime))
             }
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalDate(date) => visitor.visit_map(LocalDateAccess::new(date)),
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalTime(time) => visitor.visit_map(LocalTimeAccess::new(time)),
             ParsedValue::Array(array) => visitor.visit_seq(SeqAccess::new(array)),
             ParsedValue::ArrayOfTables(array) => visitor.visit_seq(SeqAccess::new(array)),
@@ -453,6 +459,8 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         }
     }
 
+    // name and fields are only used when datetime is enabled
+    #[cfg_attr(not(feature = "datetime"), allow(unused_variables))]
     fn deserialize_struct<V>(
         self,
         name: &'static str,
@@ -463,6 +471,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
+            #[cfg(feature = "datetime")]
             ParsedValue::OffsetDatetime(datetime)
                 if matches!(
                     name,
@@ -474,6 +483,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
             {
                 visitor.visit_map(OffsetDatetimeAccess::new(datetime))
             }
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalDatetime(datetime)
                 if matches!(
                     name,
@@ -485,6 +495,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
             {
                 visitor.visit_map(LocalDatetimeAccess::new(datetime))
             }
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalDate(date)
                 if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalDate::WRAPPER_TYPE)
                     && matches!(
@@ -494,6 +505,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
             {
                 visitor.visit_map(LocalDateAccess::new(date))
             }
+            #[cfg(feature = "datetime")]
             ParsedValue::LocalTime(time)
                 if matches!(name, AnyDatetime::WRAPPER_TYPE | LocalTime::WRAPPER_TYPE)
                     && matches!(
@@ -853,12 +865,14 @@ mod tests {
     use serde_bytes::ByteBuf;
 
     use super::*;
+    #[cfg(feature = "datetime")]
     use crate::value::{Datetime, Offset};
     use crate::Value;
 
     mod example {
         use std::collections::HashMap;
 
+        #[cfg(feature = "datetime")]
         use crate::value::OffsetDatetime;
 
         #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
@@ -873,6 +887,7 @@ mod tests {
         #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
         pub struct Owner {
             pub name: String,
+            #[cfg(feature = "datetime")]
             pub dob: OffsetDatetime,
         }
 
@@ -899,41 +914,51 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        let result: example::Struct = from_str(indoc! {r#"
-            # This is a TOML document.
+        let result: example::Struct = from_str(
+            &[
+                indoc! {r#"
+                    # This is a TOML document.
 
-            title = "TOML Example"
+                    title = "TOML Example"
 
-            [owner]
-            name = "Tom Preston-Werner"
-            dob = 1979-05-27T07:32:00-08:00 # First class dates
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00 # First class dates\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [ 8000, 8001, 8002 ]
+                    connection_max = 5000
+                    enabled = true
 
-            [database]
-            server = "192.168.1.1"
-            ports = [ 8000, 8001, 8002 ]
-            connection_max = 5000
-            enabled = true
+                    [servers]
 
-            [servers]
+                    # Indentation (tabs and/or spaces) is allowed but not required
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-              # Indentation (tabs and/or spaces) is allowed but not required
-              [servers.alpha]
-              ip = "10.0.0.1"
-              dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-              [servers.beta]
-              ip = "10.0.0.2"
-              dc = "eqdc10"
+                    [clients]
+                    data = { "gamma" = 1, "delta" = 2 }
 
-            [clients]
-            data = { "gamma" = 1, "delta" = 2 }
-
-            # Line breaks are OK when inside arrays
-            hosts = [
-              "alpha",
-              "omega"
+                    # Line breaks are OK when inside arrays
+                    hosts = [
+                    "alpha",
+                    "omega"
+                    ]
+                "#},
             ]
-        "#})
+            .join(""),
+        )
         .unwrap();
 
         assert_eq!(
@@ -942,6 +967,7 @@ mod tests {
                 title: "TOML Example".into(),
                 owner: example::Owner {
                     name: "Tom Preston-Werner".into(),
+                    #[cfg(feature = "datetime")]
                     dob: OffsetDatetime {
                         date: LocalDate {
                             year: 1979,
@@ -986,41 +1012,52 @@ mod tests {
 
     #[test]
     fn test_from_slice() {
-        let result: example::Struct = from_slice(indoc! {br#"
-            # This is a TOML document.
+        let result: example::Struct = from_slice(
+            [
+                indoc! {r#"
+                    # This is a TOML document.
 
-            title = "TOML Example"
+                    title = "TOML Example"
 
-            [owner]
-            name = "Tom Preston-Werner"
-            dob = 1979-05-27T07:32:00-08:00 # First class dates
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00 # First class dates\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [ 8000, 8001, 8002 ]
+                    connection_max = 5000
+                    enabled = true
 
-            [database]
-            server = "192.168.1.1"
-            ports = [ 8000, 8001, 8002 ]
-            connection_max = 5000
-            enabled = true
+                    [servers]
 
-            [servers]
+                    # Indentation (tabs and/or spaces) is allowed but not required
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-              # Indentation (tabs and/or spaces) is allowed but not required
-              [servers.alpha]
-              ip = "10.0.0.1"
-              dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-              [servers.beta]
-              ip = "10.0.0.2"
-              dc = "eqdc10"
+                    [clients]
+                    data = { "gamma" = 1, "delta" = 2 }
 
-            [clients]
-            data = { "gamma" = 1, "delta" = 2 }
-
-            # Line breaks are OK when inside arrays
-            hosts = [
-              "alpha",
-              "omega"
+                    # Line breaks are OK when inside arrays
+                    hosts = [
+                    "alpha",
+                    "omega"
+                    ]
+                "#},
             ]
-        "#})
+            .join("")
+            .as_bytes(),
+        )
         .unwrap();
 
         assert_eq!(
@@ -1029,6 +1066,7 @@ mod tests {
                 title: "TOML Example".into(),
                 owner: example::Owner {
                     name: "Tom Preston-Werner".into(),
+                    #[cfg(feature = "datetime")]
                     dob: OffsetDatetime {
                         date: LocalDate {
                             year: 1979,
@@ -1074,42 +1112,50 @@ mod tests {
     #[test]
     fn test_from_reader() {
         let result: example::Struct = from_reader(
-            indoc! {br#"
-                # This is a TOML document.
+            [
+                indoc! {r#"
+                    # This is a TOML document.
 
-                title = "TOML Example"
+                    title = "TOML Example"
 
-                [owner]
-                name = "Tom Preston-Werner"
-                dob = 1979-05-27T07:32:00-08:00 # First class dates
+                    [owner]
+                    name = "Tom Preston-Werner"
+                "#},
+                if cfg!(feature = "datetime") {
+                    "dob = 1979-05-27T07:32:00-08:00 # First class dates\n"
+                } else {
+                    ""
+                },
+                indoc! {r#"
+                    [database]
+                    server = "192.168.1.1"
+                    ports = [ 8000, 8001, 8002 ]
+                    connection_max = 5000
+                    enabled = true
 
-                [database]
-                server = "192.168.1.1"
-                ports = [ 8000, 8001, 8002 ]
-                connection_max = 5000
-                enabled = true
+                    [servers]
 
-                [servers]
+                    # Indentation (tabs and/or spaces) is allowed but not required
+                    [servers.alpha]
+                    ip = "10.0.0.1"
+                    dc = "eqdc10"
 
-                  # Indentation (tabs and/or spaces) is allowed but not required
-                  [servers.alpha]
-                  ip = "10.0.0.1"
-                  dc = "eqdc10"
+                    [servers.beta]
+                    ip = "10.0.0.2"
+                    dc = "eqdc10"
 
-                  [servers.beta]
-                  ip = "10.0.0.2"
-                  dc = "eqdc10"
+                    [clients]
+                    data = { "gamma" = 1, "delta" = 2 }
 
-                [clients]
-                data = { "gamma" = 1, "delta" = 2 }
-
-                # Line breaks are OK when inside arrays
-                hosts = [
-                  "alpha",
-                  "omega"
-                ]
-            "#}
-            .as_ref(),
+                    # Line breaks are OK when inside arrays
+                    hosts = [
+                    "alpha",
+                    "omega"
+                    ]
+                "#},
+            ]
+            .join("")
+            .as_bytes(),
         )
         .unwrap();
 
@@ -1119,6 +1165,7 @@ mod tests {
                 title: "TOML Example".into(),
                 owner: example::Owner {
                     name: "Tom Preston-Werner".into(),
+                    #[cfg(feature = "datetime")]
                     dob: OffsetDatetime {
                         date: LocalDate {
                             year: 1979,
@@ -1232,35 +1279,38 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Boolean(true));
         assert_matches!(Value::deserialize(deserializer), Ok(Value::Boolean(true)));
 
-        let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
-            OffsetDatetime::EXAMPLE_BYTES.to_vec(),
-        ));
-        assert_matches!(
-            Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
-        );
+        #[cfg(feature = "datetime")]
+        {
+            let deserializer = ValueDeserializer::new(ParsedValue::OffsetDatetime(
+                OffsetDatetime::EXAMPLE_BYTES.to_vec(),
+            ));
+            assert_matches!(
+                Value::deserialize(deserializer),
+                Ok(Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME))
+            );
 
-        let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(
-            LocalDatetime::EXAMPLE_BYTES.to_vec(),
-        ));
-        assert_matches!(
-            Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME))
-        );
+            let deserializer = ValueDeserializer::new(ParsedValue::LocalDatetime(
+                LocalDatetime::EXAMPLE_BYTES.to_vec(),
+            ));
+            assert_matches!(
+                Value::deserialize(deserializer),
+                Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATETIME))
+            );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()));
-        assert_matches!(
-            Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE))
-        );
+            let deserializer =
+                ValueDeserializer::new(ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()));
+            assert_matches!(
+                Value::deserialize(deserializer),
+                Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_DATE))
+            );
 
-        let deserializer =
-            ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE_BYTES.to_vec()));
-        assert_matches!(
-            Value::deserialize(deserializer),
-            Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME))
-        );
+            let deserializer =
+                ValueDeserializer::new(ParsedValue::LocalTime(LocalTime::EXAMPLE_BYTES.to_vec()));
+            assert_matches!(
+                Value::deserialize(deserializer),
+                Ok(Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME))
+            );
+        };
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".to_vec()),
@@ -1759,24 +1809,24 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".to_vec()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
+            ParsedValue::Array(vec![]),
         ]));
         assert_matches!(
-            <(i32, String, LocalDate)>::deserialize(deserializer),
-            Ok((i, s, d)) if i == 123 && s == "hello" && d == LocalDate::EXAMPLE
+            <(i32, String, Vec<i64>)>::deserialize(deserializer),
+            Ok((i, s, d)) if i == 123 && s == "hello" && d.is_empty()
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::ArrayOfTables(vec![
             hashmap! { "val".into() => ParsedValue::Integer(b"123".to_vec()) },
             hashmap! { "val".into() => ParsedValue::String("hello".into()) },
-            hashmap! { "val".into() => ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()) },
+            hashmap! { "val".into() => ParsedValue::Array(vec![]) },
         ]));
         assert_matches!(
-            <(Struct<i32>, Struct<String>, Struct<LocalDate>)>::deserialize(deserializer),
+            <(Struct<i32>, Struct<String>, Struct<Vec<i64>>)>::deserialize(deserializer),
             Ok((a, b, c)) if a == Struct { val: 123 }
                 && b == Struct { val: "hello".into() }
                 && c == Struct {
-                    val: LocalDate::EXAMPLE
+                    val: vec![]
                 }
         );
 
@@ -1790,18 +1840,18 @@ mod tests {
     #[test]
     fn value_deserializer_deserialize_tuple_struct_struct() {
         #[derive(Debug, PartialEq, Eq, Deserialize)]
-        struct TupleStruct(i32, String, LocalDate);
+        struct TupleStruct(i32, String, Vec<i64>);
 
         let deserializer = ValueDeserializer::new(ParsedValue::Array(vec![
             ParsedValue::Integer(b"123".to_vec()),
             ParsedValue::String("hello".into()),
-            ParsedValue::LocalDate(LocalDate::EXAMPLE_BYTES.to_vec()),
+            ParsedValue::Array(vec![]),
         ]));
         assert_matches!(
             TupleStruct::deserialize(deserializer),
             Ok(TupleStruct(i, s, d)) if i == 123
                 && s == "hello"
-                && d == LocalDate::EXAMPLE
+                && d.is_empty()
         );
 
         let deserializer = ValueDeserializer::new(ParsedValue::String("hello".into()));
@@ -1894,6 +1944,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserializer_deserialize_struct_datetime() {

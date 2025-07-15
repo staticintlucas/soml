@@ -4,6 +4,7 @@ use std::{fmt, slice, vec};
 use serde::de;
 use serde::de::{Error as _, IntoDeserializer as _};
 
+#[cfg(feature = "datetime")]
 use super::datetime::{
     AnyDatetime, EncodedLocalDate, EncodedLocalDatetime, EncodedLocalTime, EncodedOffsetDatetime,
     LocalDate, LocalDateAccess, LocalDatetime, LocalDatetimeAccess, LocalTime, LocalTimeAccess,
@@ -60,11 +61,14 @@ impl<'de> de::Deserialize<'de> for Value {
     where
         D: de::Deserializer<'de>,
     {
+        #[cfg(feature = "datetime")]
         #[derive(Debug)]
         enum MapField {
             Datetime(DatetimeField),
             Other(String),
         }
+
+        #[cfg(feature = "datetime")]
         #[derive(Debug, PartialEq, Eq)]
         enum DatetimeField {
             OffsetDatetime,
@@ -72,17 +76,22 @@ impl<'de> de::Deserialize<'de> for Value {
             LocalDate,
             LocalTime,
         }
+
+        #[cfg(feature = "datetime")]
         struct MapFieldVisitor;
 
+        #[cfg(feature = "datetime")]
         impl MapField {
             #[inline]
             fn as_str(&self) -> &str {
                 match *self {
+                    #[cfg(feature = "datetime")]
                     Self::Datetime(ref field) => field.as_str(),
                     Self::Other(ref field) => field.as_str(),
                 }
             }
         }
+        #[cfg(feature = "datetime")]
         impl DatetimeField {
             #[inline]
             fn as_str(&self) -> &'static str {
@@ -104,6 +113,7 @@ impl<'de> de::Deserialize<'de> for Value {
             }
         }
 
+        #[cfg(feature = "datetime")]
         impl de::Visitor<'_> for MapFieldVisitor {
             type Value = MapField;
 
@@ -118,13 +128,17 @@ impl<'de> de::Deserialize<'de> for Value {
                 E: de::Error,
             {
                 match value.as_str() {
+                    #[cfg(feature = "datetime")]
                     OffsetDatetime::WRAPPER_FIELD => {
                         Ok(Self::Value::Datetime(DatetimeField::OffsetDatetime))
                     }
+                    #[cfg(feature = "datetime")]
                     LocalDatetime::WRAPPER_FIELD => {
                         Ok(Self::Value::Datetime(DatetimeField::LocalDatetime))
                     }
+                    #[cfg(feature = "datetime")]
                     LocalDate::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalDate)),
+                    #[cfg(feature = "datetime")]
                     LocalTime::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalTime)),
                     _ => Ok(Self::Value::Other(value)),
                 }
@@ -136,19 +150,24 @@ impl<'de> de::Deserialize<'de> for Value {
                 E: de::Error,
             {
                 match value {
+                    #[cfg(feature = "datetime")]
                     OffsetDatetime::WRAPPER_FIELD => {
                         Ok(Self::Value::Datetime(DatetimeField::OffsetDatetime))
                     }
+                    #[cfg(feature = "datetime")]
                     LocalDatetime::WRAPPER_FIELD => {
                         Ok(Self::Value::Datetime(DatetimeField::LocalDatetime))
                     }
+                    #[cfg(feature = "datetime")]
                     LocalDate::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalDate)),
+                    #[cfg(feature = "datetime")]
                     LocalTime::WRAPPER_FIELD => Ok(Self::Value::Datetime(DatetimeField::LocalTime)),
                     _ => Ok(Self::Value::Other(value.to_string())),
                 }
             }
         }
 
+        #[cfg(feature = "datetime")]
         impl<'de> de::Deserialize<'de> for MapField {
             #[inline]
             fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
@@ -252,6 +271,7 @@ impl<'de> de::Deserialize<'de> for Value {
                 Ok(Self::Value::Array(result))
             }
 
+            #[cfg(feature = "datetime")]
             #[inline]
             fn visit_map<A>(self, mut map: A) -> StdResult<Self::Value, A::Error>
             where
@@ -296,6 +316,19 @@ impl<'de> de::Deserialize<'de> for Value {
                     }
                 }
             }
+
+            #[cfg(not(feature = "datetime"))]
+            #[inline]
+            fn visit_map<A>(self, mut map: A) -> StdResult<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut result = Table::new();
+                while let Some((key, value)) = map.next_entry()? {
+                    result.insert(key, value);
+                }
+                Ok(Self::Value::Table(result))
+            }
         }
 
         deserializer.deserialize_any(Visitor)
@@ -315,6 +348,7 @@ impl<'de> de::Deserializer<'de> for Value {
             Self::Integer(int) => visitor.visit_i64(int),
             Self::Float(float) => visitor.visit_f64(float),
             Self::Boolean(bool) => visitor.visit_bool(bool),
+            #[cfg(feature = "datetime")]
             Self::Datetime(datetime) => match datetime.try_into()? {
                 AnyDatetime::OffsetDatetime(datetime) => {
                     visitor.visit_map(OffsetDatetimeAccess::new(datetime.to_bytes()))
@@ -564,6 +598,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
             Value::Integer(int) => visitor.visit_i64(int),
             Value::Float(float) => visitor.visit_f64(float),
             Value::Boolean(bool) => visitor.visit_bool(bool),
+            #[cfg(feature = "datetime")]
             Value::Datetime(ref datetime) => {
                 // Note: a datetime clone here is very cheap, Datetime should probably impl Copy
                 // but we don't for toml-rs compatibility.
@@ -818,6 +853,7 @@ mod tests {
 
     use super::*;
     use crate::de::ErrorKind;
+    #[cfg(feature = "datetime")]
     use crate::value::Datetime;
 
     struct OptionDeserializer<T, E> {
@@ -1023,6 +1059,7 @@ mod tests {
         assert_matches!(result, Err(Error(ErrorKind::InvalidType(..))));
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     #[allow(clippy::too_many_lines)]
     fn value_deserialize_datetime() {
@@ -1211,6 +1248,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn value_deserializer_datetime() {
         let result =
@@ -1548,6 +1586,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn value_ref_deserializer_datetime() {
         let result =

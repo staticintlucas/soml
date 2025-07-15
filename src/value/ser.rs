@@ -1,6 +1,8 @@
 use serde::ser;
 
-use super::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime, Value};
+use super::Value;
+#[cfg(feature = "datetime")]
+use super::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::ser::{Error, ErrorKind};
 use crate::{Table, __serialize_unsupported};
 
@@ -15,6 +17,7 @@ impl ser::Serialize for Value {
             Self::Integer(int) => int.serialize(serializer),
             Self::Float(float) => float.serialize(serializer),
             Self::Boolean(bool) => bool.serialize(serializer),
+            #[cfg(feature = "datetime")]
             Self::Datetime(ref datetime) => datetime.serialize(serializer),
             Self::Array(ref array) => array.serialize(serializer),
             Self::Table(ref table) => table.serialize(serializer),
@@ -33,7 +36,10 @@ impl ser::Serializer for ToValueSerializer {
     type SerializeTupleStruct = ToValueArraySerializer;
     type SerializeTupleVariant = ToValueWrappedArraySerializer;
     type SerializeMap = ToValueTableSerializer;
+    #[cfg(feature = "datetime")]
     type SerializeStruct = ToValueTableOrDatetimeSerializer;
+    #[cfg(not(feature = "datetime"))]
+    type SerializeStruct = ToValueTableSerializer;
     type SerializeStructVariant = ToValueWrappedTableSerializer;
 
     #[inline]
@@ -238,7 +244,12 @@ impl ser::Serializer for ToValueSerializer {
         name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        Self::SerializeStruct::start(Some(len), name)
+        match name {
+            #[cfg(feature = "datetime")]
+            name => Self::SerializeStruct::start(Some(len), name),
+            #[cfg(not(feature = "datetime"))]
+            _ => Self::SerializeStruct::start(Some(len)),
+        }
     }
 
     #[inline]
@@ -436,6 +447,7 @@ impl ser::SerializeStruct for ToValueTableSerializer {
     }
 }
 
+#[cfg(feature = "datetime")]
 #[derive(Debug)]
 pub enum ToValueTableOrDatetimeSerializer {
     AnyDatetime, // Used if we see AnyDatetime::WRAPPER_TYPE, use the *::WRAPPER_FIELD to determine which type to use
@@ -446,6 +458,7 @@ pub enum ToValueTableOrDatetimeSerializer {
     Table(ToValueTableSerializer),
 }
 
+#[cfg(feature = "datetime")]
 impl ToValueTableOrDatetimeSerializer {
     fn start(len: Option<usize>, name: &'static str) -> Result<Self, Error> {
         Ok(match name {
@@ -459,6 +472,7 @@ impl ToValueTableOrDatetimeSerializer {
     }
 }
 
+#[cfg(feature = "datetime")]
 impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
     type Ok = <ToValueTableSerializer as ser::SerializeStruct>::Ok;
     type Error = <ToValueTableSerializer as ser::SerializeStruct>::Error;
@@ -626,10 +640,12 @@ mod tests {
     use assert_matches::assert_matches;
     use maplit::btreemap;
     use serde::Serializer as _;
+    #[cfg(feature = "datetime")]
     use serde_bytes::Bytes;
     use serde_test::{assert_ser_tokens, Token};
 
     use super::*;
+    #[cfg(feature = "datetime")]
     use crate::value::Datetime;
 
     #[test]
@@ -650,17 +666,20 @@ mod tests {
         let tokens = [Token::Bool(true)];
         assert_ser_tokens(&value, &tokens);
 
-        let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
-        let tokens = [
-            Token::Struct {
-                name: AnyDatetime::WRAPPER_TYPE,
-                len: 1,
-            },
-            Token::Str(OffsetDatetime::WRAPPER_FIELD),
-            Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
-            Token::StructEnd,
-        ];
-        assert_ser_tokens(&value, &tokens);
+        #[cfg(feature = "datetime")]
+        {
+            let value = Value::Datetime(Datetime::EXAMPLE_OFFSET_DATETIME);
+            let tokens = [
+                Token::Struct {
+                    name: AnyDatetime::WRAPPER_TYPE,
+                    len: 1,
+                },
+                Token::Str(OffsetDatetime::WRAPPER_FIELD),
+                Token::Bytes(OffsetDatetime::EXAMPLE_BYTES),
+                Token::StructEnd,
+            ];
+            assert_ser_tokens(&value, &tokens);
+        };
 
         let value = Value::Array(vec![
             Value::Integer(1),
@@ -809,9 +828,15 @@ mod tests {
             ToValueSerializer.serialize_map(Some(3)),
             Ok(ToValueTableSerializer { .. })
         );
+        #[cfg(feature = "datetime")]
         assert_matches!(
             ToValueSerializer.serialize_struct("Struct", 3),
             Ok(ToValueTableOrDatetimeSerializer::Table { .. })
+        );
+        #[cfg(not(feature = "datetime"))]
+        assert_matches!(
+            ToValueSerializer.serialize_struct("Struct", 3),
+            Ok(ToValueTableSerializer { .. })
         );
         assert_matches!(
             ToValueSerializer.serialize_struct_variant("Enum", 0, "StructVariant", 3),
@@ -939,6 +964,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn to_value_table_or_datetime_serializer() {
         use ser::SerializeStruct as _;
@@ -1044,6 +1070,7 @@ mod tests {
         assert_eq!(result, Value::Datetime(Datetime::EXAMPLE_LOCAL_TIME));
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn to_value_table_or_datetime_serializer_error() {
         use ser::SerializeStruct as _;

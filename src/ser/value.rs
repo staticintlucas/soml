@@ -4,6 +4,7 @@ use serde::ser;
 
 use crate::ser::writer::Formatter;
 use crate::ser::{utils, writer, Error, ErrorKind, Result};
+#[cfg(feature = "datetime")]
 use crate::value::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 
 /// A serializer for TOML values.
@@ -35,7 +36,10 @@ where
     type SerializeTupleStruct = ArraySerializer<'a, W>;
     type SerializeTupleVariant = WrappedArraySerializer<'a, W>;
     type SerializeMap = TableSerializer<'a, W>;
+    #[cfg(feature = "datetime")]
     type SerializeStruct = TableOrDatetimeSerializer<'a, W>;
+    #[cfg(not(feature = "datetime"))]
+    type SerializeStruct = TableSerializer<'a, W>;
     type SerializeStructVariant = WrappedTableSerializer<'a, W>;
 
     #[inline]
@@ -223,7 +227,12 @@ where
 
     #[inline]
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        Self::SerializeStruct::start(name, self.writer)
+        match name {
+            #[cfg(feature = "datetime")]
+            name => Self::SerializeStruct::start(name, self.writer),
+            #[cfg(not(feature = "datetime"))]
+            _ => Self::SerializeStruct::start(self.writer),
+        }
     }
 
     #[inline]
@@ -476,6 +485,7 @@ where
     }
 }
 
+#[cfg(feature = "datetime")]
 #[derive(Debug)]
 pub enum TableOrDatetimeSerializer<'a, W> {
     OffsetDatetime { writer: &'a mut W, empty: bool },
@@ -486,6 +496,7 @@ pub enum TableOrDatetimeSerializer<'a, W> {
     Table(TableSerializer<'a, W>),
 }
 
+#[cfg(feature = "datetime")]
 impl<'a, W> TableOrDatetimeSerializer<'a, W>
 where
     W: fmt::Write,
@@ -518,6 +529,7 @@ where
     }
 }
 
+#[cfg(feature = "datetime")]
 impl<W> ser::SerializeStruct for TableOrDatetimeSerializer<'_, W>
 where
     W: fmt::Write,
@@ -680,6 +692,7 @@ mod tests {
     use assert_matches::assert_matches;
     use indoc::indoc;
     use serde::Serializer as _;
+    #[cfg(feature = "datetime")]
     use serde_bytes::Bytes;
 
     use super::*;
@@ -1166,6 +1179,7 @@ mod tests {
         assert_eq!(buf, r#"{ foo = { bar = 42, baz = "qux" } }"#);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     fn serializer_serialize_datetime() {
         use ser::SerializeStruct as _;
@@ -1275,6 +1289,7 @@ mod tests {
         assert_eq!(buf, LocalTime::EXAMPLE_STR);
     }
 
+    #[cfg(feature = "datetime")]
     #[test]
     #[allow(clippy::too_many_lines)]
     fn serializer_serialize_datetime_error() {
