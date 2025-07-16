@@ -125,7 +125,7 @@ pub enum ErrorKind {
     InvalidInteger(num::ParseIntError),
     /// Invalid float (rejected by str->float conversion)
     InvalidFloat(num::ParseFloatError),
-    /// Invalid datetime
+    /// Invalid date-time
     InvalidDatetime,
     /// Unexpected token
     ExpectedToken(Box<str>),

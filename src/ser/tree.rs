@@ -547,7 +547,7 @@ impl ser::SerializeStruct for TableSerializer {
 #[cfg(feature = "datetime")]
 #[derive(Debug)]
 enum TableOrDatetimeSerializer {
-    // Used if type name is AnyDatetime::WRAPPER_TYPE. To detect the datetime type we use the field
+    // Used if type name is AnyDatetime::WRAPPER_TYPE. To detect the date-time type we use the field
     AnyDatetime,
     OffsetDatetime(Option<String>),
     LocalDatetime(Option<String>),
@@ -615,7 +615,7 @@ impl ser::SerializeStruct for TableOrDatetimeSerializer {
             | Self::LocalDatetime(Some(_))
             | Self::LocalDate(Some(_))
             | Self::LocalTime(Some(_)) => Err(ErrorKind::UnsupportedValue(
-                "datetime wrapper with more than one member",
+                "date-time wrapper with more than one member",
             )
             .into()),
             Self::AnyDatetime

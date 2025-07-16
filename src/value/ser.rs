@@ -515,7 +515,7 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
             | Self::LocalDate(Some(_))
             | Self::LocalTime(Some(_)) => {
                 return Err(ErrorKind::UnsupportedValue(
-                    "datetime wrapper with more than one member",
+                    "date-time wrapper with more than one member",
                 )
                 .into())
             }
@@ -533,19 +533,19 @@ impl ser::SerializeStruct for ToValueTableOrDatetimeSerializer {
             Self::OffsetDatetime(Some(bytes)) => OffsetDatetime::from_slice(&bytes)
                 .map(Into::into)
                 .map(Value::Datetime)
-                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
+                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded date-time").into()),
             Self::LocalDatetime(Some(bytes)) => LocalDatetime::from_slice(&bytes)
                 .map(Into::into)
                 .map(Value::Datetime)
-                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
+                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded date-time").into()),
             Self::LocalDate(Some(bytes)) => LocalDate::from_slice(&bytes)
                 .map(Into::into)
                 .map(Value::Datetime)
-                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
+                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded date-time").into()),
             Self::LocalTime(Some(bytes)) => LocalTime::from_slice(&bytes)
                 .map(Into::into)
                 .map(Value::Datetime)
-                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded datetime").into()),
+                .map_err(|_| ErrorKind::UnsupportedValue("invalid encoded date-time").into()),
             Self::AnyDatetime
             | Self::OffsetDatetime(None)
             | Self::LocalDatetime(None)

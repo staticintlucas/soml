@@ -73,16 +73,16 @@ pub(super) enum Value {
     SpecialFloat(SpecialFloat),
     // Boolean
     Boolean(bool),
-    // Offset Datetime
+    // Offset date-time
     #[cfg(feature = "datetime")]
     OffsetDatetime(Vec<u8>),
-    // Local Datetime
+    // Local date-time
     #[cfg(feature = "datetime")]
     LocalDatetime(Vec<u8>),
-    // Local Date
+    // Local date
     #[cfg(feature = "datetime")]
     LocalDate(Vec<u8>),
-    // Local Time
+    // Local time
     #[cfg(feature = "datetime")]
     LocalTime(Vec<u8>),
     // Just a regular inline array
@@ -386,7 +386,7 @@ impl Parser<'_> {
             [b'"' | b'\'', ..] => self.parse_string().map(Value::String),
             // Boolean
             [b't' | b'f', ..] => self.parse_bool().map(Value::Boolean),
-            // Digit could mean either number or datetime
+            // Digit could mean either number or date-time
             [b'0'..=b'9', ..] => self.parse_number_or_datetime(),
             // Number
             [b'+' | b'-', ch, ..] if ch.is_ascii_digit() => self.parse_number_decimal(),
@@ -711,7 +711,7 @@ impl Parser<'_> {
                 {
                     (end, t + 1)
                 }
-                // If we don't have a 'T' we might have a space-delimited datetime of which
+                // If we don't have a 'T' we might have a space-delimited date-time of which
                 // `value` is the first half, so check for space followed by a digit
                 else if matches!(self.line[end..], [b' ', b'0'..=b'9', ..]) {
                     // Discard the space
@@ -1107,7 +1107,7 @@ trait TomlByte {
     fn is_toml_whitespace(&self) -> bool;
     /// If the byte is a TOML word (ASCII alphanumeric or hyphen or underscore)
     fn is_toml_word(&self) -> bool;
-    /// If the byte is present in a datetime (ASCII numeric, plus, minus, period, colon, T, t, Z, z)
+    /// If the byte is present in a date-time (ASCII numeric, plus, minus, period, colon, T, t, Z, z)
     #[cfg(feature = "datetime")]
     fn is_toml_datetime(&self) -> bool;
     /// If the byte is valid in a TOML comment (disallows all ASCII control chars except for tab)

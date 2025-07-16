@@ -600,7 +600,7 @@ impl<'de> de::Deserializer<'de> for &'de Value {
             Value::Boolean(bool) => visitor.visit_bool(bool),
             #[cfg(feature = "datetime")]
             Value::Datetime(ref datetime) => {
-                // Note: a datetime clone here is very cheap, Datetime should probably impl Copy
+                // Note: a date-time clone here is very cheap, Datetime should probably impl Copy
                 // but we don't for toml-rs compatibility.
                 match datetime.clone().try_into()? {
                     AnyDatetime::OffsetDatetime(datetime) => {

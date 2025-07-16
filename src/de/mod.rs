@@ -459,7 +459,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         }
     }
 
-    // name and fields are only used when datetime is enabled
+    // name and fields are only used when date-time is enabled
     #[cfg_attr(not(feature = "datetime"), allow(unused_variables))]
     fn deserialize_struct<V>(
         self,

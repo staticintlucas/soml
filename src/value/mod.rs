@@ -155,7 +155,7 @@ impl Value {
         self.is_boolean()
     }
 
-    /// Returns `true` if `self` is a datetime.
+    /// Returns `true` if `self` is a date-time.
     #[cfg(feature = "datetime")]
     #[must_use]
     #[inline]
@@ -217,7 +217,7 @@ impl Value {
         }
     }
 
-    /// If `self` is a datetime, returns it as a [`Datetime`].
+    /// If `self` is a date-time, returns it as a [`Datetime`].
     #[cfg(feature = "datetime")]
     #[must_use]
     #[inline]

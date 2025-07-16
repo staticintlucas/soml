@@ -596,7 +596,7 @@ where
             | Self::LocalDatetime { empty: false, .. }
             | Self::LocalDate { empty: false, .. }
             | Self::LocalTime { empty: false, .. } => Err(ErrorKind::UnsupportedValue(
-                "datetime wrapper with more than one member",
+                "date-time wrapper with more than one member",
             )
             .into()),
             Self::AnyDatetime { .. }
