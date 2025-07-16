@@ -13,7 +13,7 @@ categories = ["config", "parser-implementations", "parsing"]
 [features]
 default = ["std", "datetime", "strict"]
 std = []
-# alloc = [] # TODO
+# alloc = [] # TODO no_std support?
 datetime = []
 strict = []
 

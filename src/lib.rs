@@ -81,6 +81,7 @@
 
 #![cfg_attr(coverage, expect(unstable_features))]
 #![cfg_attr(coverage, feature(coverage_attribute))]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 #[doc(inline)]
 pub use self::de::{from_reader, from_slice, from_str, Deserializer};
