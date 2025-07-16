@@ -273,7 +273,7 @@ impl ToValueArraySerializer {
     #[allow(clippy::unnecessary_wraps)]
     #[inline]
     fn start(len: Option<usize>) -> Result<Self, Error> {
-        let array = Vec::with_capacity(len.unwrap_or(0).min(256));
+        let array = Vec::with_capacity(len.unwrap_or(0));
         Ok(Self { array })
     }
 }
@@ -381,7 +381,7 @@ impl ToValueTableSerializer {
     #[allow(clippy::unnecessary_wraps)]
     #[inline]
     fn start(_len: Option<usize>) -> Result<Self, Error> {
-        let table = Table::new(); // BTreeMap has not with_capacity
+        let table = Table::new(); // BTreeMap has no with_capacity
         Ok(Self { key: None, table })
     }
 }

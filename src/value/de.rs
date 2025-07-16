@@ -264,7 +264,7 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 A: de::SeqAccess<'de>,
             {
-                let mut result = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                let mut result = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(256));
                 while let Some(element) = seq.next_element()? {
                     result.push(element);
                 }
