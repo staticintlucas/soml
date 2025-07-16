@@ -36,6 +36,8 @@ def result_to_table(title: str, results: list[tuple[crates.Crate, crates.Results
     )
     for crate, result in results:
         package = f"[{crate.package}]"
+        if crate.notes is not None:
+            package = f"{package}<br>({crate.notes})"
         size = f"{(result.size - baseline) / 1024:.0f} KiB"
         maintained = "✅" if crate.maintained else "❌"
         table.add_row(

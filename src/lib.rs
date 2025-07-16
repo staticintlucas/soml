@@ -47,12 +47,13 @@
 //!
 //! ## Deserialize-only
 //!
-//! |    Crate     | Version | Size &ast; | Maintained |    TOML version    |
-//! |:------------:|:-------:|:----------:|:----------:|:------------------:|
-//! |    [soml]    |  0.1.0  |  103 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.8.23 |  231 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.5.11 |  114 KiB   |     ❌      |        0.5         |
-//! | [basic-toml] |  0.1.10 |  117 KiB   |     ❌      | 0.5<br>(partial †) |
+//! |              Crate              | Version | Size &ast; | Maintained |    TOML version    |
+//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------------:|
+//! |              [soml]             |  0.1.0  |  103 KiB   |     ✅      |        1.0         |
+//! | [soml]<br>(`datetime` disabled) |  0.1.0  |   97 KiB   |     ✅      |        1.0         |
+//! |              [toml]             |  0.8.23 |  231 KiB   |     ✅      |        1.0         |
+//! |              [toml]             |  0.5.11 |  114 KiB   |     ❌      |        0.5         |
+//! |           [basic-toml]          |  0.1.10 |  117 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
 //! &ast; *Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
 //! This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.* \
@@ -60,12 +61,13 @@
 //!
 //! ## Deserialize and Serialize
 //!
-//! |    Crate     | Version | Size &ast; | Maintained |    TOML version    |
-//! |:------------:|:-------:|:----------:|:----------:|:------------------:|
-//! |    [soml]    |  0.1.0  |  128 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.8.23 |  320 KiB   |     ✅      |        1.0         |
-//! |    [toml]    |  0.5.11 |  127 KiB   |     ❌      |        0.5         |
-//! | [basic-toml] |  0.1.10 |  127 KiB   |     ❌      | 0.5<br>(partial †) |
+//! |              Crate              | Version | Size &ast; | Maintained |    TOML version    |
+//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------------:|
+//! |              [soml]             |  0.1.0  |  128 KiB   |     ✅      |        1.0         |
+//! | [soml]<br>(`datetime` disabled) |  0.1.0  |  122 KiB   |     ✅      |        1.0         |
+//! |              [toml]             |  0.8.23 |  320 KiB   |     ✅      |        1.0         |
+//! |              [toml]             |  0.5.11 |  127 KiB   |     ❌      |        0.5         |
+//! |           [basic-toml]          |  0.1.10 |  127 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
 //! &ast; *Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
 //! This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.* \

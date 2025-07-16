@@ -7,6 +7,9 @@ from textwrap import dedent
 
 def write_manifest(path: Path, crate: crates.Crate):
     version = f'path = "{crate.path}"' if crate.path is not None else f'version = "{crate.version}"'
+    features = f"features = [{", ".join(map(repr, crate.features))}]" if len(crate.features) > 0 else None
+    default_features = "default-features = false" if not crate.default_features else None
+    props = (p for p in [version, features, default_features] if p is not None)
 
     content = dedent(f"""
         [package]
@@ -15,7 +18,7 @@ def write_manifest(path: Path, crate: crates.Crate):
 
         [dependencies]
         serde = {{ version = "1.0", features = ["derive"] }}
-        {crate.package} = {{ {version} }}
+        {crate.package} = {{ {", ".join(props)} }}
     """)
     (path / "Cargo.toml").write_text(content)
 

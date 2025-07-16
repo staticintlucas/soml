@@ -5,6 +5,16 @@ maintained = true
 toml-ver = "1.0"
 url = "https://crates.io/crates/soml"
 
+["soml-no-datetime"]
+package = "soml"
+notes = "`datetime` disabled"
+default-features = false
+features = ["std", "strict"]
+path = "."
+maintained = true
+toml-ver = "1.0"
+url = "https://crates.io/crates/soml"
+
 ["toml-0.8"]
 package = "toml"
 version = "0.8"

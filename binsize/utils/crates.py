@@ -10,8 +10,11 @@ class Results(NamedTuple):
 
 class Crate(NamedTuple):
     package: str
+    notes: str
     version: str | None
     path: Path | None
+    default_features: bool
+    features: list[str]
     maintained: bool
     toml_ver: str
     url: str
@@ -35,12 +38,15 @@ def loads(crates_toml: str) -> list[Crate]:
 
         crates.append(Crate(
             package=str(props["package"]),
+            notes=str(props["notes"]) if "notes" in props else None,
             version=str(props["version"]) if "version" in props else None,
             path=props["path"] if "path" in props else None,
+            default_features=bool(props.get("default-features", True)),
+            features=list(str(f) for f in props.get("features", [])),
             maintained=bool(props["maintained"]),
             toml_ver=str(props["toml-ver"]),
             url=str(props["url"]),
-            footnotes=list(str(f) for f in props["footnotes"]) if "footnotes" in props else [],
+            footnotes=list(str(f) for f in props.get("footnotes", [])),
         ))
 
     return crates
