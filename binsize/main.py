@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import tests.de_only
+import tests.reference
 import tests.ser_de
 from utils import *
 
@@ -17,7 +18,7 @@ HEADER_URLS = {
 }
 
 FOOTNOTE = dedent("""\
-    Refers to the size of the `.text` section of a binary using the given TOML crate.
+    Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
     This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.
 """)
 FOOTNOTE_URLS = {
@@ -27,7 +28,7 @@ FOOTNOTE_URLS = {
 START_TAG = "<!-- binsize start -->"
 END_TAG = "<!-- binsize end -->"
 
-def result_to_table(title: str, results: list[tuple[crates.Crate, crates.Results]]) -> str:
+def result_to_table(title: str, results: list[tuple[crates.Crate, crates.Results]], baseline: int) -> str:
     table = markdown.Table(
         title,
         headers=["Crate", "Version", "Size {1}", "Maintained", "TOML version"],
@@ -35,7 +36,7 @@ def result_to_table(title: str, results: list[tuple[crates.Crate, crates.Results
     )
     for crate, result in results:
         package = f"[{crate.package}]"
-        size = f"{result.size / 1024:.0f} KiB"
+        size = f"{(result.size - baseline) / 1024:.0f} KiB"
         maintained = "✅" if crate.maintained else "❌"
         table.add_row(
             [package, result.version, size, maintained, crate.toml_ver],
@@ -49,17 +50,20 @@ def main():
 
     output = [HEADER.rstrip()]
 
-    ser_de_results = []
-    for crate in test_crates:
-        result = tests.ser_de.run_test(crate)
-        ser_de_results.append((crate, result))
-    output.append(result_to_table("Read then write a TOML file (round trip)", ser_de_results))
+    result = tests.reference.run_test()
+    baseline = result.size
 
     de_only_results = []
     for crate in test_crates:
         result = tests.de_only.run_test(crate)
         de_only_results.append((crate, result))
-    output.append(result_to_table("Read a TOML file", de_only_results))
+    output.append(result_to_table("Deserialize-only", de_only_results, baseline))
+
+    ser_de_results = []
+    for crate in test_crates:
+        result = tests.ser_de.run_test(crate)
+        ser_de_results.append((crate, result))
+    output.append(result_to_table("Deserialize and Serialize", ser_de_results, baseline))
 
     urls = {**HEADER_URLS, **FOOTNOTE_URLS}
     urls.update({crate.package: crate.url for crate in test_crates})

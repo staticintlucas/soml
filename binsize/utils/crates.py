@@ -5,7 +5,7 @@ from typing import NamedTuple, Any
 from .paths import soml_root
 
 class Results(NamedTuple):
-    version: str
+    version: str | None
     size: int
 
 class Crate(NamedTuple):
