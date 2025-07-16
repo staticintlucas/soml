@@ -5,7 +5,9 @@ import tests.reference
 import tests.ser_de
 from utils import *
 
+import argparse
 import re
+import sys
 from textwrap import dedent, indent
 
 HEADER = dedent(f"""\
@@ -46,7 +48,7 @@ def result_to_table(title: str, results: list[tuple[crates.Crate, crates.Results
         )
     return str(table)
 
-def main():
+def generate_output() -> str:
     crates_toml = paths.script_root() / "crates.toml"
     test_crates = crates.load(crates_toml)
 
@@ -71,8 +73,12 @@ def main():
     urls.update({crate.package: crate.url for crate in test_crates})
     output.append(markdown.format_urls(urls))
 
-    output = "\n\n".join(output)
-    output_comment = "\n".join((
+    return "\n\n".join(output)
+
+def generate_doc_comment() -> str:
+    output = generate_output()
+
+    return "\n".join((
         START_TAG,
         "//!",
         indent(indent(output, " "), "//!", lambda _: True),
@@ -80,15 +86,36 @@ def main():
         f"//! {END_TAG}",
     ))
 
+def write_doc_comment(comment: str) -> None:
     lib_rs = paths.soml_root() / "src" / "lib.rs"
     text = lib_rs.read_text()
-    text = re.sub(
-        rf"{START_TAG}.*?{END_TAG}",
-        output_comment,
-        text,
-        flags=re.MULTILINE | re.DOTALL
-    )
+    text = re.sub(rf"{START_TAG}.*?{END_TAG}", comment, text, flags=re.MULTILINE | re.DOTALL)
     lib_rs.write_text(text)
 
+def check_doc_comment(comment: str) -> bool:
+    lib_rs = paths.soml_root() / "src" / "lib.rs"
+    text = lib_rs.read_text()
+    text = re.search(rf"{START_TAG}.*?{END_TAG}", text, flags=re.MULTILINE | re.DOTALL).group()
+    return text == comment
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Generate binary size stats of soml compared to other TOML crates",
+    )
+    parser.add_argument("--check", action="store_const", const="check", dest="cmd")
+    parser.add_argument("--update", action="store_const", const="update", dest="cmd")
+    args = parser.parse_args()
+
+    if args.cmd == "check":
+        matches = check_doc_comment(generate_doc_comment())
+        if not matches:
+            print("error: doc comment is not up to date", file=sys.stderr)
+            return 3
+    elif args.cmd == "update":
+        write_doc_comment(generate_doc_comment())
+    else:
+        print(generate_output())
+    return 0
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
