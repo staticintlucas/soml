@@ -20,8 +20,8 @@ HEADER_URLS = {
 }
 
 FOOTNOTE = dedent("""\
-    Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
-    This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.
+    Increase in code (`.text`) size compared to just reading/writing a file without (de)serializing.
+    This is calculated using [`cargo-bloat`][cargo-bloat] with the default release profile.
 """)
 FOOTNOTE_URLS = {
     "cargo-bloat": "https://crates.io/crates/cargo-bloat",

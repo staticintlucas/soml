@@ -55,8 +55,8 @@
 //! |              [toml]             |  0.5.11 |  114 KiB   |     ❌      |        0.5         |
 //! |           [basic-toml]          |  0.1.10 |  117 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
-//! &ast; *Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
-//! This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.* \
+//! &ast; *Increase in code (`.text`) size compared to just reading/writing a file without (de)serializing.
+//! This is calculated using [`cargo-bloat`][cargo-bloat] with the default release profile.* \
 //! † *Does not support TOML date-time types.*
 //!
 //! ## Deserialize and Serialize
@@ -69,8 +69,8 @@
 //! |              [toml]             |  0.5.11 |  127 KiB   |     ❌      |        0.5         |
 //! |           [basic-toml]          |  0.1.10 |  127 KiB   |     ❌      | 0.5<br>(partial †) |
 //!
-//! &ast; *Increase in `.text` section size compared to a baseline which just reads/writes the TOML as plain text.
-//! This is calculated using [`cargo-bloat`][cargo-bloat] with the release profile.* \
+//! &ast; *Increase in code (`.text`) size compared to just reading/writing a file without (de)serializing.
+//! This is calculated using [`cargo-bloat`][cargo-bloat] with the default release profile.* \
 //! † *Does not support TOML date-time types.*
 //!
 //! [binsize/main.py]: https://github.com/staticintlucas/soml/blob/main/binsize/main.py
