@@ -8,7 +8,7 @@
 //! This project designed to sit at the opposite end of the spectrum, offering basic TOML support for [Serde] with a much smaller footprint.
 //! See the comparison table below for a more detailed comparison of TOML crates.
 //!
-//! We also aim to maintain API-compatibility with the toml crate, so migrating to (or from) soml should be relatively easy.
+//! We also aim to be mostly API-compatibility with the toml crate, so migrating to (or from) soml should be relatively easy.
 //!
 //! [serde]: https://serde.rs/
 //! [toml-lang]: https://toml.io/
@@ -51,6 +51,7 @@
 //! |:-------------------------------:|:-------:|:----------:|:----------:|:------------:|
 //! |              [soml]             |  0.1.0  |  103 KiB   |     ✅      |     1.0      |
 //! | [soml]<br>(`datetime` disabled) |  0.1.0  |   97 KiB   |     ✅      |    1.0 †     |
+//! |              [toml]             |  0.9.2  |  164 KiB   |     ✅      |     1.0      |
 //! |              [toml]             |  0.8.23 |  231 KiB   |     ✅      |     1.0      |
 //! |              [toml]             |  0.5.11 |  114 KiB   |     ❌      |     0.5      |
 //! |           [basic-toml]          |  0.1.10 |  117 KiB   |     ❌      |    0.5 †     |
@@ -65,6 +66,7 @@
 //! |:-------------------------------:|:-------:|:----------:|:----------:|:------------:|
 //! |              [soml]             |  0.1.0  |  128 KiB   |     ✅      |     1.0      |
 //! | [soml]<br>(`datetime` disabled) |  0.1.0  |  122 KiB   |     ✅      |    1.0 †     |
+//! |              [toml]             |  0.9.2  |  186 KiB   |     ✅      |     1.0      |
 //! |              [toml]             |  0.8.23 |  320 KiB   |     ✅      |     1.0      |
 //! |              [toml]             |  0.5.11 |  127 KiB   |     ❌      |     0.5      |
 //! |           [basic-toml]          |  0.1.10 |  127 KiB   |     ❌      |    0.5 †     |
