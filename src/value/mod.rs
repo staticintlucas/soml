@@ -11,7 +11,12 @@ pub use self::datetime::{
     AnyDatetime, Date, Datetime, LocalDate, LocalDatetime, LocalTime, Offset, OffsetDatetime, Time,
 };
 use self::ser::ToValueSerializer;
-use crate::Table;
+
+/// A TOML table type.
+pub type Table = crate::Table;
+
+/// A TOML array type.
+pub type Array = Vec<Value>;
 
 #[cfg(feature = "datetime")]
 pub(crate) mod datetime;
