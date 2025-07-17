@@ -9,6 +9,7 @@ repository = "https://github.com/staticintlucas/soml"
 license = "MIT OR Apache-2.0"
 keywords = ["serde", "toml", "parsing", "deserializing"]
 categories = ["config", "parser-implementations", "parsing"]
+include = ["/src", "/LICENCE-*", "/README.md"] # build.rs is only needed to run toml-test
 
 [features]
 default = ["std", "datetime", "strict"]
