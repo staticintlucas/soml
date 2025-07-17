@@ -19,9 +19,14 @@ class Table:
             raise ValueError("Row length does not match header length.")
 
         for idx, footnote in enumerate(footnotes, 1):
+            footnote = footnote.rstrip()
             if any(f"{{{idx}}}" in cell for cell in row):
-                sym = next(s for s in FOOTNOTE_SYMS if s not in self.footnotes)
-                self.footnotes[sym] = footnote.rstrip()
+                syms = [k for k, v in self.footnotes.items() if v == footnote]
+                if len(syms) > 0:
+                    [sym] = syms # We should never have duplicate values
+                else:
+                    sym = next(s for s in FOOTNOTE_SYMS if s not in self.footnotes)
+                    self.footnotes[sym] = footnote
                 row = [cell.replace(f"{{{idx}}}", sym) for cell in row]
 
         self.rows.append(row)
