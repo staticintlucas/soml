@@ -12,8 +12,11 @@ default-features = false
 features = ["std", "strict"]
 path = "."
 maintained = true
-toml-ver = "1.0"
+toml-ver = "1.0{1}"
 url = "https://crates.io/crates/soml"
+footnotes = [
+    "Does not support TOML date-time types.",
+]
 
 ["toml-0.8"]
 package = "toml"
@@ -33,7 +36,7 @@ url = "https://crates.io/crates/toml"
 package = "basic-toml"
 version = "0.1"
 maintained = false
-toml-ver = "0.5<br>(partial {1})"
+toml-ver = "0.5{1}"
 url = "https://crates.io/crates/basic-toml"
 footnotes = [
     "Does not support TOML date-time types.",

@@ -47,31 +47,33 @@
 //!
 //! ## Deserialize-only
 //!
-//! |              Crate              | Version | Size &ast; | Maintained |    TOML version    |
-//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------------:|
-//! |              [soml]             |  0.1.0  |  103 KiB   |     ✅      |        1.0         |
-//! | [soml]<br>(`datetime` disabled) |  0.1.0  |   97 KiB   |     ✅      |        1.0         |
-//! |              [toml]             |  0.8.23 |  231 KiB   |     ✅      |        1.0         |
-//! |              [toml]             |  0.5.11 |  114 KiB   |     ❌      |        0.5         |
-//! |           [basic-toml]          |  0.1.10 |  117 KiB   |     ❌      | 0.5<br>(partial †) |
+//! |              Crate              | Version | Size &ast; | Maintained | TOML version |
+//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------:|
+//! |              [soml]             |  0.1.0  |  103 KiB   |     ✅      |     1.0      |
+//! | [soml]<br>(`datetime` disabled) |  0.1.0  |   97 KiB   |     ✅      |     1.0†     |
+//! |              [toml]             |  0.8.23 |  231 KiB   |     ✅      |     1.0      |
+//! |              [toml]             |  0.5.11 |  114 KiB   |     ❌      |     0.5      |
+//! |           [basic-toml]          |  0.1.10 |  117 KiB   |     ❌      |     0.5‡     |
 //!
 //! &ast; *Increase in code (`.text`) size compared to just reading/writing a file without (de)serializing.
 //! This is calculated using [`cargo-bloat`][cargo-bloat] with the default release profile.* \
-//! † *Does not support TOML date-time types.*
+//! † *Does not support TOML date-time types.* \
+//! ‡ *Does not support TOML date-time types.*
 //!
 //! ## Deserialize and Serialize
 //!
-//! |              Crate              | Version | Size &ast; | Maintained |    TOML version    |
-//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------------:|
-//! |              [soml]             |  0.1.0  |  128 KiB   |     ✅      |        1.0         |
-//! | [soml]<br>(`datetime` disabled) |  0.1.0  |  122 KiB   |     ✅      |        1.0         |
-//! |              [toml]             |  0.8.23 |  320 KiB   |     ✅      |        1.0         |
-//! |              [toml]             |  0.5.11 |  127 KiB   |     ❌      |        0.5         |
-//! |           [basic-toml]          |  0.1.10 |  127 KiB   |     ❌      | 0.5<br>(partial †) |
+//! |              Crate              | Version | Size &ast; | Maintained | TOML version |
+//! |:-------------------------------:|:-------:|:----------:|:----------:|:------------:|
+//! |              [soml]             |  0.1.0  |  128 KiB   |     ✅      |     1.0      |
+//! | [soml]<br>(`datetime` disabled) |  0.1.0  |  122 KiB   |     ✅      |     1.0†     |
+//! |              [toml]             |  0.8.23 |  320 KiB   |     ✅      |     1.0      |
+//! |              [toml]             |  0.5.11 |  127 KiB   |     ❌      |     0.5      |
+//! |           [basic-toml]          |  0.1.10 |  127 KiB   |     ❌      |     0.5‡     |
 //!
 //! &ast; *Increase in code (`.text`) size compared to just reading/writing a file without (de)serializing.
 //! This is calculated using [`cargo-bloat`][cargo-bloat] with the default release profile.* \
-//! † *Does not support TOML date-time types.*
+//! † *Does not support TOML date-time types.* \
+//! ‡ *Does not support TOML date-time types.*
 //!
 //! [binsize/main.py]: https://github.com/staticintlucas/soml/blob/main/binsize/main.py
 //! [cargo-bloat]: https://crates.io/crates/cargo-bloat
