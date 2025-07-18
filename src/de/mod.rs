@@ -316,7 +316,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
-            ParsedValue::Float(bytes) => visitor.visit_f32(parse_float(&bytes)?),
+            ParsedValue::Float(bytes) | ParsedValue::Integer(bytes) => {
+                visitor.visit_f32(parse_float(&bytes)?)
+            }
             ParsedValue::SpecialFloat(special) => visitor.visit_f32(parse_special(special)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
@@ -328,7 +330,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         V: de::Visitor<'de>,
     {
         match self.value {
-            ParsedValue::Float(bytes) => visitor.visit_f64(parse_float(&bytes)?),
+            ParsedValue::Float(bytes) | ParsedValue::Integer(bytes) => {
+                visitor.visit_f64(parse_float(&bytes)?)
+            }
             ParsedValue::SpecialFloat(special) => visitor.visit_f64(parse_special(special)),
             _ => Err(Error::invalid_type(self.value.typ().into(), &visitor)),
         }
@@ -1621,6 +1625,9 @@ mod tests {
         let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".to_vec()));
         assert_matches!(f32::deserialize(deserializer), Ok(123.0));
 
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
+        assert_matches!(f32::deserialize(deserializer), Ok(123.0));
+
         let deserializer =
             ValueDeserializer::new(ParsedValue::SpecialFloat(SpecialFloat::Infinity));
         assert_matches!(f32::deserialize(deserializer), Ok(f) if f.is_infinite());
@@ -1635,6 +1642,9 @@ mod tests {
     #[test]
     fn value_deserializer_deserialize_f64() {
         let deserializer = ValueDeserializer::new(ParsedValue::Float(b"123.0".to_vec()));
+        assert_matches!(f64::deserialize(deserializer), Ok(123.0));
+
+        let deserializer = ValueDeserializer::new(ParsedValue::Integer(b"123".to_vec()));
         assert_matches!(f64::deserialize(deserializer), Ok(123.0));
 
         let deserializer =
