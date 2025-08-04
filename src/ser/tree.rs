@@ -587,7 +587,7 @@ impl ser::SerializeStruct for TableOrDatetimeSerializer {
                 if key == OffsetDatetime::WRAPPER_FIELD =>
             {
                 let mut buf = String::new();
-                value.serialize(utils::RawStringSerializer::new(&mut buf))?;
+                value.serialize(utils::RawStringSerializer { writer: &mut buf })?;
                 *self = Self::OffsetDatetime(Some(buf));
                 Ok(())
             }
@@ -595,19 +595,19 @@ impl ser::SerializeStruct for TableOrDatetimeSerializer {
                 if key == LocalDatetime::WRAPPER_FIELD =>
             {
                 let mut buf = String::new();
-                value.serialize(utils::RawStringSerializer::new(&mut buf))?;
+                value.serialize(utils::RawStringSerializer { writer: &mut buf })?;
                 *self = Self::LocalDatetime(Some(buf));
                 Ok(())
             }
             Self::LocalDate(None) | Self::AnyDatetime if key == LocalDate::WRAPPER_FIELD => {
                 let mut buf = String::new();
-                value.serialize(utils::RawStringSerializer::new(&mut buf))?;
+                value.serialize(utils::RawStringSerializer { writer: &mut buf })?;
                 *self = Self::LocalDate(Some(buf));
                 Ok(())
             }
             Self::LocalTime(None) | Self::AnyDatetime if key == LocalTime::WRAPPER_FIELD => {
                 let mut buf = String::new();
-                value.serialize(utils::RawStringSerializer::new(&mut buf))?;
+                value.serialize(utils::RawStringSerializer { writer: &mut buf })?;
                 *self = Self::LocalTime(Some(buf));
                 Ok(())
             }

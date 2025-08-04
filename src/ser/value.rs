@@ -555,7 +555,7 @@ where
                     | LocalTime::WRAPPER_FIELD
             ) =>
             {
-                value.serialize(utils::RawStringSerializer::new(writer))?;
+                value.serialize(utils::RawStringSerializer { writer })?;
                 *empty = false;
                 Ok(())
             }
@@ -563,7 +563,7 @@ where
                 ref mut writer,
                 empty: ref mut empty @ true,
             } if key == OffsetDatetime::WRAPPER_FIELD => {
-                value.serialize(utils::RawStringSerializer::new(writer))?;
+                value.serialize(utils::RawStringSerializer { writer })?;
                 *empty = false;
                 Ok(())
             }
@@ -571,7 +571,7 @@ where
                 ref mut writer,
                 empty: ref mut empty @ true,
             } if key == LocalDatetime::WRAPPER_FIELD => {
-                value.serialize(utils::RawStringSerializer::new(writer))?;
+                value.serialize(utils::RawStringSerializer { writer })?;
                 *empty = false;
                 Ok(())
             }
@@ -579,7 +579,7 @@ where
                 ref mut writer,
                 empty: ref mut empty @ true,
             } if key == LocalDate::WRAPPER_FIELD => {
-                value.serialize(utils::RawStringSerializer::new(writer))?;
+                value.serialize(utils::RawStringSerializer { writer })?;
                 *empty = false;
                 Ok(())
             }
@@ -587,7 +587,7 @@ where
                 ref mut writer,
                 empty: ref mut empty @ true,
             } if key == LocalTime::WRAPPER_FIELD => {
-                value.serialize(utils::RawStringSerializer::new(writer))?;
+                value.serialize(utils::RawStringSerializer { writer })?;
                 *empty = false;
                 Ok(())
             }

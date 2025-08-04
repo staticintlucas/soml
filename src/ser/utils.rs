@@ -118,19 +118,19 @@ where
 
 // Serializes a string to itself
 pub struct RawStringSerializer<'a, W> {
-    writer: &'a mut W,
+    pub writer: &'a mut W,
 }
 
-impl<'a, W> RawStringSerializer<'a, W>
-where
-    W: fmt::Write,
-{
-    /// Creates a new `RawStringSerializer` with the given writer.
-    #[inline]
-    pub fn new(writer: &'a mut W) -> Self {
-        Self { writer }
-    }
-}
+// impl<'a, W> RawStringSerializer<'a, W>
+// where
+//     W: fmt::Write,
+// {
+//     /// Creates a new `RawStringSerializer` with the given writer.
+//     #[inline]
+//     pub fn new(writer: &'a mut W) -> Self {
+//         Self { writer }
+//     }
+// }
 
 impl<W> ser::Serializer for RawStringSerializer<'_, W>
 where
@@ -574,35 +574,35 @@ mod tests {
     #[test]
     fn raw_string_serializer() {
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         ser.serialize_str("foo").unwrap();
         assert_eq!(buf, "foo");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         ser.serialize_str("abc.123").unwrap();
         assert_eq!(buf, "abc.123");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         ser.serialize_str("😎").unwrap();
         assert_eq!(buf, "😎");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         ser.serialize_bytes(b"foo").unwrap();
         assert_eq!(buf, "foo");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         assert_matches!(ser.serialize_bytes(b"\xff"), Err(Error(..)));
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         assert_matches!(ser.serialize_i32(2), Err(Error(..)));
 
         let mut buf = String::new();
-        let ser = RawStringSerializer::new(&mut buf);
+        let ser = RawStringSerializer { writer: &mut buf };
         assert_matches!(ser.serialize_seq(Some(2)), Err(Error(..)));
     }
 
