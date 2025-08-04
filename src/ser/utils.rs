@@ -29,15 +29,90 @@ where
     type Error = Error;
 
     __serialize_unsupported!(
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char bytes none
-        some unit unit_struct unit_variant newtype_struct newtype_variant seq
-        tuple tuple_struct tuple_variant map struct struct_variant
+        bool f32 f64 char bytes none unit unit_struct unit_variant newtype_variant
+        seq tuple tuple_struct tuple_variant map struct struct_variant
     );
+
+    #[inline]
+    fn serialize_i8(self, value: i8) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_i16(self, value: i16) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_i32(self, value: i32) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_i64(self, value: i64) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_i128(self, value: i128) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_u8(self, value: u8) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_u16(self, value: u16) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_u32(self, value: u32) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_u64(self, value: u64) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_u128(self, value: u128) -> Result<Self::Ok> {
+        write!(self.writer, "{value}")?; // '0'-'9' & '-' are all valid identifiers
+        Ok(())
+    }
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Self::Ok> {
         writer::Formatter::write_key(value, self.writer)?;
         Ok(())
+    }
+
+    #[inline]
+    fn serialize_some<T>(self, value: &T) -> Result<Self::Ok>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        value.serialize(self)
+    }
+
+    #[inline]
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Self::Ok>
+    where
+        T: ?Sized + ser::Serialize,
+    {
+        value.serialize(self)
     }
 }
 
@@ -403,7 +478,93 @@ mod tests {
 
         let mut buf = String::new();
         let ser = KeySerializer::new(&mut buf);
-        assert_matches!(ser.serialize_i32(2), Err(Error(..)));
+        ser.serialize_i8(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_i16(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_i32(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_i64(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_i128(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_u8(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_u16(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_u32(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_u64(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_u128(2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_some(&"foo").unwrap();
+        assert_eq!(buf, "foo");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_some(&"abc.123").unwrap();
+        assert_eq!(buf, r#""abc.123""#);
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_some("😎").unwrap();
+        assert_eq!(buf, r#""😎""#);
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_some(&2).unwrap();
+        assert_eq!(buf, "2");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_newtype_struct("Wrapper", &"foo").unwrap();
+        assert_eq!(buf, "foo");
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_newtype_struct("Wrapper", &"abc.123").unwrap();
+        assert_eq!(buf, r#""abc.123""#);
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_newtype_struct("Wrapper", "😎").unwrap();
+        assert_eq!(buf, r#""😎""#);
+
+        let mut buf = String::new();
+        let ser = KeySerializer::new(&mut buf);
+        ser.serialize_newtype_struct("Wrapper", &2).unwrap();
+        assert_eq!(buf, "2");
 
         let mut buf = String::new();
         let ser = KeySerializer::new(&mut buf);
@@ -441,7 +602,7 @@ mod tests {
         assert_matches!(ser.serialize_i32(2), Err(Error(..)));
 
         let mut buf = String::new();
-        let ser = KeySerializer::new(&mut buf);
+        let ser = RawStringSerializer::new(&mut buf);
         assert_matches!(ser.serialize_seq(Some(2)), Err(Error(..)));
     }
 

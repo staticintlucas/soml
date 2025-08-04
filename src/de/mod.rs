@@ -648,7 +648,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
             .next()
             .map(|(key, value)| {
                 self.next_value = Some(value);
-                seed.deserialize(key.into_deserializer())
+                seed.deserialize(KeyDeserializer { key })
             })
             .transpose()
     }
@@ -674,7 +674,7 @@ impl<'de> de::MapAccess<'de> for MapAccess {
         self.kv_pairs
             .next()
             .map(|(key, value)| {
-                kseed.deserialize(key.into_deserializer()).and_then(|k| {
+                kseed.deserialize(KeyDeserializer { key }).and_then(|k| {
                     vseed
                         .deserialize(ValueDeserializer::new(value))
                         .map(|v| (k, v))
@@ -686,6 +686,165 @@ impl<'de> de::MapAccess<'de> for MapAccess {
     #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.kv_pairs.len())
+    }
+}
+
+struct KeyDeserializer {
+    key: String,
+}
+
+impl<'de> de::Deserializer<'de> for KeyDeserializer {
+    type Error = Error;
+
+    #[inline]
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.key.into_deserializer().deserialize_any(visitor)
+    }
+
+    #[inline]
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_i8(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_i16(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_i32(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_i64(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_i128(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_u8(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_u16(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_u32(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_u64(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.key.parse() {
+            Ok(value) => visitor.visit_u128(value),
+            Err(_) => visitor.visit_string(self.key),
+        }
+    }
+
+    #[inline]
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_some(self)
+    }
+
+    #[inline]
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_enum(self.key.into_deserializer())
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool f32 f64 char str string bytes byte_buf unit unit_struct seq
+        tuple tuple_struct map struct identifier ignored_any
     }
 }
 
@@ -2286,6 +2445,161 @@ mod tests {
         };
         let map = MapAccess::new(table);
         assert_eq!(map.size_hint(), Some(3));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    fn key_deserializer() {
+        #[derive(Debug, PartialEq, Eq, Deserialize)]
+        struct NewType(String);
+
+        #[derive(Debug, PartialEq, Eq, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Enum {
+            Foo,
+            Bar,
+        }
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert_eq!(String::deserialize(deserializer).unwrap(), "foo");
+
+        let deserializer = KeyDeserializer {
+            key: "abc.123".to_string(),
+        };
+        assert_eq!(String::deserialize(deserializer).unwrap(), "abc.123");
+
+        let deserializer = KeyDeserializer {
+            key: "😎".to_string(),
+        };
+        assert_eq!(String::deserialize(deserializer).unwrap(), "😎");
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(String::deserialize(deserializer).unwrap(), "2");
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(i8::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(i8::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(i16::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(i16::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(i32::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(i32::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(i64::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(i64::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(i128::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(i128::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(u8::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(u8::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(u16::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(u16::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(u32::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(u32::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(u64::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(u64::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "2".to_string(),
+        };
+        assert_eq!(u128::deserialize(deserializer).unwrap(), 2);
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert!(u128::deserialize(deserializer).is_err());
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert_eq!(
+            <Option<String>>::deserialize(deserializer).unwrap(),
+            Some("foo".to_string())
+        );
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert_eq!(
+            NewType::deserialize(deserializer).unwrap(),
+            NewType("foo".to_string())
+        );
+
+        let deserializer = KeyDeserializer {
+            key: "foo".to_string(),
+        };
+        assert_eq!(Enum::deserialize(deserializer).unwrap(), Enum::Foo);
     }
 
     #[test]

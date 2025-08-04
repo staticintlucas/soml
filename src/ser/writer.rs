@@ -170,10 +170,10 @@ impl Formatter {
     ) -> fmt::Result {
         if let Some((first, rest)) = path.split_first() {
             f.write_str(prefix)?;
-            Self::write_key(first, f)?;
+            f.write_str(first)?;
             for key in rest {
                 f.write_str(".")?;
-                Self::write_key(key, f)?;
+                f.write_str(key)?;
             }
             f.write_str(suffix)?;
             f.write_str("\n")?;
@@ -258,7 +258,7 @@ impl Formatter {
     }
 
     pub fn write_inline(key: &str, value: &str, f: &mut dyn fmt::Write) -> fmt::Result {
-        Self::write_key(key, f)?;
+        f.write_str(key)?;
         f.write_str(" = ")?;
         f.write_str(value)?;
         f.write_str("\n")
@@ -550,13 +550,13 @@ mod tests {
         let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
         Formatter::write_table_header(&path, &mut buf).unwrap();
-        assert_eq!(buf, "[a.\"b.c\".d]\n");
+        assert_eq!(buf, "[a.b.c.d]\n");
 
         let path = ["a", "😎", "b"].map(ToString::to_string);
         let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
         Formatter::write_table_header(&path, &mut buf).unwrap();
-        assert_eq!(buf, "[a.\"😎\".b]\n");
+        assert_eq!(buf, "[a.😎.b]\n");
     }
 
     #[test]
@@ -575,13 +575,13 @@ mod tests {
         let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
         Formatter::write_array_header(&path, &mut buf).unwrap();
-        assert_eq!(buf, "[[a.\"b.c\".d]]\n");
+        assert_eq!(buf, "[[a.b.c.d]]\n");
 
         let path = ["a", "😎", "b"].map(ToString::to_string);
         let path: Vec<_> = path.iter().collect(); // Need references to strings
         let mut buf = String::new();
         Formatter::write_array_header(&path, &mut buf).unwrap();
-        assert_eq!(buf, "[[a.\"😎\".b]]\n");
+        assert_eq!(buf, "[[a.😎.b]]\n");
     }
 
     #[test]
@@ -747,11 +747,11 @@ mod tests {
 
         let mut buf = String::new();
         Formatter::write_inline("a.b", "blah", &mut buf).unwrap();
-        assert_eq!(buf, "\"a.b\" = blah\n");
+        assert_eq!(buf, "a.b = blah\n");
 
         let mut buf = String::new();
         Formatter::write_inline("😎", "😎", &mut buf).unwrap();
-        assert_eq!(buf, "\"😎\" = 😎\n");
+        assert_eq!(buf, "😎 = 😎\n");
     }
 
     #[test]

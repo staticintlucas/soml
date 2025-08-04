@@ -491,7 +491,7 @@ impl ser::SerializeMap for TableSerializer {
         T: ?Sized + ser::Serialize,
     {
         let mut buf = String::new();
-        key.serialize(utils::RawStringSerializer::new(&mut buf))?;
+        key.serialize(utils::KeySerializer::new(&mut buf))?;
         self.key = Some(buf);
         Ok(())
     }
@@ -515,7 +515,7 @@ impl ser::SerializeMap for TableSerializer {
         V: ?Sized + ser::Serialize,
     {
         let mut buf = String::new();
-        key.serialize(utils::RawStringSerializer::new(&mut buf))?;
+        key.serialize(utils::KeySerializer::new(&mut buf))?;
         self.table.push((buf, value.serialize(Serializer)?));
         Ok(())
     }
