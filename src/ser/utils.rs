@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 use std::result::Result as StdResult;
 
 use super::{Error, Result};
-use crate::ser::{writer, ErrorKind};
+use crate::ser::writer;
+#[cfg(feature = "datetime")]
+use crate::ser::ErrorKind;
 
 // Serializes something to a TOML key
 pub struct KeySerializer<'a, W> {
@@ -117,21 +119,24 @@ where
 }
 
 // Serializes a string to itself
+#[cfg(feature = "datetime")]
 pub struct RawStringSerializer<'a, W> {
     pub writer: &'a mut W,
 }
 
-// impl<'a, W> RawStringSerializer<'a, W>
-// where
-//     W: fmt::Write,
-// {
-//     /// Creates a new `RawStringSerializer` with the given writer.
-//     #[inline]
-//     pub fn new(writer: &'a mut W) -> Self {
-//         Self { writer }
-//     }
-// }
+#[cfg(feature = "datetime")]
+impl<'a, W> RawStringSerializer<'a, W>
+where
+    W: fmt::Write,
+{
+    /// Creates a new `RawStringSerializer` with the given writer.
+    #[inline]
+    pub fn new(writer: &'a mut W) -> Self {
+        Self { writer }
+    }
+}
 
+#[cfg(feature = "datetime")]
 impl<W> ser::Serializer for RawStringSerializer<'_, W>
 where
     W: fmt::Write,
@@ -573,37 +578,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "datetime")]
     fn raw_string_serializer() {
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         ser.serialize_str("foo").unwrap();
         assert_eq!(buf, "foo");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         ser.serialize_str("abc.123").unwrap();
         assert_eq!(buf, "abc.123");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         ser.serialize_str("😎").unwrap();
         assert_eq!(buf, "😎");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         ser.serialize_bytes(b"foo").unwrap();
         assert_eq!(buf, "foo");
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         assert_matches!(ser.serialize_bytes(b"\xff"), Err(Error(..)));
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         assert_matches!(ser.serialize_i32(2), Err(Error(..)));
 
         let mut buf = String::new();
-        let ser = RawStringSerializer { writer: &mut buf };
+        let ser = RawStringSerializer::new(&mut buf);
         assert_matches!(ser.serialize_seq(Some(2)), Err(Error(..)));
     }
 

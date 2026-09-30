@@ -615,9 +615,11 @@ impl ser::Serializer for RawStringSerializer {
     }
 }
 
+#[cfg(feature = "datetime")]
 #[derive(Debug)]
 struct RawBytesSerializer;
 
+#[cfg(feature = "datetime")]
 impl ser::Serializer for RawBytesSerializer {
     type Ok = Vec<u8>;
     type Error = Error;

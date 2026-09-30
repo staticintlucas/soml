@@ -74,7 +74,9 @@ jobs:
       env:
         RUSTDOCFLAGS: -D warnings
     - name: Check README
-      run: cargo rdme --check
+      run: |
+        cargo rdme install-rust-toolchain-for-intralinks
+        cargo rdme --check
 
   lints:
     name: Lints
