@@ -18,11 +18,11 @@ footnotes = [
     "Does not support TOML date-time types.",
 ]
 
-["toml-0.9"]
+["toml-1.1"]
 package = "toml"
-version = "0.9"
+version = "1.1"
 maintained = true
-toml-ver = "1.0"
+toml-ver = "1.1"
 url = "https://crates.io/crates/toml"
 
 ["toml-0.8"]
