@@ -1,4 +1,9 @@
-#![allow(clippy::panic, clippy::unwrap_used, clippy::fallible_impl_from)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::fallible_impl_from,
+    clippy::missing_inline_in_public_items
+)]
 
 use std::collections::HashMap;
 
@@ -18,8 +23,8 @@ pub struct EncodedValue {
 #[serde(untagged)]
 pub enum EncodedItem {
     Value(EncodedValue),
-    Table(HashMap<String, EncodedItem>),
-    Array(Vec<EncodedItem>),
+    Table(HashMap<String, Self>),
+    Array(Vec<Self>),
 }
 
 #[derive(Debug, PartialEq)]

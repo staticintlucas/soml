@@ -1022,8 +1022,8 @@ impl TomlTable for Table {
                 | Value::UndefinedTable(ref mut subtable)
                 | Value::DottedKeyTable(ref mut subtable) => Some(subtable),
                 Value::ArrayOfTables(ref mut array) => {
-                    // we never insert an empty array of tables, so this should always be some
-                    debug_assert!(!array.is_empty());
+                    // we never insert an empty array of tables, so last_mut() should always be some
+                    debug_assert_ne!(array.as_slice(), []);
                     array.last_mut()
                 }
                 _ => None,
@@ -2657,11 +2657,11 @@ mod tests {
     fn parser_skip_whitespace() {
         let mut parser = start_parser(b"   ");
         parser.skip_whitespace();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
 
         let mut parser = start_parser(b"   \t");
         parser.skip_whitespace();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
 
         let mut parser = start_parser(b"   abc");
         parser.skip_whitespace();
@@ -2681,22 +2681,22 @@ mod tests {
 
         let mut parser = start_parser(b"");
         parser.skip_whitespace();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
     }
 
     #[test]
     fn parser_skip_comment() {
         let mut parser = start_parser(b"# comment");
         parser.skip_comment().unwrap();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
 
         let mut parser = start_parser(b"# comment\n");
         parser.skip_comment().unwrap();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
 
         let mut parser = start_parser(b"# comment\r\n");
         parser.skip_comment().unwrap();
-        assert!(parser.line.is_empty());
+        assert_eq!(parser.line, b"");
 
         let mut parser = start_parser(b"abc");
         parser.skip_comment().unwrap();

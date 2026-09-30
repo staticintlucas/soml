@@ -1065,8 +1065,6 @@ impl str::FromStr for Offset {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
-    use std::str::FromStr as _;
-
     use assert_matches::assert_matches;
 
     use super::*;

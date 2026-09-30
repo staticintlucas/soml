@@ -815,7 +815,7 @@ mod tests {
         let mut buf = String::new();
         let mut array = WrappedArraySerializer::start(&mut buf, "foo", 2);
         assert_eq!(array.key, "foo");
-        assert!(array.arr.arr.is_empty());
+        assert_eq!(array.arr.arr, []);
         assert_eq!(array.arr.arr.capacity(), 2);
 
         array.serialize_field(&42).unwrap();
@@ -835,7 +835,7 @@ mod tests {
         let mut buf = String::new();
         let mut array = WrappedArraySerializer::start(&mut buf, "foo", 2);
         assert_eq!(array.key, "foo");
-        assert!(array.arr.arr.is_empty());
+        assert_eq!(array.arr.arr, []);
         assert_eq!(array.arr.arr.capacity(), 2);
 
         array.serialize_field(&btreemap! {"bar" => 42}).unwrap();
@@ -863,11 +863,11 @@ mod tests {
 
         let mut buf = String::new();
         let mut table = TableSerializer::start(&mut buf, None);
-        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table, []);
         assert_eq!(table.table.table.capacity(), 0);
 
         table.serialize_key("foo").unwrap();
-        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table, []);
 
         table.serialize_value(&42).unwrap();
         assert_eq!(table.table.table.len(), 1);
@@ -891,7 +891,7 @@ mod tests {
 
         let mut buf = String::new();
         let mut table = TableSerializer::start(&mut buf, Some(2));
-        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table, []);
         assert_eq!(table.table.table.capacity(), 2);
 
         table.serialize_field("foo", &42).unwrap();
@@ -917,7 +917,7 @@ mod tests {
         let mut buf = String::new();
         let mut table = WrappedTableSerializer::start(&mut buf, "foo", 2);
         assert_eq!(table.key, "foo");
-        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table, []);
         assert_eq!(table.table.table.capacity(), 2);
 
         table.serialize_field("bar", &42).unwrap();

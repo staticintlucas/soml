@@ -4,7 +4,7 @@ use super::Value;
 #[cfg(feature = "datetime")]
 use super::{AnyDatetime, LocalDate, LocalDatetime, LocalTime, OffsetDatetime};
 use crate::ser::{Error, ErrorKind};
-use crate::{Table, __serialize_unsupported};
+use crate::{__serialize_unsupported, Table};
 
 impl ser::Serialize for Value {
     #[inline]

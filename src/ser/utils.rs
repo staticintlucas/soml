@@ -168,6 +168,7 @@ pub struct Impossible<O, E> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::empty_enums)]
 enum Never {}
 
 impl<O, E> ser::SerializeSeq for Impossible<O, E>

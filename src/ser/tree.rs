@@ -1159,7 +1159,7 @@ mod tests {
         use ser::SerializeSeq as _;
 
         let mut array = ArraySerializer::start(None);
-        assert!(array.arr.is_empty());
+        assert_eq!(array.arr, []);
         assert_eq!(array.arr.capacity(), 0);
 
         array.serialize_element(&42).unwrap();
@@ -1177,7 +1177,7 @@ mod tests {
         use ser::SerializeTuple as _;
 
         let mut array = ArraySerializer::start(Some(2));
-        assert!(array.arr.is_empty());
+        assert_eq!(array.arr, []);
         assert_eq!(array.arr.capacity(), 2);
 
         array.serialize_element(&42).unwrap();
@@ -1194,7 +1194,7 @@ mod tests {
         use ser::SerializeTupleStruct as _;
 
         let mut array = ArraySerializer::start(Some(2));
-        assert!(array.arr.is_empty());
+        assert_eq!(array.arr, []);
         assert_eq!(array.arr.capacity(), 2);
 
         array.serialize_field(&42).unwrap();
@@ -1211,7 +1211,7 @@ mod tests {
         use ser::SerializeSeq as _;
 
         let mut array = ArraySerializer::start(None);
-        assert!(array.arr.is_empty());
+        assert_eq!(array.arr, []);
         assert_eq!(array.arr.capacity(), 0);
 
         array
@@ -1247,7 +1247,7 @@ mod tests {
 
         let mut array = WrappedArraySerializer::start("foo", 2);
         assert_eq!(array.key, "foo");
-        assert!(array.arr.arr.is_empty());
+        assert_eq!(array.arr.arr, []);
         assert_eq!(array.arr.arr.capacity(), 2);
 
         array.serialize_field(&42).unwrap();
@@ -1270,12 +1270,12 @@ mod tests {
 
         let mut table = TableSerializer::start(None);
         assert!(table.key.is_none());
-        assert!(table.table.is_empty());
+        assert_eq!(table.table, []);
         assert_eq!(table.table.capacity(), 0);
 
         table.serialize_key("foo").unwrap();
         assert!(table.key.is_some());
-        assert!(table.table.is_empty());
+        assert_eq!(table.table, []);
 
         table.serialize_value(&42).unwrap();
         assert!(table.key.is_none());
@@ -1302,7 +1302,7 @@ mod tests {
 
         let mut table = TableSerializer::start(Some(2));
         assert!(table.key.is_none());
-        assert!(table.table.is_empty());
+        assert_eq!(table.table, []);
         assert_eq!(table.table.capacity(), 2);
 
         table.serialize_field("foo", &42).unwrap();
@@ -1569,7 +1569,7 @@ mod tests {
         let mut table = WrappedTableSerializer::start("foo", 2);
         assert_eq!(table.key, "foo");
         assert!(table.table.key.is_none());
-        assert!(table.table.table.is_empty());
+        assert_eq!(table.table.table, []);
         assert_eq!(table.table.table.capacity(), 2);
 
         table.serialize_field("bar", &42).unwrap();
